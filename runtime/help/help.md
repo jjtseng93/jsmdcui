@@ -247,3 +247,39 @@ npm run check
 ```
 
 `testapp.md` is the main working example.
+
+                         testapp.md
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+               ▼                             ▼
+          Browser HTML                    TUI ANSI
+               │                             │
+      javascript:foo()             extract javascript:
+               │                             │
+               ▼                             ▼
+       window.frontFunc()          evalFront(frontMod, text)
+               │                             │
+               └──────────────┬──────────────┘
+                              ▼
+                    testapp.md.front.js
+                              │
+                         rpc.someFunc()
+                  ┌───────────┴───────────┐
+                  │                       │
+               Browser                   TUI
+                  │                       │
+           RPC Proxy client       import * as rpc
+                  │               from back module
+                  ▼                       │
+              fetch rpc                   │
+                  │                       │
+                  ▼                       │
+             server.mjs                   │
+                  │                       │
+                  ▼                       │
+       evalBack(backMod, reqjson)         │
+                  │                       │
+                  └───────────┬───────────┘
+                              ▼
+                    testapp.md.back.js

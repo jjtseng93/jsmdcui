@@ -22,7 +22,7 @@
            RPC Proxy client       import * as rpc
                   │               from back module
                   ▼                       │
-              fetch /rpc                  │
+              fetch rpc                   │
                   │                       │
                   ▼                       │
              server.mjs                   │
