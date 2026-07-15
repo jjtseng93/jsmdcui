@@ -17,6 +17,7 @@ const TEST_COL=5
 
 function logWroteFile(label,path)
 {
+  if(!process.stdin.isRaw)
   csl(mda(`- Wrote to ${label} file: ${path}`))
 }
 
