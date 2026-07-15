@@ -78,6 +78,7 @@ The command table below uses the cloned-source form. If you use npx, replace
 | Command | Result |
 | --- | --- |
 | `bun src/index.js app.md` | Render `app.md` as a read-only terminal UI and write five generated files beside it. |
+| `bun src/index.js --edit app.md` | Open `app.md` as editable UTF-8 source, overriding automatic Markdown UI detection. |
 | `bun src/index.js --cat app.md` | Render the terminal version to stdout, write five generated files beside it, and exit. |
 | `bun src/index.js --testapp.md` | Write the bundled `testapp.md` source to stdout and exit. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise use the bundled demo; write five generated files in the current directory, then print and serve a random URL. |

@@ -304,14 +304,14 @@ function encodeHex3Text(text) {
   return decodeBinaryBytes(Buffer.from(text, "latin1"));
 }
 
-async function readTextFileWithEncoding(path, encoding = "utf-8") {
+async function readTextFileWithEncoding(path, encoding = "utf-8", inferMdcui = true) {
   const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
-  return decodeAndRenderTextBytes(bytes, encodingForPath(path, encoding), process.stdout.columns || 80, path);
+  return decodeAndRenderTextBytes(bytes, encodingForPath(path, encoding, inferMdcui), process.stdout.columns || 80, path);
 }
 
-async function fetchTextWithEncoding(url, encoding = "utf-8") {
+async function fetchTextWithEncoding(url, encoding = "utf-8", inferMdcui = true) {
   const bytes = await fetchHttpBytes(url);
-  return decodeAndRenderTextBytes(new Uint8Array(bytes), encodingForPath(url, encoding));
+  return decodeAndRenderTextBytes(new Uint8Array(bytes), encodingForPath(url, encoding, inferMdcui));
 }
 
 function normalizeEncodingLabel(encoding = "utf-8") {
@@ -321,9 +321,9 @@ function normalizeEncodingLabel(encoding = "utf-8") {
   return new TextDecoder(s).encoding;
 }
 
-function encodingForPath(pathOrUrl, encoding = DEFAULT_SETTINGS.encoding) {
+function encodingForPath(pathOrUrl, encoding = DEFAULT_SETTINGS.encoding, inferMdcui = true) {
   const normalized = normalizeEncodingLabel(encoding);
-  if (normalized !== "utf-8") return normalized;
+  if (normalized !== "utf-8" || !inferMdcui) return normalized;
   let pathname = String(pathOrUrl ?? "").replace(/[?#].*$/, "");
   try {
     if (isHttpUrl(pathname)) pathname = new URL(pathname).pathname;
@@ -901,6 +901,9 @@ function parseArgs(argv) {
     else if (arg === "--hex3zst") {
       flags.settings.set("encoding", "hex3zst");
     }
+    else if (arg === "--edit") {
+      flags.settings.set("encoding", "utf-8");
+    }
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
@@ -946,6 +949,8 @@ Modes:
   --hex3, --hex3gz, --hex3zst
       Set -encoding hex3, hex3gz, or hex3zst for this session
       hex3 shows raw bytes; gz/zst variants compress the same hex3 view
+  --edit
+      Open files as editable UTF-8 text, overriding .md mdcui detection
   -encoding mdcui
       Render Markdown through runmd.mjs#createTui; .md files use this automatically
       Writes .front.js, .back.js, .html, -rpc.js, and -server.js beside the .md file
@@ -1140,7 +1145,7 @@ class BufferModel {
       if (info.isDirectory()) throw new Error(`${path} is a directory`);
       readonly = !canWritePath(path);
       modTimeMs = info.mtimeMs;
-      const decoded = await readTextFileWithEncoding(path, encoding);
+      const decoded = await readTextFileWithEncoding(path, encoding, !context.encodingExplicit);
       text = decoded.text;
       encoding = decoded.encoding;
       ansiStyleLines = decoded.ansiStyleLines ?? null;
@@ -1536,7 +1541,7 @@ class BufferModel {
   async reopen(context = {}) {
     if (!this.path) return;
     if (isHttpUrl(this.path)) {
-      const decoded = await fetchTextWithEncoding(this.path, this.Settings.encoding ?? this.encoding);
+      const decoded = await fetchTextWithEncoding(this.path, this.Settings.encoding ?? this.encoding, false);
       const text = decoded.text;
       this.encoding = decoded.encoding;
       this.Settings.encoding = decoded.encoding;
@@ -1568,7 +1573,7 @@ class BufferModel {
     }
     const info = statSync(this.path);
     if (info.isDirectory()) throw new Error(`${this.path} is a directory`);
-    const decoded = await readTextFileWithEncoding(this.path, this.Settings.encoding ?? this.encoding);
+    const decoded = await readTextFileWithEncoding(this.path, this.Settings.encoding ?? this.encoding, false);
     const text = decoded.text;
     this.encoding = decoded.encoding;
     this.Settings.encoding = decoded.encoding;
@@ -6532,7 +6537,7 @@ async function loadBufferForPath(pathOrUrl, context, command = {}) {
   let buffer;
   if (isHttpUrl(pathOrUrl)) {
     let encoding = context.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
-    const decoded = await fetchTextWithEncoding(pathOrUrl, encoding);
+    const decoded = await fetchTextWithEncoding(pathOrUrl, encoding, !context.encodingExplicit);
     const text = decoded.text;
     encoding = decoded.encoding;
     const urlPath = pathOrUrl.replace(/[?#].*$/, "");
@@ -7341,6 +7346,7 @@ async function main() {
   addCheckpoint("Config Initialization");
   const config = await new Config({ configDir: flags.configDir }).init();
   config.applyCliSettings(flags.settings);
+  const encodingExplicit = flags.settings.has("encoding") || Object.hasOwn(config.parsedSettings, "encoding");
   syncEditorSettings(config);
 
   addCheckpoint("Runtime Registry Init");
@@ -7352,7 +7358,7 @@ async function main() {
   const syntaxDefinitions = await loadSyntaxDefinitions(runtime);
 
   if (flags.cat) {
-    await catFiles(rawFiles, colorscheme, syntaxDefinitions, config.getGlobalOption("encoding"));
+    await catFiles(rawFiles, colorscheme, syntaxDefinitions, config.getGlobalOption("encoding"), !encodingExplicit);
     return;
   }
 
@@ -7410,7 +7416,7 @@ async function main() {
 
   const { files, command } = parseInput(rawFiles);
   const jsPlugins = new JsPluginManager();
-  const context = { colorscheme, syntaxDefinitions, config, runtime, jsPlugins };
+  const context = { colorscheme, syntaxDefinitions, config, runtime, jsPlugins, encodingExplicit };
   jsPlugins.setContext(context);
   buildMicroGlobal(jsPlugins);   // sets globalThis.micro
 
@@ -7922,30 +7928,34 @@ function syncEditorSettings(config) {
   }
 }
 
-async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAULT_SETTINGS.encoding) {
+async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAULT_SETTINGS.encoding, inferMdcui = true) {
   const targets = files.length > 0 ? files.map((f) => ({ path: f, stdin: false })) : [{ path: null, stdin: true }];
   for (const { path: filePath, stdin } of targets) {
     let content;
     let ansiContent = null;
     let effectivePath = filePath;
+    let effectiveEncoding = normalizeEncodingLabel(encoding);
     if (stdin) {
       const chunks = [];
       for await (const chunk of process.stdin) chunks.push(chunk);
       const decoded = await decodeAndRenderTextBytes(Buffer.concat(chunks), encoding);
       content = decoded.text;
       ansiContent = decoded.ansiText ?? null;
+      effectiveEncoding = decoded.encoding;
     } else if (isHttpUrl(filePath)) {
-      const decoded = await fetchTextWithEncoding(filePath, encoding);
+      const decoded = await fetchTextWithEncoding(filePath, encoding, inferMdcui);
       content = decoded.text;
       ansiContent = decoded.ansiText ?? null;
+      effectiveEncoding = decoded.encoding;
       // Use the URL pathname for syntax/md detection (strip query/hash)
       try { effectivePath = new URL(filePath).pathname; } catch { effectivePath = filePath; }
     } else {
-      const decoded = await readTextFileWithEncoding(filePath, encoding);
+      const decoded = await readTextFileWithEncoding(filePath, encoding, inferMdcui);
       content = decoded.text;
       ansiContent = decoded.ansiText ?? null;
+      effectiveEncoding = decoded.encoding;
     }
-    if (isMdcuiEncoding(encoding)) {
+    if (isMdcuiEncoding(effectiveEncoding)) {
       process.stdout.write(ansiContent ?? content);
       if (!(ansiContent ?? content).endsWith("\n")) process.stdout.write("\n");
       continue;
