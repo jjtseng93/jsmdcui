@@ -9,6 +9,12 @@
 - [Print process.argv](javascript:pav())
 - [Calculator🧮計算機](javascript:calc())
   * Use cos sin PI directly
+- [Show ↓ text](javascript:alert($('text').val()))
+
+```text
+One-line text edit 單行可編輯文字框
+```
+
 ## Task list
 - [X] task1
 - [ ] task2

@@ -685,11 +685,97 @@ function _deleteSel(buf, pane) {
   buf.ensureCursor?.();
 }
 
+// ── mdcui block selector ────────────────────────────────────────────────────
+
+function _parseBlockIdentity(input, { selector = false } = {}) {
+  const text = String(input ?? "").trim();
+  const match = text.match(/^([A-Za-z_][\w:-]*)?(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
+  if (!match || (!match[1] && !match[2] && !match[3])) return null;
+  if (!selector && !match[1]) return null;
+  return {
+    tag: match[1] || null,
+    id: match[2] || null,
+    classes: match[3] ? match[3].slice(1).split(".") : [],
+  };
+}
+
+function _blockHeader(line) {
+  const text = String(line ?? "");
+  const framed = text.match(/^(\s*)(?:┌─|╭─|\+-)\s*(\S+)\s*$/);
+  if (framed) {
+    const identity = _parseBlockIdentity(framed[2]);
+    return identity ? { kind: "framed", indent: framed[1], ...identity } : null;
+  }
+
+  const fenced = text.match(/^(\s*)(`{3,})\s*(\S+)\s*$/);
+  if (fenced) {
+    const identity = _parseBlockIdentity(fenced[3]);
+    return identity
+      ? { kind: "fenced", indent: fenced[1], fenceLength: fenced[2].length, ...identity }
+      : null;
+  }
+
+  return null;
+}
+
+function _matchesBlock(header, selector) {
+  if (selector.tag && header.tag !== selector.tag) return false;
+  if (selector.id && header.id !== selector.id) return false;
+  return selector.classes.every((name) => header.classes.includes(name));
+}
+
+function _blockValue(lines, selector) {
+  for (let start = 0; start < lines.length; start++) {
+    const header = _blockHeader(lines[start]);
+    if (!header || !_matchesBlock(header, selector)) continue;
+
+    const value = [];
+    for (let y = start + 1; y < lines.length; y++) {
+      const line = String(lines[y] ?? "");
+      const rest = line.startsWith(header.indent)
+        ? line.slice(header.indent.length)
+        : line;
+
+      if (header.kind === "fenced") {
+        const closing = rest.match(/^(`{3,})\s*$/);
+        if (closing && closing[1].length >= header.fenceLength)
+          return value.join("\n");
+        value.push(rest);
+        continue;
+      }
+
+      if (/^(?:└─|╰─|\+-)\s*$/.test(rest)) return value.join("\n");
+      const body = rest.match(/^(?:│|\|)(?: ?)(.*)$/);
+      value.push(body ? body[1] : rest);
+    }
+    return value.join("\n");
+  }
+  return undefined;
+}
+
+export function createTuiSelector(getBuffer) {
+  return function $(selector) {
+    const parsedSelector = _parseBlockIdentity(selector, { selector: true });
+    return {
+      val() {
+        if (!parsedSelector) return undefined;
+        const buffer = getBuffer?.();
+        if (!buffer) return undefined;
+        const lines = Array.isArray(buffer.lines)
+          ? buffer.lines
+          : String(buffer).replace(/\r\n?/g, "\n").split("\n");
+        return _blockValue(lines, parsedSelector);
+      },
+    };
+  };
+}
+
 // ── micro global object ───────────────────────────────────────────────────────
 
 export function buildMicroGlobal(jsManager) {
   const getApp = () => jsManager._app;
   const getCtx = () => jsManager._ctx;
+  const $ = createTuiSelector(() => getApp()?.buffer);
 
   // Converts cmd args to a safe command string for handleCommand
   function buildCmdString(name, args) {
@@ -921,6 +1007,7 @@ export function buildMicroGlobal(jsManager) {
   };
 
   globalThis.micro = micro;
+  globalThis.$ = $;
   return micro;
 }
 

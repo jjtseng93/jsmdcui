@@ -99,8 +99,11 @@ try{
 
     text = text.replace(/^javascript:/, "");
 
-    const names = Object.keys(mod);
-    const values = Object.values(mod).map(safeFrontValue);
+    const entries = Object.entries(mod).filter(([name]) => name !== "$");
+    if (typeof globalThis.$ === "function")
+      entries.push(["$", globalThis.$]);
+    const names = entries.map(([name]) => name);
+    const values = entries.map(([, value]) => safeFrontValue(value));
 
     try {
       return await new AsyncFunction(...names, `return await (${text})`)(...values);
