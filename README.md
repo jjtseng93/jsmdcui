@@ -100,6 +100,11 @@ Create `app.md`:
 
 - [Say hello](javascript:sayHello())
 - [Get server time](javascript:showServerTime())
+- [Update text box](javascript:updateText())
+
+```text#myid.myclass
+Editable in both TUI and WUI
+```
 
 ```js front
 export function sayHello() {
@@ -110,6 +115,10 @@ export function sayHello() {
 export async function showServerTime() {
   const time = await rpc.getServerTime();
   alert(time);
+}
+
+export function updateText() {
+  $('#myid').val($('.myclass').val() + ' ✓');
 }
 ```
 

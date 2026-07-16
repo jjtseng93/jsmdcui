@@ -2,6 +2,63 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.5.0] - 2026-07-16
+
+This update adds cross-environment form-like text blocks and a small
+jQuery-style selector API, while keeping the same Markdown source usable in
+both the terminal and browser interfaces.
+
+### Added
+
+- Add a minimal global `$` API to terminal frontend evaluation, JavaScript
+  plugins, generated browser frontend modules, and `javascript:` links.
+- Support tag, ID, class, and combined selectors such as `$('text')`,
+  `$('#answer')`, `$('.field')`, and `$('text#answer.field')`.
+- Add `.val()` and `.val(value)` for reading and replacing block contents.
+  Getters always return a string and use an empty string for missing elements,
+  invalid selectors, or lookup errors. Setters support chaining and resize
+  terminal blocks to fit multiline values.
+- Recognize both raw Markdown fenced blocks and rendered Bun ANSI blocks,
+  including ASCII and Unicode frame characters.
+- Add editable terminal `text` blocks. Content after the protected `│ ` or
+  `| ` prefix can be edited, while frame characters, line joins, inserted
+  newlines, and multiline pastes remain protected.
+- Add interactive terminal text-block resizing. Activating the lower-left
+  frame corner adds an empty content row; activating the upper-left corner
+  removes only a trailing empty row and never deletes non-empty content.
+- Add the optional frontend lifecycle callback
+  `onMdcuiExit({ reason, path, $ })`. The terminal awaits it before closing an
+  mdcui buffer and invokes it at most once per buffer.
+- Add Markdown syntax completions for fenced block language identifiers.
+
+### Changed
+
+- Convert `text` and `textarea` fenced blocks into native browser
+  `<textarea>` elements while preserving their ID, classes, original language
+  metadata, and selector compatibility.
+- Prefer native `document.querySelector()` in the browser `$` implementation,
+  then fall back to mdcui metadata and the original `pre > code` structure.
+- Automatically wrap and resize generated browser textareas on page load,
+  input, `.val(value)`, and window resize. Initial `rows` and `cols` are
+  derived from the Markdown content.
+- Generate complete HTML5 documents for WUI output, including `<!doctype
+  html>`, UTF-8 metadata, a responsive viewport, a document title, and
+  `lang="zh-TW"`.
+- Enable `softwrap` by default.
+- Close modified mdcui buffers without displaying a save prompt. Applications
+  can use `onMdcuiExit` to collect edited field values or call backend RPC
+  functions before closing.
+- Update the bundled example with editable text fields, selector API examples,
+  answer validation, and manual text-box resizing instructions.
+
+### Fixed
+
+- Keep terminal text-block frame prefixes intact during editing and prevent
+  Delete at the end of a content row from merging it with the next row.
+- Preserve browser textarea IDs and classes during Markdown-to-HTML
+  conversion, including compatibility metadata for original `text` selectors.
+- Keep README and built-in help lifecycle documentation synchronized.
+
 ## [0.4.0] - 2026-07-16
 
 This release separates executable Markdown UI views from ordinary editable
