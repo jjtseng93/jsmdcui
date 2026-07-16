@@ -47,3 +47,15 @@ rules:
         start: "`"
         end: "`"
         rules: []
+
+
+# keywords
+# javascript alert confirm prompt rpc 
+# front back 
+# console log error JSON stringify parse
+# async await Promise 
+# textarea text password search 
+# email url tel number range color
+# date time datetime-local month week 
+# checkbox radio file hidden image button submit reset
+
