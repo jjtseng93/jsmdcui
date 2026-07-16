@@ -978,12 +978,14 @@ Information:
       Show ${pkg.name}'s README.md & exit
   --changelog
       Show CHANGELOG.md & exit
-  --testapp.md
-      Write testapp.md to stdout & exit
-  --demo
-      Write the bundled testapp.md to the current directory, then open it in the TUI
   -profile, --profile
       Print startup performance profile and exit
+
+Demo:
+  --testapp.md
+      Write the bundled testapp.md to stdout & exit
+  --demo
+      Outputs & overwrites ./testapp.md, opens it in the TUI, and writes 5 generated files
 
 Experimental:
   --build-exe                   Build a Bun single-file executable and exit
