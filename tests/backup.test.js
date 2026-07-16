@@ -130,4 +130,29 @@ describe("backup lifecycle", () => {
     expect(await writeBackup(buf, root, buf.AbsPath, { force: true })).toBe(true);
     expect(existsSync(determineBackupPath(backupDir, buf.AbsPath).name)).toBe(true);
   });
+
+  test("mdcui buffers never write, recover, or remove backups", async () => {
+    const root = await tempDir();
+    const backupDir = join(root, "backups");
+    await mkdir(backupDir);
+    const buf = buffer("/tmp/file.md", "rendered markdown");
+    buf.Settings.backupdir = backupDir;
+    buf.encoding = "mdcui";
+    buf.Settings.encoding = "mdcui";
+    const target = determineBackupPath(backupDir, buf.AbsPath);
+
+    expect(await writeBackup(buf, root)).toBe(false);
+    expect(await writeBackup(buf, root, buf.AbsPath, { force: true })).toBe(false);
+    expect(existsSync(target.name)).toBe(false);
+
+    await writeFile(target.name, "utf8 editor recovery");
+    let prompted = false;
+    expect(await applyBackup(buf, root, async () => { prompted = true; return "recover"; }))
+      .toEqual({ recovered: false, abort: false });
+    expect(prompted).toBe(false);
+    expect(buf.lines).toEqual(["rendered markdown"]);
+
+    removeBackup(buf, root);
+    expect(existsSync(target.name)).toBe(true);
+  });
 });
