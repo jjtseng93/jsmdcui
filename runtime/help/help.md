@@ -133,6 +133,9 @@ The three UI building blocks are:
   links.
 - A `js front` block contains UI code. Exported functions can use
   `alert`, `confirm`, `prompt`, and the generated `rpc` client.
+- A front module may export `async function onMdcuiExit({ reason, path, $ })`.
+  The terminal UI awaits it before closing an `mdcui` buffer. Modified
+  `mdcui` buffers close without a save prompt.
 - A `js back` block exports trusted backend functions. In the browser WUI,
   `rpc` publishes only exported functions whose exported names do not start
   with `_`. Call a published function from the front end with
