@@ -100,6 +100,11 @@ Create `app.md`:
 
 - [Say hello](javascript:sayHello())
 - [Get server time](javascript:showServerTime())
+- [Update text box](javascript:updateText())
+
+```text#myid.myclass
+Editable in both TUI and WUI
+```
 
 ```js front
 export function sayHello() {
@@ -110,6 +115,10 @@ export function sayHello() {
 export async function showServerTime() {
   const time = await rpc.getServerTime();
   alert(time);
+}
+
+export function updateText() {
+  $('#myid').val($('.myclass').val() + ' ✓');
 }
 ```
 
@@ -126,6 +135,28 @@ Open it in either UI:
 bun src/index.js app.md
 bun src/index.js --wui app.md
 ```
+
+### Text blocks
+
+Both `text` and `textarea` fenced blocks define editable text fields:
+
+````md
+```text#message.note
+Initial value
+```
+````
+
+The same Markdown works in both interfaces. In the browser WUI it becomes a
+native `<textarea>` with the declared ID and classes. Long text wraps
+automatically, and the field height is recalculated when the user types, the
+window is resized, or frontend code calls `.val(value)`.
+
+In the terminal TUI, only content after the protected `│ ` or `| ` prefix can
+be edited. The frame prefix cannot be deleted, Enter cannot insert a newline,
+Delete at the end of a row cannot join the next row, and multiline paste is
+blocked. Activate the lower-left frame corner to add a row. Activate the
+upper-left frame corner to remove the trailing row only when it is empty;
+non-empty content is never removed.
 
 The three UI building blocks are:
 
@@ -152,6 +183,22 @@ Use a `javascript:` Markdown link to run front-end code:
 [Button label](javascript:exportedFunction())
 ```
 
+Use `onMdcuiExit` when a terminal Markdown app needs to submit or otherwise
+process edited fields before it closes:
+
+```js
+export async function onMdcuiExit({ reason, path, $ }) {
+  await rpc.saveDraft({
+    reason,
+    path,
+    message: $('#message').val(),
+  });
+}
+```
+
+The callback is optional, may be asynchronous, and is called at most once for
+each mdcui buffer.
+
 The front and back code blocks are extracted and are not shown in the rendered
 UI. In the terminal, `rpc` calls the generated backend module directly. In the
 browser, it sends the call to the relative `rpc` endpoint under the printed
@@ -159,8 +206,9 @@ UUID URL (`/<uuid>/rpc`).
 
 ## Terminal interaction
 
-Markdown files automatically use `mdcui` mode. The rendered buffer is
-read-only, but navigation, selection, search, and copy remain available.
+Markdown files automatically use `mdcui` mode. Most rendered content remains
+protected, while `text` block content rows can be edited. Navigation,
+selection, search, and copy remain available.
 
 | Input | Result |
 | --- | --- |
