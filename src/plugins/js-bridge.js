@@ -829,18 +829,22 @@ export function createTuiSelector(getBuffer) {
     const parsedSelector = _parseBlockIdentity(selector, { selector: true });
     const selection = {
       val(...args) {
-        if (!parsedSelector) return undefined;
-        const buffer = getBuffer?.();
-        if (!buffer) return undefined;
-        const lines = Array.isArray(buffer.lines)
-          ? buffer.lines
-          : String(buffer).replace(/\r\n?/g, "\n").split("\n");
-        if (args.length > 0) {
-          if (!Array.isArray(buffer.lines)) return selection;
-          _setBlockValue(buffer, parsedSelector, args[0]);
-          return selection;
+        try {
+          if (!parsedSelector) return args.length > 0 ? selection : "";
+          const buffer = getBuffer?.();
+          if (!buffer) return args.length > 0 ? selection : "";
+          const lines = Array.isArray(buffer.lines)
+            ? buffer.lines
+            : String(buffer).replace(/\r\n?/g, "\n").split("\n");
+          if (args.length > 0) {
+            if (Array.isArray(buffer.lines))
+              _setBlockValue(buffer, parsedSelector, args[0]);
+            return selection;
+          }
+          return _blockValue(lines, parsedSelector) ?? "";
+        } catch {
+          return args.length > 0 ? selection : "";
         }
-        return _blockValue(lines, parsedSelector);
       },
     };
     return selection;
