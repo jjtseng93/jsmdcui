@@ -195,7 +195,7 @@ const DEFAULT_SETTINGS = {
   backup: true,
   backupdir: "",
   permbackup: false,
-  softwrap: false,
+  softwrap: true,
   wordwrap: false,
   pageoverlap: 2,
   scrollmargin: 3,
@@ -2390,6 +2390,7 @@ class App {
     this._messageRowY = null;
     this._messageRowClickZone = null;
     this._resizeRenderSeq = 0;
+    this._mdcuiExitNotified = new WeakSet();
   }
 
   get tab()    { return this.tabs[this.activeTabIdx]; }
@@ -2533,6 +2534,8 @@ class App {
   }
 
   async stop(code = 0) {
+    for (const buf of this.buffers)
+      await this.notifyMdcuiExit(buf, "exit");
     this.running = false;
     if (this._backupTimer) { clearInterval(this._backupTimer); this._backupTimer = null; }
     await Promise.allSettled(this.buffers.map((buf) => buf._backupWritePromise).filter(Boolean));
@@ -4857,6 +4860,11 @@ class App {
 
   async quit() {
     const buffer = this.buffer;
+    if (isMdcuiEncoding(buffer?.encoding)) {
+      await this.notifyMdcuiExit(buffer, "quit");
+      await this._doCloseCurrentPane();
+      return;
+    }
     if (buffer.modified) {
       if (!this.prompt) {
         this.openYNPrompt(
@@ -4877,6 +4885,7 @@ class App {
   // Close only the current pane; if it's the last pane in the tab, close the tab.
   async _doCloseCurrentPane() {
     if (this.tab.panes().length > 1) {
+      await this.notifyMdcuiExit(this.buffer, "close-pane");
       this.closePane(this.pane);
       this.render();
     } else {
@@ -4892,6 +4901,32 @@ class App {
   async saveAndCloseCurrentTab() {
     await this.save();
     if (!this.prompt && !this.buffer.modified) await this.closeCurrentTab({ force: true });
+  }
+
+  async notifyMdcuiExit(buffer, reason = "exit") {
+    if (
+      !buffer
+      || !isMdcuiEncoding(buffer.encoding)
+      || this._mdcuiExitNotified.has(buffer)
+    ) return;
+    this._mdcuiExitNotified.add(buffer);
+
+    const frontPath = buffer.path && !isHttpUrl(buffer.path)
+      ? `${buffer.path}.front.js`
+      : "";
+    if (!frontPath || !existsSync(frontPath)) return;
+
+    try {
+      const frontMod = await import(localModuleUrl(frontPath));
+      if (typeof frontMod.onMdcuiExit !== "function") return;
+      await frontMod.onMdcuiExit({
+        reason,
+        path: buffer.path,
+        $: globalThis.$,
+      });
+    } catch (error) {
+      console.error(`[mdcui] onMdcuiExit: ${error?.message || error}`);
+    }
   }
 
   async toggleHelp() {
@@ -4992,11 +5027,14 @@ class App {
   async closeCurrentTab({ force = false } = {}) {
     if (!force && this.buffer?.modified) return await this.quit();
     if (this.tabs.length <= 1) {
+      await this.notifyMdcuiExit(this.buffer, "close-tab");
       await this.stop(0);
       return;
     }
     const closingBuffers = [...new Set(this.tab.panes().flatMap((pane) => [pane.buffer, pane.prevBuffer]).filter(Boolean))];
     const closing = this.buffer;
+    for (const buffer of closingBuffers)
+      await this.notifyMdcuiExit(buffer, "close-tab");
     this.tabs.splice(this.activeTabIdx, 1);
     this.activeTabIdx = Math.min(this.activeTabIdx, this.tabs.length - 1);
     this.message = "";
