@@ -701,10 +701,12 @@ function _parseBlockIdentity(input, { selector = false } = {}) {
 
 function _blockHeader(line) {
   const text = String(line ?? "");
-  const framed = text.match(/^(\s*)(?:┌─|╭─|\+-)\s*(\S+)\s*$/);
+  const framed = text.match(/^(\s*)(┌─|╭─|\+-)\s*(\S+)\s*$/);
   if (framed) {
-    const identity = _parseBlockIdentity(framed[2]);
-    return identity ? { kind: "framed", indent: framed[1], ...identity } : null;
+    const identity = _parseBlockIdentity(framed[3]);
+    return identity
+      ? { kind: "framed", indent: framed[1], bodyMarker: framed[2] === "+-" ? "|" : "│", ...identity }
+      : null;
   }
 
   const fenced = text.match(/^(\s*)(`{3,})\s*(\S+)\s*$/);
@@ -724,12 +726,11 @@ function _matchesBlock(header, selector) {
   return selector.classes.every((name) => header.classes.includes(name));
 }
 
-function _blockValue(lines, selector) {
+function _findBlock(lines, selector) {
   for (let start = 0; start < lines.length; start++) {
     const header = _blockHeader(lines[start]);
     if (!header || !_matchesBlock(header, selector)) continue;
 
-    const value = [];
     for (let y = start + 1; y < lines.length; y++) {
       const line = String(lines[y] ?? "");
       const rest = line.startsWith(header.indent)
@@ -739,34 +740,110 @@ function _blockValue(lines, selector) {
       if (header.kind === "fenced") {
         const closing = rest.match(/^(`{3,})\s*$/);
         if (closing && closing[1].length >= header.fenceLength)
-          return value.join("\n");
-        value.push(rest);
+          return { start, end: y, header };
         continue;
       }
 
-      if (/^(?:└─|╰─|\+-)\s*$/.test(rest)) return value.join("\n");
+      if (/^(?:└─|╰─|\+-)\s*$/.test(rest))
+        return { start, end: y, header };
+    }
+    return { start, end: lines.length, header };
+  }
+  return null;
+}
+
+function _blockValue(lines, selector) {
+  const block = _findBlock(lines, selector);
+  if (!block) return undefined;
+  const value = [];
+  for (let y = block.start + 1; y < block.end; y++) {
+    const line = String(lines[y] ?? "");
+    const rest = line.startsWith(block.header.indent)
+      ? line.slice(block.header.indent.length)
+      : line;
+    if (block.header.kind === "fenced") value.push(rest);
+    else {
       const body = rest.match(/^(?:│|\|)(?: ?)(.*)$/);
       value.push(body ? body[1] : rest);
     }
-    return value.join("\n");
   }
-  return undefined;
+  return value.join("\n");
+}
+
+function _spliceBufferLines(buffer, start, deleteCount, replacement) {
+  const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
+  buffer.lines.splice(start, deleteCount, ...replacement);
+
+  if (Array.isArray(buffer._ansiStyleLines)) {
+    const template = buffer._ansiStyleLines[start] ?? null;
+    buffer._ansiStyleLines.splice(
+      start,
+      deleteCount,
+      ...replacement.map(() => template),
+    );
+  }
+
+  if (typeof buffer._mdcuiAnsiText === "string") {
+    const ansiLines = buffer._mdcuiAnsiText.split("\n");
+    ansiLines.splice(start, deleteCount, ...replacement);
+    buffer._mdcuiAnsiText = ansiLines.join("\n");
+  }
+
+  buffer.invalidateHighlightFrom?.(start, { force: replacement.length !== deleteCount });
+  if (oldCursor) {
+    const oldEnd = start + deleteCount;
+    if (oldCursor.y >= oldEnd) {
+      buffer.cursor.y = oldCursor.y + replacement.length - deleteCount;
+    } else if (oldCursor.y >= start) {
+      const relativeY = Math.min(oldCursor.y - start, Math.max(0, replacement.length - 1));
+      buffer.cursor.y = start + relativeY;
+    }
+  }
+  buffer.modified = true;
+  buffer.ensureCursor?.();
+}
+
+function _setBlockValue(buffer, selector, value) {
+  const lines = buffer.lines;
+  const block = _findBlock(lines, selector);
+  if (!block) return false;
+
+  const values = String(value ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const contentStart = block.start + 1;
+  const capacity = Math.max(0, block.end - contentStart);
+
+  if (block.header.kind === "fenced") {
+    const replacement = values.map((line) => block.header.indent + line);
+    _spliceBufferLines(buffer, contentStart, capacity, replacement);
+    return true;
+  }
+
+  const rowPrefix = block.header.indent + block.header.bodyMarker + " ";
+  const replacement = values.map((line) => rowPrefix + line);
+  _spliceBufferLines(buffer, contentStart, capacity, replacement);
+  return true;
 }
 
 export function createTuiSelector(getBuffer) {
   return function $(selector) {
     const parsedSelector = _parseBlockIdentity(selector, { selector: true });
-    return {
-      val() {
+    const selection = {
+      val(...args) {
         if (!parsedSelector) return undefined;
         const buffer = getBuffer?.();
         if (!buffer) return undefined;
         const lines = Array.isArray(buffer.lines)
           ? buffer.lines
           : String(buffer).replace(/\r\n?/g, "\n").split("\n");
+        if (args.length > 0) {
+          if (!Array.isArray(buffer.lines)) return selection;
+          _setBlockValue(buffer, parsedSelector, args[0]);
+          return selection;
+        }
         return _blockValue(lines, parsedSelector);
       },
     };
+    return selection;
   };
 }
 

@@ -538,6 +538,70 @@ function mdcuiCellPayload(buf, y, x, trigger = "unknown") {
   };
 }
 
+function resizeMdcuiTextBlock(buf, y, x) {
+  if (!buf || !isMdcuiEncoding(buf.encoding) || x !== 0) return null;
+  const line = String(buf.lines?.[y] ?? "");
+  const top = line.match(/^(\s*)(┌─|╭─|\+-)\s*text(?:[#.][A-Za-z_][\w:.-]*)*\s*$/);
+  const bottom = line.match(/^(\s*)(└─|╰─|\+-)\s*$/);
+  if (!top && !bottom) return null;
+
+  let insertAt = -1;
+  let removeAt = -1;
+  let bodyLine = "";
+
+  if (bottom) {
+    for (let row = y - 1; row >= 0; row--) {
+      const header = String(buf.lines[row] ?? "").match(/^(\s*)(┌─|╭─|\+-)\s*text(?:[#.][A-Za-z_][\w:.-]*)*\s*$/);
+      if (!header || header[1] !== bottom[1]) continue;
+      const marker = header[2] === "+-" ? "|" : "│";
+      insertAt = y;
+      bodyLine = header[1] + marker + " ";
+      break;
+    }
+  } else if (top) {
+    const marker = top[2] === "+-" ? "|" : "│";
+    for (let row = y + 1; row < buf.lines.length; row++) {
+      const rest = String(buf.lines[row] ?? "").slice(top[1].length);
+      if (/^(?:└─|╰─|\+-)\s*$/.test(rest)) {
+        const candidate = row - 1;
+        if (candidate > y && String(buf.lines[candidate] ?? "") === top[1] + marker + " ")
+          removeAt = candidate;
+        break;
+      }
+    }
+  }
+
+  if (insertAt < 0 && removeAt < 0) return "unchanged";
+  buf.pushUndo?.(true);
+
+  const row = insertAt >= 0 ? insertAt : removeAt;
+  const deleteCount = removeAt >= 0 ? 1 : 0;
+  const replacement = insertAt >= 0 ? [bodyLine] : [];
+  buf.lines.splice(row, deleteCount, ...replacement);
+
+  if (Array.isArray(buf._ansiStyleLines)) {
+    const template = buf._ansiStyleLines[Math.max(0, row - 1)] ?? null;
+    buf._ansiStyleLines.splice(row, deleteCount, ...replacement.map(() => template));
+  }
+  if (typeof buf._mdcuiAnsiText === "string") {
+    const ansiLines = buf._mdcuiAnsiText.split("\n");
+    ansiLines.splice(row, deleteCount, ...replacement);
+    buf._mdcuiAnsiText = ansiLines.join("\n");
+  }
+
+  if (insertAt >= 0) {
+    if (buf.cursor.y >= insertAt) buf.cursor.y++;
+  } else if (buf.cursor.y > removeAt) {
+    buf.cursor.y--;
+  } else if (buf.cursor.y === removeAt) {
+    buf.cursor.y = Math.max(0, removeAt - 1);
+  }
+  buf.invalidateHighlightFrom?.(row, { force: true });
+  buf.modified = true;
+  buf.ensureCursor?.();
+  return insertAt >= 0 ? "added" : "removed";
+}
+
 function detectFileFormat(text, fallback = DEFAULT_SETTINGS.fileformat) {
   if (text.length === 0) return fallback === "dos" ? "dos" : "unix";
   const newlineIdx = text.indexOf("\n");
@@ -1425,8 +1489,8 @@ class BufferModel {
     this.cursor.x = x;
   }
 
-  pushUndo() {
-    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return;
+  pushUndo(force = false) {
+    if (!force && this.isEditLocked() && !canEditMdcuiAtCursor(this)) return;
     this.undoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
     this._undoSerial = (this._undoSerial ?? 0) + 1;
     if (this.undoStack.length > 500) this.undoStack.shift();
@@ -3921,6 +3985,12 @@ class App {
   async handleMdcuiCellCallback(buf, y = buf?.cursor?.y ?? 0, x = buf?.cursor?.x ?? 0, trigger = "unknown") {
     const payload = mdcuiCellPayload(buf, y, x, trigger);
     if (!payload) return false;
+    const resizeResult = resizeMdcuiTextBlock(buf, y, x);
+    if (resizeResult) {
+      if (resizeResult === "added") this.message = "Added text row";
+      else if (resizeResult === "removed") this.message = "Removed empty text row";
+      return true;
+    }
     const callback = this.context?.mdcuiCallback ?? globalThis.mdcuiCallback;
     if (typeof callback === "function") {
       try {
