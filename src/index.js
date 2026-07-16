@@ -869,6 +869,7 @@ function parseArgs(argv) {
     docs: false,
     changelog: false,
     testapp: false,
+    demo: false,
     buildExe: false,
     buildFor: "",
     configDir: "",
@@ -907,6 +908,7 @@ function parseArgs(argv) {
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
+    else if (arg === "--demo") flags.demo = true;
     else if (arg === "--build-exe") flags.buildExe = true;
     else if (arg === "--build-for") flags.buildFor = argv[++i] ?? "";
     else if (arg === "-debug") flags.debug = true;
@@ -978,6 +980,8 @@ Information:
       Show CHANGELOG.md & exit
   --testapp.md
       Write testapp.md to stdout & exit
+  --demo
+      Write the bundled testapp.md to the current directory, then open it in the TUI
   -profile, --profile
       Print startup performance profile and exit
 
@@ -7333,8 +7337,11 @@ async function printChangelogDocs() {
 }
 
 async function printTestappSource() {
-  const testapp = readInternalAssetText("testapp.md") ?? await Bun.file(join(REPO_ROOT, "testapp.md")).text();
-  process.stdout.write(testapp);
+  process.stdout.write(await bundledTestappSource());
+}
+
+async function bundledTestappSource() {
+  return readInternalAssetText("testapp.md") ?? await Bun.file(join(REPO_ROOT, "testapp.md")).text();
 }
 
 async function main() {
@@ -7391,6 +7398,11 @@ async function main() {
   if (flags.testapp) {
     await printTestappSource();
     return;
+  }
+  if (flags.demo) {
+    const demoPath = resolve("testapp.md");
+    await Bun.write(demoPath, await bundledTestappSource());
+    rawFiles.splice(0, rawFiles.length, demoPath);
   }
   if (flags.options) {
     for (const [key, value] of Object.entries(defaultAllSettings()).sort(([a], [b]) => a.localeCompare(b))) {
