@@ -9,6 +9,138 @@ let apilist = new Map()
 
 export const jss = JSON.stringify
 
+function parseDollarIdentity(input, { selector = false } = {})
+{
+  const text = String(input ?? "").trim();
+  const match = text.match(/^([A-Za-z_][\w:-]*)?(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
+  if (!match || (!match[1] && !match[2] && !match[3])) return null;
+  if (!selector && !match[1]) return null;
+  return {
+    tag: match[1] || null,
+    id: match[2] || null,
+    classes: match[3] ? match[3].slice(1).split(".") : [],
+  };
+}
+
+function matchesDollarIdentity(identity, selector)
+{
+  if (selector.tag && identity.tag !== selector.tag) return false;
+  if (selector.id && identity.id !== selector.id) return false;
+  return selector.classes.every(name => identity.classes.includes(name));
+}
+
+function findMarkdownCodeElement(documentObject, selector)
+{
+  for (const code of documentObject?.querySelectorAll?.("pre > code") ?? []) {
+    for (const className of code.classList ?? []) {
+      if (!className.startsWith("language-")) continue;
+      const identity = parseDollarIdentity(className.slice("language-".length));
+      if (identity && matchesDollarIdentity(identity, selector)) return code;
+    }
+  }
+  return null;
+}
+
+function findWebDollarElement(documentObject, selectorText, selector)
+{
+  try {
+    const direct = documentObject?.querySelector?.(String(selectorText));
+    if (direct) return direct;
+  } catch {}
+
+  for (const element of documentObject?.querySelectorAll?.("[data-mdcui-tag]") ?? []) {
+    const identity = {
+      tag: element.getAttribute?.("data-mdcui-tag") || null,
+      id: element.id || null,
+      classes: [...(element.classList ?? [])],
+    };
+    if (matchesDollarIdentity(identity, selector)) return element;
+  }
+
+  return findMarkdownCodeElement(documentObject, selector);
+}
+
+function webDollarValue(element)
+{
+  if (element && "value" in element) return String(element.value ?? "");
+  return String(element?.textContent ?? "").replace(/\n$/, "");
+}
+
+function resizeWebTextarea(element)
+{
+  if (!element || String(element.tagName ?? "").toLowerCase() !== "textarea") return;
+  try {
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+    const lineHeight = Number.parseFloat(
+      element.ownerDocument?.defaultView?.getComputedStyle?.(element)?.lineHeight,
+    );
+    if (Number.isFinite(lineHeight) && lineHeight > 0)
+      element.rows = Math.max(1, Math.ceil(element.scrollHeight / lineHeight));
+  } catch {}
+}
+
+function installWebTextareaResize(target)
+{
+  const documentObject = target?.document;
+  if (!documentObject || documentObject.__mdcuiTextareaResizeInstalled) return;
+  documentObject.__mdcuiTextareaResizeInstalled = true;
+  const resizeAll = () => {
+    for (const element of documentObject.querySelectorAll?.("textarea[data-mdcui-tag]") ?? [])
+      resizeWebTextarea(element);
+  };
+  documentObject.addEventListener?.("input", event => {
+    if (event.target?.matches?.("textarea[data-mdcui-tag]"))
+      resizeWebTextarea(event.target);
+  });
+  target.addEventListener?.("resize", resizeAll);
+  if (documentObject.readyState === "loading")
+    documentObject.addEventListener?.("DOMContentLoaded", resizeAll, { once: true });
+  else
+    queueMicrotask(resizeAll);
+}
+
+export function createWebDollar(documentObject = globalThis.document)
+{
+  return function $(selectorText) {
+    const selector = parseDollarIdentity(selectorText, { selector: true });
+    const selection = {
+      val(...args) {
+        try {
+          if (!selector) return args.length > 0 ? selection : "";
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          if (!element) return args.length > 0 ? selection : "";
+          if (args.length > 0) {
+            const value = String(args[0] ?? "");
+            if ("value" in element) {
+              element.value = value;
+              resizeWebTextarea(element);
+            }
+            else element.textContent = value;
+            return selection;
+          }
+          return webDollarValue(element);
+        } catch {
+          return args.length > 0 ? selection : "";
+        }
+      },
+    };
+    return selection;
+  };
+}
+
+export function installWebDollar(target = globalThis)
+{
+  if (!target?.document) return target?.$;
+  const $ = createWebDollar(target.document);
+  target.$ = $;
+  installWebTextareaResize(target);
+  return $;
+}
+
+if (typeof globalThis.document !== "undefined")
+  installWebDollar(globalThis);
+
 
 export async function evalBack(backmod, qjson)
 {
