@@ -557,6 +557,24 @@ function isReadonlyBuffer(buf) {
   return Boolean(buf?.readonly || buf?.Settings?.readonly || buf?.Type?.Readonly);
 }
 
+function mdcuiEditablePrefixLength(buf, y = buf?.cursor?.y ?? 0) {
+  if (!isMdcuiEncoding(buf?.encoding ?? buf?.Settings?.encoding)) return 0;
+  const line = String(buf?.lines?.[y] ?? "");
+  return /^(?:│|\|) /.test(line) ? 2 : 0;
+}
+
+function canEditMdcuiAtCursor(buf) {
+  const prefixLength = mdcuiEditablePrefixLength(buf);
+  return prefixLength > 0 && (buf?.cursor?.x ?? 0) >= prefixLength;
+}
+
+function canEditMdcuiSelection(buf, selection) {
+  if (!selection) return true;
+  const { first, last } = selectionBounds(selection);
+  const prefixLength = mdcuiEditablePrefixLength(buf, first.y);
+  return first.y === last.y && prefixLength > 0 && first.x >= prefixLength;
+}
+
 function isEditLockedBuffer(buf) {
   return isMdcuiEncoding(buf?.encoding ?? buf?.Settings?.encoding);
 }
@@ -1198,7 +1216,8 @@ class BufferModel {
   }
 
   insert(text) {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return false;
+    if (isMdcuiEncoding(this.encoding) && /[\r\n]/.test(String(text))) return false;
     for (const ch of text) {
       if (ch === "\r" || ch === "\n") this.newline(false);
       else if (ch >= " " || ch === "\t") this.insertChar(ch);
@@ -1207,7 +1226,7 @@ class BufferModel {
   }
 
   insertChar(ch) {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return false;
     if (ch === "\t" && DEFAULT_SETTINGS.tabstospaces) ch = " ".repeat(DEFAULT_SETTINGS.tabsize);
     const line = this.line();
     this.lines[this.cursor.y] = line.slice(0, this.cursor.x) + ch + line.slice(this.cursor.x);
@@ -1218,6 +1237,7 @@ class BufferModel {
   }
 
   newline(autoindent = true) {
+    if (isMdcuiEncoding(this.encoding)) return false;
     if (this.isEditLocked()) return false;
     const line = this.line();
     const left = line.slice(0, this.cursor.x);
@@ -1236,7 +1256,9 @@ class BufferModel {
   }
 
   backspace() {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return false;
+    const mdcuiPrefixLength = mdcuiEditablePrefixLength(this);
+    if (mdcuiPrefixLength > 0 && this.cursor.x <= mdcuiPrefixLength) return false;
     if (this.cursor.x > 0) {
       const line = this.line();
       let start = this.cursor.x - 1;
@@ -1263,7 +1285,7 @@ class BufferModel {
   }
 
   deleteForward() {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return false;
     const line = this.line();
     if (this.cursor.x < line.length) {
       const cp = line.codePointAt(this.cursor.x);
@@ -1272,6 +1294,8 @@ class BufferModel {
       this.invalidateHighlightFrom(this.cursor.y);
       this.modified = true;
       return true;
+    } else if (isMdcuiEncoding(this.encoding)) {
+      return false;
     } else if (this.cursor.y < this.lines.length - 1) {
       this.lines[this.cursor.y] += this.lines[this.cursor.y + 1];
       this.lines.splice(this.cursor.y + 1, 1);
@@ -1402,7 +1426,7 @@ class BufferModel {
   }
 
   pushUndo() {
-    if (this.isEditLocked()) return;
+    if (this.isEditLocked() && !canEditMdcuiAtCursor(this)) return;
     this.undoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
     this._undoSerial = (this._undoSerial ?? 0) + 1;
     if (this.undoStack.length > 500) this.undoStack.shift();
@@ -1410,7 +1434,7 @@ class BufferModel {
   }
 
   undo() {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !isMdcuiEncoding(this.encoding)) return false;
     if (!this.undoStack.length) return false;
     this.redoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
     const s = this.undoStack.pop();
@@ -1423,7 +1447,7 @@ class BufferModel {
   }
 
   redo() {
-    if (this.isEditLocked()) return false;
+    if (this.isEditLocked() && !isMdcuiEncoding(this.encoding)) return false;
     if (!this.redoStack.length) return false;
     this.undoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
     const s = this.redoStack.pop();
@@ -3488,7 +3512,15 @@ class App {
     }
 
     if (event.type === "paste") {
-      if (isEditLockedBuffer(buf)) {
+      if (
+        (isEditLockedBuffer(buf) && !isMdcuiEncoding(buf?.encoding))
+        || (isMdcuiEncoding(buf?.encoding) && (
+          !canEditMdcuiAtCursor(buf)
+          ||
+          /[\r\n]/.test(event.text)
+          || !canEditMdcuiSelection(buf, this.pane?.selection)
+        ))
+      ) {
         this.message = "Buffer is read-only";
         this.render();
         return;
@@ -3866,12 +3898,16 @@ class App {
         break;
       default:
         if (text >= " " || text.includes("\n")) {
-          if (isMdcuiEncoding(buf?.encoding) && text === " ") {
+          if (isMdcuiEncoding(buf?.encoding) && text === " " && !canEditMdcuiAtCursor(buf)) {
             await this.handleMdcuiCellCallback(buf, buf.cursor.y, buf.cursor.x, "space");
             break;
           }
           if (!this._undoInsertChain || this.pane?.selection) {
             buf.pushUndo();
+          }
+          if (isMdcuiEncoding(buf?.encoding) && !canEditMdcuiSelection(buf, this.pane?.selection)) {
+            this.message = "Protected mdcui prefix";
+            break;
           }
           this._undoInsertChain = true;
           if (this.pane?.selection) deleteSelection(buf, this.pane);
@@ -5674,6 +5710,14 @@ class App {
         this._freshClip = false;
         const pasted = this.clipboard.read();
         if (pasted) {
+          if (isMdcuiEncoding(buf?.encoding) && (
+            /[\r\n]/.test(pasted)
+            || !canEditMdcuiAtCursor(buf)
+            || !canEditMdcuiSelection(buf, this.pane?.selection)
+          )) {
+            this.message = "Protected mdcui content";
+            break;
+          }
           buf.pushUndo();
           if (this.pane?.selection) deleteSelection(buf, this.pane);
           buf.insert(pasted);
@@ -7902,11 +7946,16 @@ function outdentLine(buf, _ctx) {
 }
 
 function deleteSelection(buf, pane) {
-  if (isEditLockedBuffer(buf)) return "";
   const selection = pane?.selection;
   if (!selection || !buf) return "";
   const text = getSelectionText(buf, selection);
   const { first, last } = selectionBounds(selection);
+  if (isMdcuiEncoding(buf?.encoding)) {
+    const prefixLength = mdcuiEditablePrefixLength(buf, first.y);
+    if (first.y !== last.y || prefixLength === 0 || first.x < prefixLength) return "";
+  } else if (isEditLockedBuffer(buf)) {
+    return "";
+  }
   if (first.y === last.y) {
     const line = buf.lines[first.y] ?? "";
     buf.lines[first.y] = line.slice(0, first.x) + line.slice(last.x);
