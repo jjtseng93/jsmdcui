@@ -870,6 +870,7 @@ function parseArgs(argv) {
     changelog: false,
     testapp: false,
     demo: false,
+    allowUrl: false,
     buildExe: false,
     buildFor: "",
     configDir: "",
@@ -909,6 +910,7 @@ function parseArgs(argv) {
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo") flags.demo = true;
+    else if (arg === "--allow-url") flags.allowUrl = true;
     else if (arg === "--build-exe") flags.buildExe = true;
     else if (arg === "--build-for") flags.buildFor = argv[++i] ?? "";
     else if (arg === "-debug") flags.debug = true;
@@ -986,6 +988,10 @@ Demo:
       Write the bundled testapp.md to stdout & exit
   --demo
       Outputs & overwrites ./testapp.md, opens it in the TUI, and writes 5 generated files
+
+Remote Markdown:
+  --allow-url
+      Download HTTP(S) Markdown to cwd, write 5 generated files, and allow its code to run
 
 Experimental:
   --build-exe                   Build a Bun single-file executable and exit
@@ -6587,6 +6593,17 @@ async function loadBufferForPath(pathOrUrl, context, command = {}, { interactive
   const loadContext = interactive
     ? { ...context, inputEncoding: defaultAllSettings().encoding, encodingExplicit: false }
     : context;
+  if (isHttpUrl(pathOrUrl) && loadContext.allowUrl) {
+    const url = new URL(pathOrUrl);
+    let name;
+    try { name = decodeURIComponent(basename(url.pathname)); }
+    catch { name = basename(url.pathname); }
+    if (!name) name = "remote.md";
+    if (!name.toLowerCase().endsWith(".md")) name += ".md";
+    const localPath = resolve(name);
+    await Bun.write(localPath, await fetchHttpBytes(pathOrUrl));
+    return await loadBufferForPath(localPath, loadContext, command, { interactive });
+  }
   let buffer;
   if (isHttpUrl(pathOrUrl)) {
     let encoding = loadContext.inputEncoding ?? loadContext.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
@@ -7486,7 +7503,7 @@ async function main() {
 
   const { files, command } = parseInput(rawFiles);
   const jsPlugins = new JsPluginManager();
-  const context = { colorscheme, syntaxDefinitions, config, runtime, jsPlugins, encodingExplicit };
+  const context = { colorscheme, syntaxDefinitions, config, runtime, jsPlugins, encodingExplicit, allowUrl: flags.allowUrl };
   jsPlugins.setContext(context);
   buildMicroGlobal(jsPlugins);   // sets globalThis.micro
 

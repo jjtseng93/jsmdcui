@@ -82,6 +82,7 @@ The command table below uses the cloned-source form. If you use npx, replace
 | `bun src/index.js --cat app.md` | Render the terminal version to stdout, write five generated files beside it, and exit. |
 | `bun src/index.js --testapp.md` | Write the bundled `testapp.md` source to stdout and exit. |
 | `bun src/index.js --demo` | Outputs & overwrites `./testapp.md`, opens it in the terminal UI, and writes 5 generated files beside it. |
+| `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory, write 5 generated files, and allow its embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise use the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |
 | `PORT=8080 bun src/index.js --wui app.md` | Start the browser UI on another port. |
