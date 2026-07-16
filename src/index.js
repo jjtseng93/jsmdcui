@@ -1134,7 +1134,7 @@ class BufferModel {
     let text = "";
     let readonly = false;
     let modTimeMs = null;
-    let encoding = context.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
+    let encoding = context.inputEncoding ?? context.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
     let ansiStyleLines = null;
     let ansiText = null;
     let sourceText = null;
@@ -4629,7 +4629,7 @@ class App {
   async openInPane(path) {
     try {
       const previous = this.pane.buffer;
-      const buffer = await loadBufferForPath(path, this.context);
+      const buffer = await loadBufferForPath(path, this.context, {}, { interactive: true });
       this.pane.buffer = buffer;
       this.pane.selection = null;
       if (previous !== buffer) this._closeBufferIfUnused(previous);
@@ -4642,7 +4642,7 @@ class App {
 
   async openFile(path) {
     try {
-      const buffer = await loadBufferForPath(path, this.context);
+      const buffer = await loadBufferForPath(path, this.context, {}, { interactive: true });
       if (isEmptyUntitledBuffer(this.buffer)) {
         const previous = this.pane.buffer;
         this.pane.buffer = buffer;
@@ -4658,6 +4658,34 @@ class App {
     } catch (error) {
       this.message = String(error.message || error);
     }
+  }
+
+  reconcileReopenedBuffer(buffer) {
+    if (!buffer || isHttpUrl(buffer.path)) return buffer;
+    const map = this.context?._openBuffers;
+    if (!map) return buffer;
+    const absPath = resolve(buffer.AbsPath || buffer.path);
+
+    if (isMdcuiEncoding(buffer.encoding)) {
+      if (map.get(absPath) === buffer) map.delete(absPath);
+      buffer._openBufferMap = null;
+      return buffer;
+    }
+
+    const existing = map.get(absPath);
+    if (existing && existing !== buffer && !isMdcuiEncoding(existing.encoding)) {
+      for (const tab of this.tabs) {
+        for (const pane of tab.panes()) {
+          if (pane.buffer === buffer) pane.buffer = existing;
+          if (pane.prevBuffer === buffer) pane.prevBuffer = existing;
+        }
+      }
+      return existing;
+    }
+
+    buffer._openBufferMap = map;
+    map.set(absPath, buffer);
+    return buffer;
   }
 
   async save({ force = false } = {}) {
@@ -5115,9 +5143,10 @@ class App {
       }
       case "reopen": {
         if (!buf?.path) { this.message = "No file to reopen"; break; }
+        let requestedEncoding = null;
         if (cmdArgs[0]) {
           try {
-            buf.SetOption("encoding", cmdArgs[0]);
+            requestedEncoding = normalizeEncodingLabel(cmdArgs[0]);
           } catch (error) {
             this.message = String(error.message || error);
             break;
@@ -5125,9 +5154,24 @@ class App {
         }
         const doReopen = async () => {
           try {
+            if (isMdcuiEncoding(requestedEncoding)) {
+              const detachedContext = { ...this.context, inputEncoding: "mdcui", encodingExplicit: true };
+              const reopened = await loadBufferForPath(buf.path, detachedContext);
+              const previous = this.pane.buffer;
+              this.pane.buffer = reopened;
+              this.pane.selection = null;
+              if (previous !== reopened) this._closeBufferIfUnused(previous);
+              await this.context.plugins?.run("onBufferOpen", reopened);
+              await this.context.jsPlugins?.run("onBufferOpen", reopened);
+              this.message = `Reopened ${reopened.name} as ${reopened.encoding}`;
+              this.render();
+              return;
+            }
+            if (requestedEncoding) buf.SetOption("encoding", requestedEncoding);
             await buf.reopen(this.context);
-            if (this.pane?.buffer === buf) this.pane.selection = null;
-            this.message = `Reopened ${buf.name} as ${buf.encoding}`;
+            const reopened = this.reconcileReopenedBuffer(buf);
+            if (this.pane?.buffer === reopened) this.pane.selection = null;
+            this.message = `Reopened ${reopened.name} as ${reopened.encoding}`;
           } catch (error) {
             this.message = String(error.message || error);
           }
@@ -5233,7 +5277,7 @@ class App {
       case "vsplit": {
         let newBuf;
         if (cmdArgs.length > 0) {
-          try { newBuf = await loadBufferForPath(resolve(expandHome(cmdArgs[0])), this.context); }
+          try { newBuf = await loadBufferForPath(resolve(expandHome(cmdArgs[0])), this.context, {}, { interactive: true }); }
           catch (err) { this.message = err.message; break; }
         } else {
           newBuf = new BufferModel({ command: {} });
@@ -5246,7 +5290,7 @@ class App {
       case "hsplit": {
         let newBuf;
         if (cmdArgs.length > 0) {
-          try { newBuf = await loadBufferForPath(resolve(expandHome(cmdArgs[0])), this.context); }
+          try { newBuf = await loadBufferForPath(resolve(expandHome(cmdArgs[0])), this.context, {}, { interactive: true }); }
           catch (err) { this.message = err.message; break; }
         } else {
           newBuf = new BufferModel({ command: {} });
@@ -6533,11 +6577,14 @@ function commandHasStartupJump(command = {}) {
   return commandHasStartCursor(command) || Boolean(command.searchRegex);
 }
 
-async function loadBufferForPath(pathOrUrl, context, command = {}) {
+async function loadBufferForPath(pathOrUrl, context, command = {}, { interactive = false } = {}) {
+  const loadContext = interactive
+    ? { ...context, inputEncoding: defaultAllSettings().encoding, encodingExplicit: false }
+    : context;
   let buffer;
   if (isHttpUrl(pathOrUrl)) {
-    let encoding = context.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
-    const decoded = await fetchTextWithEncoding(pathOrUrl, encoding, !context.encodingExplicit);
+    let encoding = loadContext.inputEncoding ?? loadContext.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding;
+    const decoded = await fetchTextWithEncoding(pathOrUrl, encoding, !loadContext.encodingExplicit);
     const text = decoded.text;
     encoding = decoded.encoding;
     const urlPath = pathOrUrl.replace(/[?#].*$/, "");
@@ -6553,13 +6600,18 @@ async function loadBufferForPath(pathOrUrl, context, command = {}) {
       mdcuiRenderWidth: decoded.mdcuiRenderWidth ?? 0,
     });
     buffer._configDir = context?.config?.configDir ?? null;
-    attachSyntax(buffer, context, urlPath, text);
+    attachSyntax(buffer, loadContext, urlPath, text);
   } else {
     if (!context._openBuffers) context._openBuffers = new Map();
     const absPath = resolve(pathOrUrl);
     const existing = context._openBuffers.get(absPath);
-    if (existing) return existing;
-    buffer = await BufferModel.fromFile(absPath, command, context);
+    const requestedEncoding = encodingForPath(
+      absPath,
+      loadContext.inputEncoding ?? loadContext.config?.globalSettings?.encoding ?? DEFAULT_SETTINGS.encoding,
+      !loadContext.encodingExplicit,
+    );
+    if (existing && !isMdcuiEncoding(existing.encoding) && !isMdcuiEncoding(requestedEncoding)) return existing;
+    buffer = await BufferModel.fromFile(absPath, command, loadContext);
     // Check for crash-recovery backup before returning the buffer.
     const promptFn = context._termPrompt;
     if (promptFn && buffer._configDir) {
@@ -6570,8 +6622,12 @@ async function loadBufferForPath(pathOrUrl, context, command = {}) {
         attachSyntax(buffer, context, absPath, buffer.lines.join("\n"));
       }
     }
-    buffer._openBufferMap = context._openBuffers;
-    context._openBuffers.set(absPath, buffer);
+    // mdcui is a derived, read-only view. Keep every view independent and out
+    // of the same-path cache used by normal editable buffers.
+    if (!isMdcuiEncoding(buffer.encoding)) {
+      buffer._openBufferMap = context._openBuffers;
+      context._openBuffers.set(absPath, buffer);
+    }
   }
   if (DEFAULT_SETTINGS.savecursor && !commandHasStartupJump(command) && context?.cursorStates?.[pathOrUrl]) {
     const saved = context.cursorStates[pathOrUrl];

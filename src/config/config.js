@@ -27,6 +27,9 @@ export class Config {
     const text = await readFile(path, "utf8");
     if (text.trimStart().startsWith("null") || text.trim() === "") return;
     this.parsedSettings = Bun.JSON5.parse(text);
+    // jsmdcui chooses the input encoding per invocation/buffer. A persisted
+    // global encoding must neither affect startup nor survive the next save.
+    delete this.parsedSettings.encoding;
     this.applyParsedSettings(this.parsedSettings);
   }
 

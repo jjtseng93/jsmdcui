@@ -98,7 +98,7 @@ export const OPTION_CHOICES = {
 
 // Settings that are buffer-local only and must never be written to the global config file.
 // Mirrors Go micro's config.LocalSettings.
-export const LOCAL_SETTINGS = new Set(["readonly", "filetype", "fileformat"]);
+export const LOCAL_SETTINGS = new Set(["readonly", "filetype", "fileformat", "encoding"]);
 
 export function defaultAllSettings() {
   return { ...DEFAULT_COMMON_SETTINGS, ...DEFAULT_GLOBAL_ONLY_SETTINGS };

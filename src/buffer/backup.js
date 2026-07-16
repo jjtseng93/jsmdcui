@@ -5,8 +5,13 @@ import { existsSync, statSync, unlinkSync } from "node:fs";
 import { mkdir, writeFile, readFile, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { isMdcuiEncoding } from "../runtime/encodings.js";
 
 export const BACKUP_SUFFIX = ".micro-backup";
+
+function isMdcuiBuffer(buf) {
+  return isMdcuiEncoding(buf?.encoding ?? buf?.Settings?.encoding);
+}
 
 export function getBackupDir(buf, configDir) {
   const raw = String(buf?.Settings?.backupdir ?? "");
@@ -49,7 +54,7 @@ export function determineBackupPath(backupDirPath, absPath) {
 }
 
 export async function writeBackup(buf, configDir, path = buf?.AbsPath ?? buf?.path, { force = false } = {}) {
-  if ((!force && !buf?.Settings?.backup) || !path || buf.type !== "default") return false;
+  if (isMdcuiBuffer(buf) || (!force && !buf?.Settings?.backup) || !path || buf.type !== "default") return false;
   const dir = getBackupDir(buf, configDir);
   await mkdir(dir, { recursive: true });
   const { name, resolveName } = determineBackupPath(dir, path);
@@ -66,7 +71,7 @@ export async function writeBackup(buf, configDir, path = buf?.AbsPath ?? buf?.pa
 }
 
 export function removeBackup(buf, configDir, path = buf?.AbsPath ?? buf?.path) {
-  if (buf?.Settings?.permbackup || buf?._forceKeepBackup) return;
+  if (isMdcuiBuffer(buf) || buf?.Settings?.permbackup || buf?._forceKeepBackup) return;
   if (!path || buf.type !== "default") return;
   const dir = getBackupDir(buf, configDir);
   const { name, resolveName } = determineBackupPath(dir, path);
@@ -77,7 +82,7 @@ export function removeBackup(buf, configDir, path = buf?.AbsPath ?? buf?.path) {
 // promptFn(msg) -> Promise<string>
 // Returns { recovered: bool, abort: bool }
 export async function applyBackup(buf, configDir, promptFn) {
-  if (!buf?.Settings?.backup || buf?.Settings?.permbackup) return { recovered: false, abort: false };
+  if (isMdcuiBuffer(buf) || !buf?.Settings?.backup || buf?.Settings?.permbackup) return { recovered: false, abort: false };
   if (!buf.path || buf.type !== "default") return { recovered: false, abort: false };
 
   const dir = getBackupDir(buf, configDir);
