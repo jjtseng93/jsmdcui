@@ -38,7 +38,7 @@ export const DEFAULT_COMMON_SETTINGS = {
   scrollspeed: 2,
   showchars: "",
   smartpaste: true,
-  softwrap: false,
+  softwrap: true,
   splitbottom: true,
   splitright: true,
   statusformatl: "$(filename) $(modified)$(overwrite)($(line),$(col)) $(status.paste)| ft:$(opt:filetype) | $(opt:fileformat) | $(opt:encoding)",

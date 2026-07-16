@@ -189,6 +189,54 @@ export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
   )
 }
 
+function parseWuiControlIdentity(info)
+{
+  const match = String(info ?? "").match(/^([A-Za-z_][\w:-]*)(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
+  if (!match || !["text", "textarea"].includes(match[1])) return null;
+  return {
+    tag: match[1],
+    id: match[2] || "",
+    classes: match[3] ? match[3].slice(1).split(".") : [],
+  };
+}
+
+function escapeHtmlAttribute(value)
+{
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+export function convertWuiTextareas(html)
+{
+  return String(html).replace(
+    /<pre><code class="language-([^"]+)">([^]*?)<\/code><\/pre>/g,
+    (whole, info, content) => {
+      const identity = parseWuiControlIdentity(info);
+      if (!identity) return whole;
+      const value = content.replace(/\n$/, "");
+      const contentLines = value.split("\n");
+      const cols = Math.max(1, ...contentLines.map(line => [...line].length));
+      const attrs = [
+        `data-mdcui-tag="${identity.tag}"`,
+        `data-mdcui-language="${escapeHtmlAttribute(info)}"`,
+        identity.id ? `id="${escapeHtmlAttribute(identity.id)}"` : "",
+        `class="${escapeHtmlAttribute([
+          `language-${info}`,
+          ...identity.classes,
+        ].join(" "))}"`,
+        `rows="${Math.max(1, contentLines.length)}"`,
+        `cols="${cols}"`,
+        'wrap="soft"',
+        'style="box-sizing:border-box;max-width:100%;width:100%;resize:vertical;overflow-y:hidden"',
+      ].filter(Boolean).join(" ");
+      return `<textarea ${attrs}>${value}</textarea>`;
+    },
+  );
+}
+
 export async function createWui(md,mdpath) // HTML
 {
   
@@ -209,16 +257,31 @@ export async function createWui(md,mdpath) // HTML
     'class="task-list-item-checkbox" disabled',
     'class="task-list-item-checkbox"'
   )
+
+  md = convertWuiTextareas(md)
   
   const mdb = path.basename(mdpath);
   
-  
-  md += `
-
-<scr`+`ipt type="module" src="./${mdb}.front.js">
-</scr`+`ipt>
-
-  `;
+  const moduleScript = `<scr`+`ipt type="module" src="./${mdb}.front.js"></scr`+`ipt>`;
+  if (!/^\s*<!doctype html>/i.test(md)) {
+    md = `<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtmlAttribute(mdb)}</title>
+</head>
+<body>
+${md}
+${moduleScript}
+</body>
+</html>
+`;
+  } else if (/<\/body\s*>/i.test(md)) {
+    md = md.replace(/<\/body\s*>/i, `${moduleScript}\n</body>`);
+  } else {
+    md += `\n${moduleScript}\n`;
+  }
   
   
   await Bun.write(mdpath+".html",md)
