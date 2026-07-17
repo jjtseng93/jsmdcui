@@ -99,6 +99,7 @@ import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
 import { toggleTaskCheckboxBeforeColumn } from "./cui/task-checkbox.mjs";
+import { checkMarkdownIdCollisions, formatMarkdownIdCheck } from "./cui/id-collision.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
@@ -948,6 +949,7 @@ function parseArgs(argv) {
     options: false,
     help: false,
     clean: false,
+    check: false,
     cat: false,
     docs: false,
     exportReadme: false,
@@ -974,6 +976,7 @@ function parseArgs(argv) {
     else if (arg === "-options") flags.options = true;
     else if (arg === "-help" || arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "-clean") flags.clean = true;
+    else if (arg === "--check") flags.check = true;
     else if (arg === "--cat" || arg === "-cat" || arg === "--ccat" || arg === "-ccat" || arg === "--bat" || arg === "-bat" || arg === "--glow" || arg === "-glow") flags.cat = true;
     else if (arg === "--xxd" || arg === "--hexdump") {
       flags.cat = true;
@@ -1029,6 +1032,9 @@ function usage() {
   ${pkg.name} --wui [FILE.md]
 
 Modes:
+  --check FILE.md
+      Check heading and text-control IDs for collisions, print details, and exit
+      Exits 0 when IDs are unique, 1 on collisions, and 2 on usage/read errors
   --wui [FILE.md]
       Generate or overwrite Markdown UI files beside FILE.md and start the server
       Without FILE.md, use the existing ./testapp.md without overwriting it
@@ -7587,6 +7593,25 @@ async function main() {
     const externalName = clipboard.methodName();
     const backends = osc52Available ? `${externalName}, OSC 52` : externalName;
     console.log("Clipboard:", backends);
+    return;
+  }
+  if (flags.check) {
+    if (rawFiles.length !== 1) {
+      console.error("Usage: jsmdcui --check FILE.md");
+      process.exitCode = 2;
+      return;
+    }
+    const checkPath = resolve(rawFiles[0]);
+    try {
+      const file = Bun.file(checkPath);
+      if (!(await file.exists())) throw new Error("file not found");
+      const result = checkMarkdownIdCollisions(await file.text());
+      process.stdout.write(Bun.markdown.ansi(formatMarkdownIdCheck(checkPath, result)));
+      if (result.collisions.length) process.exitCode = 1;
+    } catch (error) {
+      console.error(`Cannot check ${checkPath}: ${error?.message || error}`);
+      process.exitCode = 2;
+    }
     return;
   }
   if (flags.docs) {
