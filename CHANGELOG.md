@@ -2,6 +2,54 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.6.1] - 2026-07-18
+
+This update adds Markdown UI ID-collision diagnostics and bundles a practical
+Bun.Image processor demo in English and Traditional Chinese.
+
+### Added
+
+- Add `--check FILE.md` to inspect Markdown heading and text-control IDs
+  without opening a UI or writing generated companion files. The report uses
+  `Bun.markdown.ansi()` headings and nested lists, identifies every collision
+  by ID, source type, line number, and original declaration, and exits with
+  status `0` for unique IDs, `1` for collisions, or `2` for usage and read
+  errors.
+- Add `image-processor.md` and `image-processor.zh-TW.md`, runnable Bun.Image
+  tools for the TUI and WUI. They support image metadata inspection, resizing,
+  fit and resampling filters, enlargement prevention, EXIF auto-orientation,
+  rotation, vertical and horizontal mirroring, brightness and saturation
+  adjustment, and JPEG or PNG output options.
+- Add detailed image-processing status fields. Successful writes show the
+  output path, dimensions, byte count, and all selected option values; failed
+  metadata reads and writes show the available error details and stack.
+- Add `--demo-imgtool` and `--demo-imgtool-zh`. Each command preserves an
+  existing local processor Markdown file or writes its bundled language
+  version when missing, then opens it in the TUI.
+- Bundle both image processor Markdown files in the single-executable asset
+  archive and add regression coverage for ID checks and both demo languages.
+
+### Changed
+
+- Consolidate bundled demo Markdown loading behind one
+  `bundledMarkdownSource(filename)` implementation shared by `testapp.md`,
+  `select.md`, and both image processor variants.
+- Document that heading selector values include the complete visible label.
+  Selection parsers should use deliberate substring, prefix, or token checks
+  when labels contain explanatory text instead of assuming exact identifiers.
+- Document that generated heading IDs and explicitly named controls share the
+  same selector namespace and that every selectable ID should be unique.
+
+### Fixed
+
+- Prevent explanatory text in image processor task-list labels from breaking
+  yes/no, fit, filter, and output-format selection parsing.
+- Fix the English image processor status update silently targeting a heading
+  after `## Write Status` generated the same `#write-status` ID as its text
+  control.
+- Catch image metadata and processing failures at both frontend and backend
+  boundaries so errors are displayed in the appropriate status field.
+
 ## [0.6.0] - 2026-07-18
 
 This update turns Markdown headings and task lists into cross-environment form
