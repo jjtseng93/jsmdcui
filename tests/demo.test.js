@@ -5,6 +5,18 @@ import { join } from "node:path";
 
 const tui = join(import.meta.dir, "..", "tui");
 
+test("--help describes the non-overwriting demo behavior", () => {
+  const result = Bun.spawnSync([tui, "--help"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  expect(result.exitCode).toBe(0);
+  const output = result.stdout.toString();
+  expect(output).toContain("use the existing ./testapp.md without overwriting it");
+  expect(output).toContain("If ./testapp.md is missing, write the bundled demo there first");
+});
+
 test("--demo writes bundled testapp.md to cwd before opening it", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-demo-"));
   try {

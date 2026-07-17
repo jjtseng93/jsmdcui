@@ -1026,7 +1026,8 @@ function usage() {
 Modes:
   --wui [FILE.md]
       Generate or overwrite Markdown UI files beside FILE.md and start the server
-      Without FILE.md, use testapp.md and write generated files in the current directory
+      Without FILE.md, use the existing ./testapp.md without overwriting it
+      If ./testapp.md is missing, write the bundled demo there first
   --cat, --ccat, --bat, --glow
       Render file(s) and write to stdout, then exit (.md uses mdcui/createTui)
       A local .md file also writes or overwrites five generated files beside it
@@ -1069,7 +1070,8 @@ Demo:
   --testapp.md
       Write the bundled testapp.md to stdout & exit
   --demo
-      Outputs & overwrites ./testapp.md, opens it in the TUI, and writes 5 generated files
+      Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
+      Open it in the TUI and write 5 generated files beside it
 
 Remote Markdown:
   --allow-url
