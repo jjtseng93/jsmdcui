@@ -66,6 +66,64 @@ function webDollarValue(element)
   return String(element?.textContent ?? "").replace(/\n$/, "");
 }
 
+function isWebHeading(element)
+{
+  return /^h[1-6]$/i.test(String(element?.tagName ?? ""));
+}
+
+function firstHeadingTaskList(heading)
+{
+  for (let sibling = heading?.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    if (isWebHeading(sibling) || String(sibling.tagName ?? "").toLowerCase() === "section")
+      break;
+    const task = sibling.matches?.("li.task-list-item")
+      ? sibling
+      : sibling.querySelector?.("li.task-list-item");
+    if (!task) continue;
+    const list = task.closest?.("ul, ol");
+    if (list) return list;
+  }
+  return null;
+}
+
+function directTaskCheckbox(item)
+{
+  for (const checkbox of item?.querySelectorAll?.('input[type="checkbox"]') ?? []) {
+    if (checkbox.closest?.("li.task-list-item") === item) return checkbox;
+  }
+  return null;
+}
+
+function webTaskItemValue(item, checkbox)
+{
+  const label = checkbox?.closest?.("label");
+  if (label && label.closest?.("li.task-list-item") === item)
+    return String(label.textContent ?? "").trim();
+
+  const copy = item.cloneNode?.(true);
+  for (const nested of copy?.querySelectorAll?.("ul, ol") ?? []) nested.remove?.();
+  for (const input of copy?.querySelectorAll?.('input[type="checkbox"]') ?? []) input.remove?.();
+  return String(copy?.textContent ?? "").trim();
+}
+
+function webHeadingValue(heading)
+{
+  const single = String(heading?.id ?? "").startsWith("select");
+  const list = firstHeadingTaskList(heading);
+  if (!list) return single ? null : [];
+
+  const selected = [];
+  for (const item of list.children ?? []) {
+    if (!item.matches?.("li.task-list-item")) continue;
+    const checkbox = directTaskCheckbox(item);
+    if (!checkbox?.checked) continue;
+    const value = webTaskItemValue(item, checkbox);
+    if (single) return value;
+    selected.push(value);
+  }
+  return single ? null : selected;
+}
+
 function resizeWebTextarea(element)
 {
   if (!element || String(element.tagName ?? "").toLowerCase() !== "textarea") return;
@@ -107,9 +165,13 @@ export function createWebDollar(documentObject = globalThis.document)
     const selection = {
       val(...args) {
         try {
-          if (!selector) return args.length > 0 ? selection : "";
           const element = findWebDollarElement(documentObject, selectorText, selector);
           if (!element) return args.length > 0 ? selection : "";
+          if (isWebHeading(element)) {
+            if (args.length > 0) return selection;
+            return webHeadingValue(element);
+          }
+          if (!selector) return args.length > 0 ? selection : "";
           if (args.length > 0) {
             const value = String(args[0] ?? "");
             if ("value" in element) {
