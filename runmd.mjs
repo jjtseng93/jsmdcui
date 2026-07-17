@@ -244,6 +244,62 @@ export function convertWuiTextareas(html)
   );
 }
 
+export function wrapWuiHeadingSections(html)
+{
+  const input = String(html);
+  const bodyStart = input.match(/<body\b[^>]*>/i);
+  if (bodyStart?.index != null) {
+    const contentStart = bodyStart.index + bodyStart[0].length;
+    const bodyEnd = input.slice(contentStart).search(/<\/body\s*>/i);
+    if (bodyEnd >= 0) {
+      const contentEnd = contentStart + bodyEnd;
+      return input.slice(0, contentStart) +
+        wrapWuiHeadingSections(input.slice(contentStart, contentEnd)) +
+        input.slice(contentEnd);
+    }
+  }
+
+  let markerPrefix = "MDCUI_HEADING_OPAQUE_";
+  while (input.includes(markerPrefix)) markerPrefix = "_" + markerPrefix;
+  const opaqueHtml = [];
+  const searchable = input.replace(
+    /<!--[^]*?-->|<(script|style|pre|code|textarea|template)\b[^>]*>[^]*?<\/\1\s*>/gi,
+    (whole) => {
+      const marker = `\0${markerPrefix}${opaqueHtml.length}\0`;
+      opaqueHtml.push({ marker, html: whole });
+      return marker;
+    }
+  );
+
+  const heading = /<h([1-6])\b[^>]*>[^]*?<\/h\1\s*>/gi;
+  const openLevels = [];
+  let output = "";
+  let cursor = 0;
+  let match;
+
+  while ((match = heading.exec(searchable)) !== null) {
+    const level = Number(match[1]);
+    output += searchable.slice(cursor, match.index);
+    while (openLevels.length && openLevels.at(-1) >= level) {
+      output += "</section>\n";
+      openLevels.pop();
+    }
+    output += `<section>\n${match[0]}`;
+    openLevels.push(level);
+    cursor = heading.lastIndex;
+  }
+
+  output += searchable.slice(cursor);
+  while (openLevels.length) {
+    output += "</section>\n";
+    openLevels.pop();
+  }
+  for (const opaque of opaqueHtml) {
+    output = output.replace(opaque.marker, opaque.html);
+  }
+  return output;
+}
+
 export async function createWui(md,mdpath) // HTML
 {
   
@@ -276,6 +332,7 @@ export async function createWui(md,mdpath) // HTML
   )
 
   md = convertWuiTextareas(md)
+  md = wrapWuiHeadingSections(md)
   
   const mdb = path.basename(mdpath);
   
