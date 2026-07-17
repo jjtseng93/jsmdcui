@@ -78,6 +78,16 @@ npx jsmdcui --demo-select
 ```
 
 ```sh
+# Bun.Image processor demo
+npx jsmdcui --demo-imgtool
+```
+
+```sh
+# Traditional Chinese Bun.Image processor demo
+npx jsmdcui --demo-imgtool-zh
+```
+
+```sh
 # WUI(Web User Interface) Demo
 npx jsmdcui --wui
 ```
@@ -124,6 +134,8 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --export-readme` | Write or overwrite `./README.md` with the bundled README source and exit. |
 | `bun src/index.js --demo` | Use local `testapp.md` when present, otherwise write the bundled demo; open it in the terminal UI and write five generated files beside it. |
 | `bun src/index.js --demo-select` | Use local `select.md` when present, otherwise write the bundled selector demo; open it in the terminal UI and write five generated files beside it. |
+| `bun src/index.js --demo-imgtool` | Use local `image-processor.md` when present, otherwise write the bundled Bun.Image processor; open it in the terminal UI and write five generated files beside it. |
+| `bun src/index.js --demo-imgtool-zh` | Use local `image-processor.zh-TW.md` when present, otherwise write the bundled Traditional Chinese Bun.Image processor; open it in the terminal UI and write five generated files beside it. |
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory, write 5 generated files, and allow its embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |

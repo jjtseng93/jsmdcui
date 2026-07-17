@@ -957,6 +957,8 @@ function parseArgs(argv) {
     testapp: false,
     demo: false,
     demoSelect: false,
+    demoImgtool: false,
+    demoImgtoolZh: false,
     allowUrl: false,
     buildExe: false,
     buildFor: "",
@@ -1000,6 +1002,8 @@ function parseArgs(argv) {
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo") flags.demo = true;
     else if (arg === "--demo-select") flags.demoSelect = true;
+    else if (arg === "--demo-imgtool") flags.demoImgtool = true;
+    else if (arg === "--demo-imgtool-zh") flags.demoImgtoolZh = true;
     else if (arg === "--allow-url") flags.allowUrl = true;
     else if (arg === "--build-exe") flags.buildExe = true;
     else if (arg === "--build-for") flags.buildFor = argv[++i] ?? "";
@@ -1088,6 +1092,12 @@ Demo:
   --demo-select
       Use the existing ./select.md without overwriting it, or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
+  --demo-imgtool
+      Use the existing ./image-processor.md without overwriting it, or write the bundled demo if missing
+      Open the Bun.Image processor in the TUI and write 5 generated files beside it
+  --demo-imgtool-zh
+      Use the existing ./image-processor.zh-TW.md without overwriting it, or write the bundled demo if missing
+      Open the Traditional Chinese Bun.Image processor in the TUI and write 5 generated files beside it
 
 Remote Markdown:
   --allow-url
@@ -7541,15 +7551,11 @@ async function printChangelogDocs() {
 }
 
 async function printTestappSource() {
-  process.stdout.write(await bundledTestappSource());
+  process.stdout.write(await bundledMarkdownSource("testapp.md"));
 }
 
-async function bundledTestappSource() {
-  return readInternalAssetText("testapp.md") ?? await Bun.file(join(REPO_ROOT, "testapp.md")).text();
-}
-
-async function bundledSelectSource() {
-  return readInternalAssetText("select.md") ?? await Bun.file(join(REPO_ROOT, "select.md")).text();
+async function bundledMarkdownSource(filename) {
+  return readInternalAssetText(filename) ?? await Bun.file(join(REPO_ROOT, filename)).text();
 }
 
 async function main() {
@@ -7630,16 +7636,19 @@ async function main() {
     await printTestappSource();
     return;
   }
-  if (flags.demo) {
-    const demoPath = resolve("testapp.md");
+  const demoFilename = flags.demo
+    ? "testapp.md"
+    : flags.demoSelect
+      ? "select.md"
+      : flags.demoImgtool
+        ? "image-processor.md"
+        : flags.demoImgtoolZh
+          ? "image-processor.zh-TW.md"
+          : "";
+  if (demoFilename) {
+    const demoPath = resolve(demoFilename);
     if (!(await Bun.file(demoPath).exists())) {
-      await Bun.write(demoPath, await bundledTestappSource());
-    }
-    rawFiles.splice(0, rawFiles.length, demoPath);
-  } else if (flags.demoSelect) {
-    const demoPath = resolve("select.md");
-    if (!(await Bun.file(demoPath).exists())) {
-      await Bun.write(demoPath, await bundledSelectSource());
+      await Bun.write(demoPath, await bundledMarkdownSource(demoFilename));
     }
     rawFiles.splice(0, rawFiles.length, demoPath);
   }
