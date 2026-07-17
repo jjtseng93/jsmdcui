@@ -98,6 +98,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
+import { toggleTaskCheckboxBeforeColumn } from "./cui/task-checkbox.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
@@ -4067,6 +4068,12 @@ class App {
           this.message = `mdcui js: ${String(error.message || error)}`;
           return true;
         }
+      }
+
+      const checkboxResult = toggleTaskCheckboxBeforeColumn(payload.line, x);
+      if (checkboxResult.toggled) {
+        buf.lines[y] = checkboxResult.line;
+        buf.modified = true;
       }
     
       this.message = `event ${payload.trigger}:`+
