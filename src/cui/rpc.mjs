@@ -163,6 +163,14 @@ export function createWebDollar(documentObject = globalThis.document)
   return function $(selectorText) {
     const selector = parseDollarIdentity(selectorText, { selector: true });
     const selection = {
+      html() {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return element ? String(element.innerHTML ?? "") : "";
+        } catch {
+          return "";
+        }
+      },
       val(...args) {
         try {
           const element = findWebDollarElement(documentObject, selectorText, selector);
