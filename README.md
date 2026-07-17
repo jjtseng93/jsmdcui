@@ -91,8 +91,8 @@ bun src/index.js testapp.md
 bun src/index.js --wui testapp.md
 ```
 
-After starting `--wui`, open the last printed `http://...` URL in a browser.
-Keep the command running while using the CUI App, and press `Ctrl-C` in that terminal to stop the server.
+- After starting `--wui`, open the last printed `http://...` URL in a browser.
+- Keep the command running while using the CUI App, and press `Ctrl-C` in that terminal to stop the server.
 
 ### Usage table
 
