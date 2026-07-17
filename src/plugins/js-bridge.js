@@ -770,6 +770,100 @@ function _blockValue(lines, selector) {
   return value.join("\n");
 }
 
+function _headingSelectorId(input) {
+  const match = String(input ?? "").trim().match(/^#([^\s]+)$/);
+  return match?.[1] ?? null;
+}
+
+function _findHeading(buffer, selector) {
+  const id = _headingSelectorId(selector);
+  const markdown = buffer?._mdcuiTuiSourceText;
+  if (!id || markdown == null || typeof Bun?.markdown?.html !== "function") return undefined;
+
+  const html = String(Bun.markdown.html(markdown, { headings: { ids: true } }));
+  const headings = /<h([1-6])\b([^>]*)>([^]*?)<\/h\1\s*>/gi;
+  let match;
+  let ordinal = 0;
+  while ((match = headings.exec(html)) !== null) {
+    const headingId = match[2].match(/\bid="([^"]*)"/i)?.[1];
+    if (headingId === id) {
+      return {
+        html: match[3],
+        level: Number(match[1]),
+        ordinal,
+      };
+    }
+    ordinal++;
+  }
+  return undefined;
+}
+
+let _headingAnsiPrefixes;
+function _tuiHeadingAnsiPrefixes() {
+  if (_headingAnsiPrefixes) return _headingAnsiPrefixes;
+  const marker = "MDCUI_HEADING_LINE_PROBE";
+  _headingAnsiPrefixes = new Map();
+  for (let level = 1; level <= 6; level++) {
+    const rendered = String(Bun.markdown.ansi(
+      `${"#".repeat(level)} ${marker}`,
+      { hyperlinks: true, columns: 80 },
+    ));
+    const line = rendered.split("\n").find((item) => item.includes(marker));
+    if (line) _headingAnsiPrefixes.set(level, line.slice(0, line.indexOf(marker)));
+  }
+  return _headingAnsiPrefixes;
+}
+
+function _headingTuiLine(buffer, heading) {
+  const ansiText = buffer?._mdcuiAnsiText;
+  if (!heading || typeof ansiText !== "string") return 0;
+  const tuiHeadings = _tuiHeadingLines(buffer);
+  const exact = tuiHeadings[heading.ordinal];
+  if (exact?.level === heading.level) return exact.line;
+  return 0;
+}
+
+function _tuiHeadingLines(buffer) {
+  const ansiText = buffer?._mdcuiAnsiText;
+  if (typeof ansiText !== "string") return [];
+  const prefixes = _tuiHeadingAnsiPrefixes();
+  const tuiHeadings = [];
+  for (const [lineIndex, line] of ansiText.split("\n").entries()) {
+    for (const [level, prefix] of prefixes) {
+      if (line.startsWith(prefix)) {
+        tuiHeadings.push({ level, line: lineIndex + 1 });
+        break;
+      }
+    }
+  }
+  return tuiHeadings;
+}
+
+function _headingCheckboxValue(buffer, heading, id) {
+  const headingLine = _headingTuiLine(buffer, heading);
+  if (!headingLine || !Array.isArray(buffer?.lines))
+    return id.startsWith("select") ? null : [];
+
+  const tuiHeadings = _tuiHeadingLines(buffer);
+  const nextHeading = tuiHeadings[heading.ordinal + 1];
+  const endLine = nextHeading?.line ?? buffer.lines.length + 1;
+
+  let optionIndent = null;
+  const selected = [];
+  for (let lineNumber = headingLine + 1; lineNumber < endLine; lineNumber++) {
+    const line = String(buffer.lines[lineNumber - 1] ?? "");
+    const checkbox = line.match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
+    if (!checkbox) continue;
+    const indent = checkbox[1].length;
+    if (optionIndent == null) optionIndent = indent;
+    if (indent !== optionIndent || checkbox[2] !== "☒") continue;
+    const value = checkbox[3].trim();
+    if (id.startsWith("select")) return value;
+    selected.push(value);
+  }
+  return id.startsWith("select") ? null : selected;
+}
+
 function _spliceBufferLines(buffer, start, deleteCount, replacement) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
   buffer.lines.splice(start, deleteCount, ...replacement);
@@ -828,11 +922,32 @@ export function createTuiSelector(getBuffer) {
   return function $(selector) {
     const parsedSelector = _parseBlockIdentity(selector, { selector: true });
     const selection = {
+      html() {
+        try {
+          return _findHeading(getBuffer?.(), selector)?.html ?? "";
+        } catch {
+          return "";
+        }
+      },
+      line() {
+        try {
+          const buffer = getBuffer?.();
+          return _headingTuiLine(buffer, _findHeading(buffer, selector));
+        } catch {
+          return 0;
+        }
+      },
       val(...args) {
         try {
-          if (!parsedSelector) return args.length > 0 ? selection : "";
           const buffer = getBuffer?.();
           if (!buffer) return args.length > 0 ? selection : "";
+          const heading = _findHeading(buffer, selector);
+          const headingId = _headingSelectorId(selector);
+          if (heading && headingId) {
+            if (args.length > 0) return selection;
+            return _headingCheckboxValue(buffer, heading, headingId);
+          }
+          if (!parsedSelector) return args.length > 0 ? selection : "";
           const lines = Array.isArray(buffer.lines)
             ? buffer.lines
             : String(buffer).replace(/\r\n?/g, "\n").split("\n");
