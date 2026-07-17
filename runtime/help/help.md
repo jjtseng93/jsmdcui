@@ -27,6 +27,12 @@ Editable in both TUI and WUI
 - Original projects:
 - https://github.com/jjtseng93/bunmicro
 - https://github.com/micro-editor/micro
+- .
+- This README is itself a runnable app.
+
+```sh
+npx jsmdcui@latest README.md
+```
 
 ## Quick start
 
