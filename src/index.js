@@ -949,6 +949,7 @@ function parseArgs(argv) {
     clean: false,
     cat: false,
     docs: false,
+    exportReadme: false,
     changelog: false,
     testapp: false,
     demo: false,
@@ -989,6 +990,7 @@ function parseArgs(argv) {
       flags.settings.set("encoding", "utf-8");
     }
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
+    else if (arg === "--export-readme") flags.exportReadme = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo") flags.demo = true;
@@ -1061,6 +1063,8 @@ Information:
       Show version+backend info & exit
   --docs, --readme
       Show ${pkg.name}'s README.md & exit
+  --export-readme
+      Write or overwrite ./README.md with the bundled README.md & exit
   --changelog
       Show CHANGELOG.md & exit
   -profile, --profile
@@ -7500,8 +7504,17 @@ async function loadBuffers(files, command) {
 }
 
 async function printReadmeDocs() {
-  const readme = readInternalAssetText("README.md") ?? await Bun.file(join(REPO_ROOT, "README.md")).text();
-  process.stdout.write(Bun.markdown.ansi(readme, { hyperlinks: true }));
+  process.stdout.write(Bun.markdown.ansi(await bundledReadmeSource(), { hyperlinks: true }));
+}
+
+async function bundledReadmeSource() {
+  return readInternalAssetText("README.md") ?? await Bun.file(join(REPO_ROOT, "README.md")).text();
+}
+
+async function exportReadme() {
+  const readmePath = resolve("README.md");
+  await Bun.write(readmePath, await bundledReadmeSource());
+  console.log(`Wrote ${readmePath}`);
 }
 
 async function printChangelogDocs() {
@@ -7562,6 +7575,10 @@ async function main() {
   }
   if (flags.docs) {
     await printReadmeDocs();
+    return;
+  }
+  if (flags.exportReadme) {
+    await exportReadme();
     return;
   }
   if (flags.changelog) {

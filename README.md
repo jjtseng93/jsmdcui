@@ -160,11 +160,10 @@ bun src/index.js app.md
 bun src/index.js --wui app.md
 ```
 
-- The resulting App UI is shown at the beginning
-- Play with it directly if your installation folder is writable (writes 5 generated files)
-  * bun src/index.js
-  * `Ctrl-G` or `Click €→help`
-  * `Ctrl-E or Click €` → `reopen mdcui`
+- The resulting App UI is shown at the beginning of this README.md
+- Run this demo app directly by:
+  * bun src/index.js README.md
+  * If you didn't clone the repo, use --export-readme to write README.md to the current folder
 
 ### Text blocks
 
