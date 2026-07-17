@@ -7572,7 +7572,9 @@ async function main() {
   }
   if (flags.demo) {
     const demoPath = resolve("testapp.md");
-    await Bun.write(demoPath, await bundledTestappSource());
+    if (!(await Bun.file(demoPath).exists())) {
+      await Bun.write(demoPath, await bundledTestappSource());
+    }
     rawFiles.splice(0, rawFiles.length, demoPath);
   }
   if (flags.options) {

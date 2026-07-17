@@ -44,15 +44,18 @@ Choose either of these two ways to run jsmdcui.
 
 ### Route 1: Run with npx
 
-This route requires both `npx` and `bun` on your `PATH`; no source checkout is
-required. Open the normal terminal editor:
+- This route requires both `npx` and `bun` on your `PATH`; no source checkout is
+required. 
+
+#### Open the normal terminal editor
 
 ```sh
 npx jsmdcui
 ```
 
-- Or start the default tui/wui demo:
-  * outputs the bundled testapp.md to the current working directory
+#### Start `testapp.md` as the TUI/WUI demo
+- If `testapp.md` is missing, the bundled copy is written to the current working directory
+- If `testapp.md` already exists, it will be used and won't be overwritten.
 
 ```sh
 # TUI(Terminal User Interface) Demo
@@ -64,8 +67,7 @@ npx jsmdcui --demo
 npx jsmdcui --wui
 ```
 
-If the current directory already contains `testapp.md`, that local file is used
-instead of the bundled demo. To open your own Markdown UI, pass its path:
+#### Open your own Markdown CUI App
 
 ```sh
 npx jsmdcui app.md
@@ -80,20 +82,22 @@ cd jsmdcui
 bun src/index.js testapp.md
 ```
 
-The last command opens the included demo in the terminal. Use the arrow keys to
-move, `Enter` or `Space` to activate an item, and `Ctrl-Q` to quit. To open the
-same demo in a browser instead:
+- The last command opens the included demo in the terminal
+- Use arrow keys to move around
+- `Enter`, `Space`, or mouse click to activate an item, and `Ctrl-Q` to quit.
+- To open the same demo in a browser instead:
 
 ```sh
 bun src/index.js --wui testapp.md
 ```
 
 After starting `--wui`, open the last printed `http://...` URL in a browser.
-Keep the command running while using the page, and press `Ctrl-C` in that
-terminal to stop the server.
+Keep the command running while using the CUI App, and press `Ctrl-C` in that terminal to stop the server.
 
-The command table below uses the cloned-source form. If you use npx, replace
-`bun src/index.js` with `npx jsmdcui`.
+### Usage table
+
+- The command table below uses the cloned-source form. 
+- If you use npx, replace `bun src/index.js` with `npx jsmdcui`
 
 | Command | Result |
 | --- | --- |
@@ -101,9 +105,9 @@ The command table below uses the cloned-source form. If you use npx, replace
 | `bun src/index.js --edit app.md` | Open `app.md` as editable UTF-8 source, overriding automatic Markdown UI detection. |
 | `bun src/index.js --cat app.md` | Render the terminal version to stdout, write five generated files beside it, and exit. |
 | `bun src/index.js --testapp.md` | Write the bundled `testapp.md` source to stdout and exit. |
-| `bun src/index.js --demo` | Outputs & overwrites `./testapp.md`, opens it in the terminal UI, and writes 5 generated files beside it. |
+| `bun src/index.js --demo` | Use local `testapp.md` when present, otherwise write the bundled demo; open it in the terminal UI and write five generated files beside it. |
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory, write 5 generated files, and allow its embedded code to run. Only use trusted URLs. |
-| `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise use the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
+| `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |
 | `PORT=8080 bun src/index.js --wui app.md` | Start the browser UI on another port. |
 | `bun src/index.js` | Open the normal terminal editor with an empty buffer. |

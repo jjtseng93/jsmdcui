@@ -27,16 +27,23 @@ async function readTemplate(pathname)
          await Bun.file(path.join(REPO_ROOT, pathname)).text()
 }
 
-async function readMarkdownInput(mdpath)
+export async function readMarkdownInput(mdpath)
 {
   const file = Bun.file(mdpath);
   if (await file.exists()) return await file.text();
   const assetName = path.basename(mdpath);
   const internalText = readInternalAssetText(assetName);
-  if (internalText != null) return internalText;
+  if (internalText != null) {
+    await Bun.write(mdpath, internalText);
+    return internalText;
+  }
   const fallbackPath = path.join(REPO_ROOT, assetName);
   const fallback = Bun.file(fallbackPath);
-  if (await fallback.exists()) return await fallback.text();
+  if (await fallback.exists()) {
+    const fallbackText = await fallback.text();
+    await Bun.write(mdpath, fallbackText);
+    return fallbackText;
+  }
   throw new Error(`md file not found: ${mdpath}`);
 }
 
