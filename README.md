@@ -1,5 +1,16 @@
 ![Demo](https://raw.githubusercontent.com/jjtseng93/jsmdcui/main/demo.jpg)
 
+# Demo App
+## My app
+
+- [Say hello](javascript:sayHello())
+- [Get server time](javascript:showServerTime())
+- [Update text box](javascript:updateText())
+
+```text#myid.myclass
+Editable in both TUI and WUI
+```
+
 # Introduction
 - jsmdcui stands for:
 - JavaScript Markdown Cross-environment User Interface
@@ -26,8 +37,8 @@ On other platforms, follow the [official Bun installation guide](https://bun.com
 Choose either of these two ways to run jsmdcui.
 
 > **Important:** Opening or rendering a local `.md` file writes or overwrites
-> five generated files beside it. Starting `--wui` without a file writes the
-> five files generated from `testapp.md` in the current directory. The source
+> 5 generated files beside it. Starting `--wui` without a file writes the
+> 5 files generated from `testapp.md` in the current directory. The source
 > Markdown is not changed, but you should run the demo in a directory where
 > overwriting generated files is safe.
 
@@ -40,9 +51,16 @@ required. Open the normal terminal editor:
 npx jsmdcui
 ```
 
-Or start the default browser demo:
+- Or start the default tui/wui demo:
+  * outputs the bundled testapp.md to the current working directory
 
 ```sh
+# TUI(Terminal User Interface) Demo
+npx jsmdcui --demo
+```
+
+```sh
+# WUI(Web User Interface) Demo
 npx jsmdcui --wui
 ```
 
@@ -98,7 +116,7 @@ options.
 Create `app.md`:
 
 ````md
-# My app
+## My app
 
 - [Say hello](javascript:sayHello())
 - [Get server time](javascript:showServerTime())
@@ -137,6 +155,12 @@ Open it in either UI:
 bun src/index.js app.md
 bun src/index.js --wui app.md
 ```
+
+- The resulting App UI is shown at the beginning
+- Play with it directly if your installation folder is writable (writes 5 generated files)
+  * bun src/index.js
+  * `Ctrl-G` or `Click €→help`
+  * `Ctrl-E or Click €` → `reopen mdcui`
 
 ### Text blocks
 
