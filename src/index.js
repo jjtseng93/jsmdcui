@@ -954,6 +954,7 @@ function parseArgs(argv) {
     changelog: false,
     testapp: false,
     demo: false,
+    demoSelect: false,
     allowUrl: false,
     buildExe: false,
     buildFor: "",
@@ -995,6 +996,7 @@ function parseArgs(argv) {
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo") flags.demo = true;
+    else if (arg === "--demo-select") flags.demoSelect = true;
     else if (arg === "--allow-url") flags.allowUrl = true;
     else if (arg === "--build-exe") flags.buildExe = true;
     else if (arg === "--build-for") flags.buildFor = argv[++i] ?? "";
@@ -1076,6 +1078,9 @@ Demo:
       Write the bundled testapp.md to stdout & exit
   --demo
       Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
+      Open it in the TUI and write 5 generated files beside it
+  --demo-select
+      Use the existing ./select.md without overwriting it, or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
 
 Remote Markdown:
@@ -7537,6 +7542,10 @@ async function bundledTestappSource() {
   return readInternalAssetText("testapp.md") ?? await Bun.file(join(REPO_ROOT, "testapp.md")).text();
 }
 
+async function bundledSelectSource() {
+  return readInternalAssetText("select.md") ?? await Bun.file(join(REPO_ROOT, "select.md")).text();
+}
+
 async function main() {
   if (process.argv[2] === "--wui") {
     process.argv.splice(2, 1);
@@ -7600,6 +7609,12 @@ async function main() {
     const demoPath = resolve("testapp.md");
     if (!(await Bun.file(demoPath).exists())) {
       await Bun.write(demoPath, await bundledTestappSource());
+    }
+    rawFiles.splice(0, rawFiles.length, demoPath);
+  } else if (flags.demoSelect) {
+    const demoPath = resolve("select.md");
+    if (!(await Bun.file(demoPath).exists())) {
+      await Bun.write(demoPath, await bundledSelectSource());
     }
     rawFiles.splice(0, rawFiles.length, demoPath);
   }
