@@ -99,7 +99,7 @@ import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
 import { toggleTaskCheckboxBeforeColumn } from "./cui/task-checkbox.mjs";
-import { checkMarkdownIdCollisions, formatMarkdownIdCheck } from "./cui/id-collision.mjs";
+import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
@@ -1037,7 +1037,7 @@ function usage() {
 
 Modes:
   --check FILE.md
-      Check heading and text-control IDs for collisions, print details, and exit
+      Check heading and fenced-block IDs for collisions, print details, and exit
       Exits 0 when IDs are unique, 1 on collisions, and 2 on usage/read errors
   --wui [FILE.md]
       Generate or overwrite Markdown UI files beside FILE.md and start the server
@@ -7612,7 +7612,7 @@ async function main() {
       const file = Bun.file(checkPath);
       if (!(await file.exists())) throw new Error("file not found");
       const result = checkMarkdownIdCollisions(await file.text());
-      process.stdout.write(Bun.markdown.ansi(formatMarkdownIdCheck(checkPath, result)));
+      process.stdout.write(formatMarkdownIdCheckAnsi(checkPath, result));
       if (result.collisions.length) process.exitCode = 1;
     } catch (error) {
       console.error(`Cannot check ${checkPath}: ${error?.message || error}`);

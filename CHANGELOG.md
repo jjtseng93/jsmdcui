@@ -2,6 +2,33 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.6.2] - 2026-07-18
+
+This update makes Markdown ID-collision checks match the full TUI `$()` block
+selector and gives check results clearer final status banners.
+
+### Changed
+
+- Extend `--check FILE.md` from `text` and `textarea` controls to every
+  explicitly named fenced block accepted by the TUI `$()` selector, including
+  identities such as `hello#myid` and `json#config`.
+- Report separate heading and fenced-block declaration counts, and describe
+  arbitrary block tags and their source lines in collision details.
+- Replace the previous success label with a large green `PASSED` banner and
+  add a matching large red `FAILED` banner at the bottom of failed reports.
+  Both true-color foregrounds are generated with
+  `Bun.color(..., "ansi-16m")`, with standard ANSI fallbacks.
+- Update the README and bundled help to clarify that generated heading IDs
+  share the selector namespace with all explicitly named fenced blocks, not
+  only editable text controls.
+
+### Fixed
+
+- Fix `--check` overlooking collisions between a heading and a non-text
+  fenced block even though TUI `$().val()` could select both declarations.
+- Add regression coverage for arbitrary fenced-block IDs and the colored
+  `PASSED` and `FAILED` terminal statuses.
+
 ## [0.6.1] - 2026-07-18
 
 This update adds Markdown UI ID-collision diagnostics and bundles a practical

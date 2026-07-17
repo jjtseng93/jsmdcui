@@ -47,7 +47,7 @@ function markdownHeadingDeclarations(markdown) {
   })).filter((item) => item.id);
 }
 
-function controlDeclarations(markdown) {
+function fencedBlockDeclarations(markdown) {
   const lines = String(markdown).split(/\r?\n/);
   const declarations = [];
   let fence = null;
@@ -58,11 +58,11 @@ function controlDeclarations(markdown) {
       const opening = line.match(/^ {0,3}(`{3,}|~{3,})\s*(\S+)?\s*$/);
       if (!opening) continue;
       fence = { marker: opening[1][0], length: opening[1].length };
-      const identity = String(opening[2] ?? "").match(/^(text|textarea)(?:#([A-Za-z_][\w:-]*))?(?:\.[A-Za-z_][\w:-]*)*$/);
+      const identity = String(opening[2] ?? "").match(/^([A-Za-z_][\w:-]*)(?:#([A-Za-z_][\w:-]*))?(?:\.[A-Za-z_][\w:-]*)*$/);
       if (identity?.[2]) {
         declarations.push({
           id: identity[2],
-          kind: `${identity[1]} control`,
+          kind: `${identity[1]} fenced block`,
           line: index + 1,
           source: line.trim(),
         });
@@ -81,7 +81,7 @@ function controlDeclarations(markdown) {
 export function checkMarkdownIdCollisions(markdown) {
   const declarations = [
     ...markdownHeadingDeclarations(markdown),
-    ...controlDeclarations(markdown),
+    ...fencedBlockDeclarations(markdown),
   ].sort((a, b) => a.line - b.line);
   const byId = new Map();
   for (const declaration of declarations) {
@@ -104,18 +104,18 @@ function inlineCode(value) {
 
 export function formatMarkdownIdCheck(path, result) {
   const headings = result.declarations.filter((item) => item.kind === "heading").length;
-  const controls = result.declarations.length - headings;
+  const fencedBlocks = result.declarations.length - headings;
   const lines = [
     "# Markdown UI ID Check",
     "",
     `- File: ${inlineCode(path)}`,
     `- Selectable IDs: **${result.declarations.length}**`,
     `  * Headings: **${headings}**`,
-    `  * Controls: **${controls}**`,
+    `  * Fenced blocks: **${fencedBlocks}**`,
   ];
 
   if (!result.collisions.length) {
-    lines.push("", "## PASS — No ID collisions found");
+    lines.push("", "## No ID collisions found");
     return lines.join("\n");
   }
 
@@ -129,6 +129,20 @@ export function formatMarkdownIdCheck(path, result) {
       lines.push(`    - Source: ${inlineCode(declaration.source)}`);
     }
   }
-  lines.push("", "## Suggested fix", "", "- Rename the heading or control so every selectable ID is unique.");
+  lines.push("", "## Suggested fix", "", "- Rename the heading or fenced block so every selectable ID is unique.");
   return lines.join("\n");
+}
+
+function statusBanner(label, color, fallbackColor) {
+  const foreground = Bun.color?.(color, "ansi-16m") || fallbackColor;
+  return `${foreground}\x1b[1m${label}\x1b[0m\n${foreground}\x1b[2m${"═".repeat(label.length)}\x1b[0m\n`;
+}
+
+export function formatMarkdownIdCheckAnsi(path, result) {
+  let output = String(Bun.markdown.ansi(formatMarkdownIdCheck(path, result)));
+  if (!output.endsWith("\n")) output += "\n";
+  output += "\n" + (result.collisions.length
+    ? statusBanner("FAILED", "#ff3030", "\x1b[31m")
+    : statusBanner("PASSED", "#00d75f", "\x1b[32m"));
+  return output;
 }
