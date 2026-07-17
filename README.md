@@ -209,6 +209,20 @@ Initial value
 ```
 ````
 
+A fenced-block declaration must include a tag. Its supported identity syntax is
+`tag`, optionally followed by `#id` and one or more `.class` names, for
+example `text#message.note` or `textarea#notes.readonly`. Tags, IDs, and class
+names must begin with an ASCII letter or underscore; their remaining
+characters may also include digits, `_`, `-`, and `:`. Declarations such as
+`#message` and `#message.note` have no tag and are therefore not recognized as
+selectable fenced blocks.
+
+The currently supported fenced-block tags are only `text` and `textarea` so
+the same control works consistently in both the TUI and WUI. Selector queries
+may omit the tag or classes after a valid declaration, so all of
+`$('text#message.note')`, `$('text#message')`, `$('#message.note')`, and
+`$('#message')` can select the example above.
+
 The same Markdown works in both interfaces. In the browser WUI it becomes a
 native `<textarea>` with the declared ID and classes. Long text wraps
 automatically, and the field height is recalculated when the user types, the
@@ -232,10 +246,17 @@ task items are not included in the outer list's value.
 Heading IDs share the same selector namespace as all explicitly named fenced
 blocks, not only `text` and `textarea`, so avoid name collisions between them.
 For example, `## Write Status` generates `#write-status` and must not be used
-together with a block such as `text#write-status` or `json#write-status`.
+together with a block such as `text#write-status` or
+`textarea#write-status`.
 Otherwise, `$('#write-status')` may select the heading instead of the block and
 updates can appear to do nothing. Rename either declaration so every
 selectable ID is unique.
+
+Duplicate source headings are also treated as collisions when they generate
+the same base ID. Although Bun would automatically rename later headings with
+suffixes such as `-1` and `-2`, those implicit selector names are not visible
+in the Markdown source and should not be relied on. Give each heading a name
+that produces a unique ID before rendering.
 
 Run `bun src/index.js --check app.md` (or `jsmdcui --check app.md`) to
 check these IDs without opening either UI or writing generated files. The

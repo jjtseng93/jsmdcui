@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createTuiSelector } from "../src/plugins/js-bridge.js";
 
 const tui = join(import.meta.dir, "..", "tui");
 
@@ -42,11 +43,12 @@ test("--check reports heading/fenced-block collisions with line details", async 
 });
 
 test("--check reports duplicate fenced-block IDs", async () => {
-  const result = await runCheck("```text#same\na\n```\n\n```textarea#same\nb\n```\n");
+  const result = await runCheck("```text#myid\na\n```\n\n```textarea#myid\nb\n```\n");
   expect(result.exitCode).toBe(1);
   const output = Bun.stripANSI(result.stdout.toString());
-  expect(output).toContain("ID #same");
+  expect(output).toContain("ID #myid");
   expect(output).toContain("Declarations: 2");
+  expect(output).toContain("FAILED");
 });
 
 test("--check includes IDs on arbitrary fenced-block tags", async () => {
@@ -54,8 +56,87 @@ test("--check includes IDs on arbitrary fenced-block tags", async () => {
   const output = Bun.stripANSI(result.stdout.toString());
   expect(result.exitCode).toBe(1);
   expect(output).toContain("ID #myid");
+  expect(output).toContain("Declarations: 2");
   expect(output).toContain("Type: hello fenced block");
   expect(output).toContain("Fenced blocks: 1");
+  expect(output).toContain("FAILED");
+});
+
+test("--check rejects duplicate Markdown heading IDs before Bun adds suffixes", async () => {
+  const result = await runCheck("# myid\n\n# myid\n");
+  const output = Bun.stripANSI(result.stdout.toString());
+  expect(result.exitCode).toBe(1);
+  expect(output).toContain("ID #myid");
+  expect(output).toContain("Declarations: 2");
+  expect(output).toContain("Line 1");
+  expect(output).toContain("Line 3");
+  expect(output).toContain("FAILED");
+});
+
+const identityMatrix = [
+  {
+    name: "tag without class",
+    info: "text#myid",
+    selectable: true,
+  },
+  {
+    name: "tag with class",
+    info: "text#myid.field",
+    selectable: true,
+  },
+  {
+    name: "no tag and no class",
+    info: "#myid",
+    selectable: false,
+  },
+  {
+    name: "no tag with class",
+    info: "#myid.field",
+    selectable: false,
+  },
+];
+
+for (const scenario of identityMatrix) {
+  test(`--check identity matrix: ${scenario.name}`, async () => {
+    const result = await runCheck(`\`\`\`${scenario.info}\nvalue\n\`\`\`\n\n# myid\n`);
+    const output = Bun.stripANSI(result.stdout.toString());
+    expect(result.exitCode).toBe(scenario.selectable ? 1 : 0);
+    expect(output).toContain(`Fenced blocks: ${scenario.selectable ? 1 : 0}`);
+    if (scenario.selectable) {
+      expect(output).toContain("ID #myid");
+      expect(output).toContain("Declarations: 2");
+      expect(output).toContain("FAILED");
+    } else {
+      expect(output).toContain("Selectable IDs: 1");
+      expect(output).toContain("PASSED");
+    }
+  });
+}
+
+test("--check ignores tag and class differences when fenced-block IDs collide", async () => {
+  const result = await runCheck(
+    "```text#myid.left.primary\na\n```\n\n```json#myid.right.secondary\nb\n```\n",
+  );
+  const output = Bun.stripANSI(result.stdout.toString());
+  expect(result.exitCode).toBe(1);
+  expect(output).toContain("ID #myid");
+  expect(output).toContain("Declarations: 2");
+  expect(output).toContain("Type: text fenced block");
+  expect(output).toContain("Type: json fenced block");
+  expect(output).toContain("FAILED");
+});
+
+test("TUI $ selector finds one ID across every tag/class query combination", () => {
+  const markdown = "```text#myid.field.primary\nvalue\n```\n";
+  const buffer = { lines: markdown.trimEnd().split("\n") };
+  const $ = createTuiSelector(() => buffer);
+  const selectors = [
+    "text#myid.field",
+    "text#myid",
+    "#myid.field",
+    "#myid",
+  ];
+  for (const selector of selectors) expect($(selector).val()).toBe("value");
 });
 
 test("--check requires exactly one file", () => {

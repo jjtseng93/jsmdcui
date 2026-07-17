@@ -9,9 +9,12 @@ selector and gives check results clearer final status banners.
 
 ### Changed
 
-- Extend `--check FILE.md` from `text` and `textarea` controls to every
-  explicitly named fenced block accepted by the TUI `$()` selector, including
-  identities such as `hello#myid` and `json#config`.
+- Make `--check FILE.md` conservatively detect ID-like declarations on all
+  fenced blocks so unsupported or custom info strings cannot hide a collision.
+  The portable WUI/TUI control tags remain limited to `text` and `textarea`.
+- Treat duplicate Markdown headings that generate the same base ID as a
+  source-level collision instead of accepting Bun's implicit `-1`, `-2`, and
+  later suffixes, which are not visible to the Markdown author.
 - Report separate heading and fenced-block declaration counts, and describe
   arbitrary block tags and their source lines in collision details.
 - Replace the previous success label with a large green `PASSED` banner and
@@ -26,6 +29,8 @@ selector and gives check results clearer final status banners.
 
 - Fix `--check` overlooking collisions between a heading and a non-text
   fenced block even though TUI `$().val()` could select both declarations.
+- Fix duplicate source headings passing the check only because Bun silently
+  assigned a suffix to later generated IDs.
 - Add regression coverage for arbitrary fenced-block IDs and the colored
   `PASSED` and `FAILED` terminal statuses.
 

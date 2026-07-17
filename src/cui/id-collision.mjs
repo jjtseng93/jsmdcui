@@ -36,15 +36,18 @@ function markdownHeadingDeclarations(markdown) {
   }
 
   if (!declarations.length) return [];
-  const headingOnly = declarations.map((item) => item.markdown).join("\n\n");
-  const html = String(Bun.markdown.html(headingOnly, { headings: { ids: true } }));
-  const ids = [...html.matchAll(/<h[1-6]\b[^>]*\bid="([^"]*)"[^>]*>/gi)].map((match) => match[1]);
-  return declarations.map((item, index) => ({
-    id: ids[index] ?? "",
-    kind: "heading",
-    line: item.line,
-    source: item.source,
-  })).filter((item) => item.id);
+  return declarations.map((item) => {
+    // Render headings independently so Bun cannot hide a source-level
+    // collision by suffixing later duplicates as "-1", "-2", and so on.
+    const html = String(Bun.markdown.html(item.markdown, { headings: { ids: true } }));
+    const id = html.match(/<h[1-6]\b[^>]*\bid="([^"]*)"[^>]*>/i)?.[1] ?? "";
+    return {
+      id,
+      kind: "heading",
+      line: item.line,
+      source: item.source,
+    };
+  }).filter((item) => item.id);
 }
 
 function fencedBlockDeclarations(markdown) {
