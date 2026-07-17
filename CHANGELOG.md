@@ -2,6 +2,33 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.6.3] - 2026-07-18
+
+This update enforces unique heading IDs at the Markdown source level and
+clarifies the portable fenced-block identity contract shared by the TUI and
+WUI.
+
+### Changed
+
+- Treat duplicate Markdown headings that generate the same base ID as a
+  source-level collision. Later headings no longer pass `--check` merely
+  because Bun would silently assign generated suffixes such as `-1` or `-2`
+  that the Markdown author cannot see.
+- Document that a selectable fenced-block declaration requires a tag and uses
+  the `tag#id.class` identity form. The officially supported portable control
+  tags are currently limited to `text` and `textarea` so the same Markdown
+  behaves consistently in both the TUI and WUI.
+- Clarify that selector queries may omit the tag or classes after a valid
+  declaration.
+- Expand checker and TUI selector regression coverage across tag/no-tag and
+  class/no-class combinations, heading-to-heading, heading-to-block, and
+  block-to-block ID collisions.
+
+### Fixed
+
+- Fix duplicate source headings incorrectly passing the checker after Bun
+  automatically changed the generated ID of later headings.
+
 ## [0.6.2] - 2026-07-18
 
 This update makes Markdown ID-collision checks match the full TUI `$()` block
@@ -9,12 +36,9 @@ selector and gives check results clearer final status banners.
 
 ### Changed
 
-- Make `--check FILE.md` conservatively detect ID-like declarations on all
-  fenced blocks so unsupported or custom info strings cannot hide a collision.
-  The portable WUI/TUI control tags remain limited to `text` and `textarea`.
-- Treat duplicate Markdown headings that generate the same base ID as a
-  source-level collision instead of accepting Bun's implicit `-1`, `-2`, and
-  later suffixes, which are not visible to the Markdown author.
+- Extend `--check FILE.md` from `text` and `textarea` controls to every
+  explicitly named fenced block accepted by the TUI `$()` selector, including
+  identities such as `hello#myid` and `json#config`.
 - Report separate heading and fenced-block declaration counts, and describe
   arbitrary block tags and their source lines in collision details.
 - Replace the previous success label with a large green `PASSED` banner and
@@ -29,8 +53,6 @@ selector and gives check results clearer final status banners.
 
 - Fix `--check` overlooking collisions between a heading and a non-text
   fenced block even though TUI `$().val()` could select both declarations.
-- Fix duplicate source headings passing the check only because Bun silently
-  assigned a suffix to later generated IDs.
 - Add regression coverage for arbitrary fenced-block IDs and the colored
   `PASSED` and `FAILED` terminal statuses.
 
