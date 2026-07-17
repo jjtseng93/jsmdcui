@@ -265,6 +265,16 @@ export async function createWui(md,mdpath) // HTML
     'class="task-list-item-checkbox"'
   )
 
+  const taskItemStart = '(<li\\b(?=[^>]*\\bclass="[^"]*\\btask-list-item\\b[^"]*")[^>]*>\\s*)'
+  const taskCheckbox = '(<input\\b(?=[^>]*\\btype="checkbox")[^>]*>)'
+  md = md.replace(
+    new RegExp(taskItemStart + taskCheckbox + '([^<]*(?:<p>[^]*?<\\/p>[^<]*)*)', 'g'),
+    (whole, itemStart, checkbox, content) => {
+      if (!content.trim()) return whole
+      return `${itemStart}<label>${checkbox}${content}</label>`
+    }
+  )
+
   md = convertWuiTextareas(md)
   
   const mdb = path.basename(mdpath);
