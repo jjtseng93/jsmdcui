@@ -121,8 +121,12 @@ bun src/index.js --wui testapp.md
 
 ### Usage table
 
-- The command table below uses the cloned-source form. 
+- The command table below assumes you're running from a cloned repository 
 - If you use npx, replace `bun src/index.js` with `npx jsmdcui`
+
+- I've also provided short aliases
+  * bun ./tui = bun src/index.js
+  * bun ./wui = bun src/index.js --wui
 
 | Command | Result |
 | --- | --- |
