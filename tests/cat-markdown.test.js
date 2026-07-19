@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const tui = join(import.meta.dir, "..", "tui");
+const bunBin = Bun.which("bun") || process.argv0;
 
 test("cat renders .md files once with the implicit mdcui encoding", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-cat-"));
@@ -12,12 +13,12 @@ test("cat renders .md files once with the implicit mdcui encoding", async () => 
   await writeFile(markdownPath, "# Heading\n\n- one\n- two\n");
 
   try {
-    const implicit = Bun.spawnSync([tui, "-cat", markdownPath], {
+    const implicit = Bun.spawnSync([bunBin, tui, "-cat", markdownPath], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
     });
-    const explicit = Bun.spawnSync([tui, "-cat", "-encoding", "mdcui", markdownPath], {
+    const explicit = Bun.spawnSync([bunBin, tui, "-cat", "-encoding", "mdcui", markdownPath], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
@@ -37,7 +38,7 @@ test("an explicit utf8 encoding overrides the .md mdcui default", async () => {
   await writeFile(markdownPath, "# Heading\n\n```js front\nalert('kept')\n```\n");
 
   try {
-    const result = Bun.spawnSync([tui, "-cat", "-encoding", "utf8", markdownPath], {
+    const result = Bun.spawnSync([bunBin, tui, "-cat", "-encoding", "utf8", markdownPath], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
@@ -58,12 +59,12 @@ test("--edit overrides the .md mdcui default with utf8", async () => {
   await writeFile(markdownPath, "# Heading\n\n```js front\nalert('editable')\n```\n");
 
   try {
-    const edit = Bun.spawnSync([tui, "-cat", "--edit", markdownPath], {
+    const edit = Bun.spawnSync([bunBin, tui, "-cat", "--edit", markdownPath], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",
     });
-    const utf8 = Bun.spawnSync([tui, "-cat", "-encoding", "utf8", markdownPath], {
+    const utf8 = Bun.spawnSync([bunBin, tui, "-cat", "-encoding", "utf8", markdownPath], {
       cwd: dir,
       stdout: "pipe",
       stderr: "pipe",

@@ -982,10 +982,7 @@ function parseArgs(argv) {
     exportReadme: false,
     changelog: false,
     testapp: false,
-    demo: false,
-    demoSelect: false,
-    demoImgtool: false,
-    demoImgtoolZh: false,
+    demo: null,
     allowUrl: false,
     buildExe: false,
     buildFor: "",
@@ -1028,10 +1025,21 @@ function parseArgs(argv) {
     else if (arg === "--export-readme") flags.exportReadme = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
-    else if (arg === "--demo") flags.demo = true;
-    else if (arg === "--demo-select") flags.demoSelect = true;
-    else if (arg === "--demo-imgtool") flags.demoImgtool = true;
-    else if (arg === "--demo-imgtool-zh") flags.demoImgtoolZh = true;
+    else if (arg === "--demo") {
+      flags.demo = { option: arg, filename: "testapp.md", asset: "testapp.md" };
+    }
+    else if (arg === "--demo-imgtool") {
+      flags.demo = { option: arg, filename: "image-processor.md", asset: "demos/image-processor.md" };
+    }
+    else if (arg === "--demo-imgtool-zh") {
+      flags.demo = { option: arg, filename: "image-processor.zh-TW.md", asset: "demos/image-processor.zh-TW.md" };
+    }
+    else if (arg.startsWith("--demo-")) {
+      const name = arg.slice("--demo-".length);
+      flags.demo = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)
+        ? { option: arg, filename: `${name}.md`, asset: `demos/${name}.md` }
+        : { option: arg, error: "demo filename must contain only letters, numbers, dots, underscores, and hyphens" };
+    }
     else if (arg === "--allow-url") flags.allowUrl = true;
     else if (arg === "--kitty") flags.kittyMode = "extended";
     else if (arg === "--kitty-compat") flags.kittyMode = "compat";
@@ -1123,15 +1131,13 @@ Demo:
   --demo
       Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
-  --demo-select
-      Use the existing ./select.md without overwriting it, or write the bundled demo if missing
-      Open it in the TUI and write 5 generated files beside it
+  --demo-<filename>
+      Load demos/<filename>.md, preserving an existing ./<filename>.md or writing the bundled copy
+      For example: --demo-select, --demo-todo, or --demo-todo-zh
   --demo-imgtool
-      Use the existing ./image-processor.md without overwriting it, or write the bundled demo if missing
-      Open the Bun.Image processor in the TUI and write 5 generated files beside it
+      Alias for --demo-image-processor
   --demo-imgtool-zh
-      Use the existing ./image-processor.zh-TW.md without overwriting it, or write the bundled demo if missing
-      Open the Traditional Chinese Bun.Image processor in the TUI and write 5 generated files beside it
+      Alias for --demo-image-processor.zh-TW
 
 Remote Markdown:
   --allow-url
@@ -7769,19 +7775,23 @@ async function main() {
     await printTestappSource();
     return;
   }
-  const demoFilename = flags.demo
-    ? "testapp.md"
-    : flags.demoSelect
-      ? "select.md"
-      : flags.demoImgtool
-        ? "image-processor.md"
-        : flags.demoImgtoolZh
-          ? "image-processor.zh-TW.md"
-          : "";
-  if (demoFilename) {
-    const demoPath = resolve(demoFilename);
+  if (flags.demo) {
+    if (flags.demo.error) {
+      console.error(`Invalid demo option ${flags.demo.option}: ${flags.demo.error}`);
+      process.exitCode = 2;
+      return;
+    }
+    let demoSource;
+    try {
+      demoSource = await bundledMarkdownSource(flags.demo.asset);
+    } catch {
+      console.error(`Unknown demo ${flags.demo.option}: ${flags.demo.asset} was not found`);
+      process.exitCode = 2;
+      return;
+    }
+    const demoPath = resolve(flags.demo.filename);
     if (!(await Bun.file(demoPath).exists())) {
-      await Bun.write(demoPath, await bundledMarkdownSource(demoFilename));
+      await Bun.write(demoPath, demoSource);
     }
     rawFiles.splice(0, rawFiles.length, demoPath);
   }

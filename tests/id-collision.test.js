@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { createTuiSelector } from "../src/plugins/js-bridge.js";
 
 const tui = join(import.meta.dir, "..", "tui");
+const bunBin = Bun.which("bun") || process.argv0;
 
 async function runCheck(markdown) {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-check-"));
   const file = join(dir, "app.md");
   await writeFile(file, markdown);
-  const result = Bun.spawnSync([tui, "--check", file], { stdout: "pipe", stderr: "pipe" });
+  const result = Bun.spawnSync([bunBin, tui, "--check", file], { stdout: "pipe", stderr: "pipe" });
   await rm(dir, { recursive: true, force: true });
   return result;
 }
@@ -140,7 +141,7 @@ test("TUI $ selector finds one ID across every tag/class query combination", () 
 });
 
 test("--check requires exactly one file", () => {
-  const result = Bun.spawnSync([tui, "--check"], { stdout: "pipe", stderr: "pipe" });
+  const result = Bun.spawnSync([bunBin, tui, "--check"], { stdout: "pipe", stderr: "pipe" });
   expect(result.exitCode).toBe(2);
   expect(result.stderr.toString()).toContain("Usage: jsmdcui --check FILE.md");
 });
