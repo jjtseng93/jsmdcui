@@ -336,14 +336,22 @@ export async function createWui(md,mdpath) // HTML
   
   const mdb = path.basename(mdpath);
   
+  const responsiveImageStyle = `<style>
+img {
+  max-width: 100%;
+  height: auto;
+}
+</style>`;
   const moduleScript = `<scr`+`ipt type="module" src="./${mdb}.front.js"></scr`+`ipt>`;
-  if (!/^\s*<!doctype html>/i.test(md)) {
+  const isFullHtmlDocument = /^\s*<!doctype html>/i.test(md);
+  if (!isFullHtmlDocument) {
     md = `<!doctype html>
 <html lang="zh-TW">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtmlAttribute(mdb)}</title>
+  ${responsiveImageStyle}
 </head>
 <body>
 ${md}
@@ -351,10 +359,17 @@ ${moduleScript}
 </body>
 </html>
 `;
-  } else if (/<\/body\s*>/i.test(md)) {
-    md = md.replace(/<\/body\s*>/i, `${moduleScript}\n</body>`);
   } else {
-    md += `\n${moduleScript}\n`;
+    if (/<\/head\s*>/i.test(md)) {
+      md = md.replace(/<\/head\s*>/i, `${responsiveImageStyle}\n</head>`);
+    } else {
+      md = `${responsiveImageStyle}\n${md}`;
+    }
+    if (/<\/body\s*>/i.test(md)) {
+      md = md.replace(/<\/body\s*>/i, `${moduleScript}\n</body>`);
+    } else {
+      md += `\n${moduleScript}\n`;
+    }
   }
   
   
