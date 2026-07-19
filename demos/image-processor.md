@@ -1,27 +1,28 @@
 #!/usr/bin/env jsmdcui
+
 # Bun.Image Processor
 
-先把本機圖片路徑貼到下方（例如 `/home/me/photo.jpg`）。輸出檔會放在原圖旁邊，檔名為 `original.resized.jpg` 或 `original.resized.png`；原圖不會被覆寫。
+Paste the path to a local image below (for example, `/home/me/photo.jpg`). The output file will be written next to the source as `original.resized.jpg` or `original.resized.png`; the source image will not be overwritten.
 
 ```text#image-path
 demo.jpg
 ```
 
-- [讀取圖片 metadata](javascript:readMetadata())
+- [Read image metadata](javascript:readMetadata())
 
 ```text#image-metadata
-尚未讀取 metadata
+Metadata has not been read
 ```
 
-## 尺寸
+## Dimensions
 
-寬度（必填，正整數）：
+Width (required, positive integer):
 
 ```text#resize-width
 800
 ```
 
-高度（留白會保持原始長寬比）：
+Height (leave blank to preserve the source aspect ratio):
 
 ```text#resize-height
 
@@ -29,32 +30,32 @@ demo.jpg
 
 ## Select Fit
 
-- [ ] fill（精確填滿寬高，可能變形）
-- [x] inside（保持比例，縮放到指定範圍內）
+- [ ] fill (stretch to the exact width and height; may distort the image)
+- [x] inside (preserve the aspect ratio and fit within the dimensions)
 
 ## Select Filter
 
-- [x] lanczos3（照片通用，預設）
-- [ ] lanczos2（較柔和、較少光暈）
-- [ ] mitchell（平滑漸層）
-- [ ] cubic（較銳利）
-- [ ] mks2013（Magic Kernel Sharp）
-- [ ] mks2021（Magic Kernel Sharp）
-- [ ] bilinear（快速、柔和）
-- [ ] linear（快速、柔和）
-- [ ] box（大倍率整數縮小）
-- [ ] nearest（像素圖、硬邊緣）
+- [x] lanczos3 (general-purpose and sharp for photos; default)
+- [ ] lanczos2 (slightly softer with fewer ringing artifacts)
+- [ ] mitchell (smooth gradients)
+- [ ] cubic (sharper, but may produce ringing)
+- [ ] mks2013 (Magic Kernel Sharp)
+- [ ] mks2021 (Magic Kernel Sharp)
+- [ ] bilinear (fast and soft)
+- [ ] linear (fast and soft)
+- [ ] box (area-average; useful for large integer downscales)
+- [ ] nearest (pixel art and hard edges)
 
 ## Select Without Enlargement
 
-- [x] yes（不放大較小的原圖）
-- [ ] no（允許放大）
+- [x] yes (do not enlarge a smaller source image)
+- [ ] no (allow enlargement)
 
-## 方向與翻轉
+## Orientation and mirroring
 
 ## Select Auto Orient
 
-- [x] yes（依 JPEG EXIF 自動校正方向）
+- [x] yes (apply the JPEG EXIF orientation automatically)
 - [ ] no
 
 ## Select Rotate
@@ -66,23 +67,23 @@ demo.jpg
 
 ## Select Flip
 
-- [ ] yes（上下翻轉）
+- [ ] yes (mirror vertically)
 - [x] no
 
 ## Select Flop
 
-- [ ] yes（左右翻轉）
+- [ ] yes (mirror horizontally)
 - [x] no
 
-## 色彩
+## Color
 
-亮度倍率（`1` 不變）：
+Brightness multiplier (`1` leaves brightness unchanged):
 
 ```text#brightness
 1
 ```
 
-飽和度倍率（`0` 灰階、`1` 不變、大於 `1` 增豔）：
+Saturation multiplier (`0` produces greyscale, `1` is unchanged, and values above `1` increase saturation):
 
 ```text#saturation
 1
@@ -93,9 +94,9 @@ demo.jpg
 - [x] JPEG (.jpg)
 - [ ] PNG (.png)
 
-## JPEG 選項
+## JPEG Options
 
-品質（`1`–`100`，預設 `80`）：
+Quality (`1`–`100`; default `80`):
 
 ```text#jpeg-quality
 80
@@ -106,9 +107,9 @@ demo.jpg
 - [ ] yes
 - [x] no
 
-## PNG 選項
+## PNG Options
 
-壓縮等級（`0`–`9`，預設 `6`）：
+Compression level (`0`–`9`; default `6`):
 
 ```text#png-compression
 6
@@ -116,10 +117,10 @@ demo.jpg
 
 ## Select PNG Palette
 
-- [ ] yes（索引色 PNG）
-- [x] no（全彩 PNG）
+- [ ] yes (indexed-color PNG)
+- [x] no (full-color PNG)
 
-調色盤色數（啟用 Palette 時使用，`2`–`256`）：
+Palette color count (used when Palette is enabled; `2`–`256`):
 
 ```text#png-colors
 256
@@ -130,12 +131,12 @@ demo.jpg
 - [x] yes
 - [ ] no
 
-- [Resize and write image](javascript:resizeAndWrite())
+- [Process and write image](javascript:resizeAndWrite())
 
-## 寫入狀態
+## Processing Result
 
 ```text#write-status
-尚未執行
+Not started
 ```
 
 ```js front
@@ -157,16 +158,16 @@ function numberText(id) {
 }
 
 function describeError(error) {
-  if (error == null) return '未知錯誤（沒有錯誤內容）';
+  if (error == null) return 'Unknown error (no error details were returned)';
   if (typeof error === 'string') return error;
   const details = [];
-  if (error?.code) details.push(`錯誤代碼：${error.code}`);
-  if (error?.name && error.name !== 'Error') details.push(`類型：${error.name}`);
-  if (error?.message) details.push(`訊息：${error.message}`);
-  if (error?.error && error.error !== error) details.push(`錯誤：${describeError(error.error)}`);
-  if (error?.cause && error.cause !== error) details.push(`原因：${describeError(error.cause)}`);
+  if (error?.code) details.push(`Code: ${error.code}`);
+  if (error?.name && error.name !== 'Error') details.push(`Type: ${error.name}`);
+  if (error?.message) details.push(`Message: ${error.message}`);
+  if (error?.error && error.error !== error) details.push(`Error: ${describeError(error.error)}`);
+  if (error?.cause && error.cause !== error) details.push(`Cause: ${describeError(error.cause)}`);
   if (error?.stack && String(error.stack) !== String(error.message ?? ''))
-    details.push(`Stack：${error.stack}`);
+    details.push(`Stack: ${error.stack}`);
   if (details.length) return details.join('\n');
   try {
     const json = JSON.stringify(error, null, 2);
@@ -177,7 +178,7 @@ function describeError(error) {
 
 export async function readMetadata() {
   const output = $('#image-metadata');
-  output.val('正在讀取 metadata…');
+  output.val('Reading metadata…');
 
   try {
     const inputPath = $('#image-path').val().trim();
@@ -186,18 +187,18 @@ export async function readMetadata() {
       const error = result && typeof result === 'object' && 'error' in result
         ? result.error
         : result;
-      output.val(`讀取 metadata 失敗：\n${describeError(error)}`);
+      output.val(`Metadata read failed:\n${describeError(error)}`);
       return;
     }
-    output.val(`圖片路徑：${result.inputPath}\n${JSON.stringify(result.metadata, null, 2)}`);
+    output.val(`Metadata for: ${result.inputPath}\n${JSON.stringify(result.metadata, null, 2)}`);
   } catch (error) {
-    output.val(`讀取 metadata 失敗：\n${describeError(error)}`);
+    output.val(`Metadata read failed:\n${describeError(error)}`);
   }
 }
 
 export async function resizeAndWrite() {
   const status = $('#write-status');
-  status.val('處理中…');
+  status.val('Processing…');
   let options;
 
   try {
@@ -231,14 +232,14 @@ export async function resizeAndWrite() {
       const error = result && typeof result === 'object' && 'error' in result
         ? result.error
         : result;
-      status.val(`寫入失敗：\n${describeError(error)}\n讀取選項：\n${JSON.stringify(options, null, 2)}`);
+      status.val(`Write failed:\n${describeError(error)}\nOptions read:\n${JSON.stringify(options, null, 2)}`);
       return;
     }
 
-    status.val(`成功寫入：${result.outputPath}\n${result.width}×${result.height}，${result.bytes} bytes\n讀取選項：\n${JSON.stringify(options, null, 2)}`);
+    status.val(`Successfully wrote: ${result.outputPath}\n${result.width}×${result.height}, ${result.bytes} bytes\nOptions read:\n${JSON.stringify(options, null, 2)}`);
   } catch (error) {
-    const optionText = options ? `\n讀取選項：\n${JSON.stringify(options, null, 2)}` : '';
-    status.val(`寫入失敗：\n${describeError(error)}${optionText}`);
+    const optionText = options ? `\nOptions read:\n${JSON.stringify(options, null, 2)}` : '';
+    status.val(`Write failed:\n${describeError(error)}${optionText}`);
   }
 }
 ```
@@ -250,27 +251,27 @@ function integer(value, name, { min = 1, max = Number.MAX_SAFE_INTEGER, optional
   if (optional && String(value ?? '').trim() === '') return undefined;
   const result = Number(value);
   if (!Number.isInteger(result) || result < min || result > max)
-    throw new Error(`${name} 必須是 ${min}–${max} 的整數`);
+    throw new Error(`${name} must be an integer from ${min} to ${max}`);
   return result;
 }
 
 function finite(value, name, { min = 0 } = {}) {
   const result = Number(value);
   if (!Number.isFinite(result) || result < min)
-    throw new Error(`${name} 必須是至少 ${min} 的數字`);
+    throw new Error(`${name} must be a number greater than or equal to ${min}`);
   return result;
 }
 
 function describeBackendError(error) {
-  if (error == null) return '未知錯誤（沒有錯誤內容）';
+  if (error == null) return 'Unknown error (no error details were returned)';
   if (typeof error === 'string') return error;
   const details = [];
   if (error?.code) details.push(`[${error.code}]`);
   if (error?.name && error.name !== 'Error') details.push(error.name);
   if (error?.message) details.push(error.message);
   if (error?.cause && error.cause !== error)
-    details.push(`原因：${describeBackendError(error.cause)}`);
-  if (error?.stack) details.push(`Stack：\n${error.stack}`);
+    details.push(`Cause: ${describeBackendError(error.cause)}`);
+  if (error?.stack) details.push(`Stack:\n${error.stack}`);
   if (details.length) return details.join('\n');
   try {
     const json = JSON.stringify(error, null, 2);
@@ -282,11 +283,11 @@ function describeBackendError(error) {
 export async function readImageMetadata(inputText) {
   try {
     const pathText = String(inputText ?? '').trim();
-    if (!pathText) throw new Error('請先貼上圖片路徑');
+    if (!pathText) throw new Error('Paste an image path first');
 
     const inputPath = resolve(pathText);
     const inputFile = Bun.file(inputPath);
-    if (!await inputFile.exists()) throw new Error(`找不到輸入檔：${inputPath}`);
+    if (!await inputFile.exists()) throw new Error(`Input file not found: ${inputPath}`);
 
     const metadata = await new Bun.Image(inputFile).metadata();
     return { ok: true, inputPath, metadata };
@@ -298,14 +299,14 @@ export async function readImageMetadata(inputText) {
 export async function resizeImage(options = {}) {
   try {
     const inputText = String(options.inputPath ?? '').trim();
-    if (!inputText) throw new Error('請先貼上圖片路徑');
+    if (!inputText) throw new Error('Paste an image path first');
 
     const inputPath = resolve(inputText);
     const inputFile = Bun.file(inputPath);
-    if (!await inputFile.exists()) throw new Error(`找不到輸入檔：${inputPath}`);
+    if (!await inputFile.exists()) throw new Error(`Input file not found: ${inputPath}`);
 
-    const width = integer(options.width, '寬度');
-    const height = integer(options.height, '高度', { optional: true });
+    const width = integer(options.width, 'Width');
+    const height = integer(options.height, 'Height', { optional: true });
     const fit = options.fit === 'fill' ? 'fill' : 'inside';
     const filters = new Set([
       'nearest', 'box', 'bilinear', 'linear', 'cubic', 'mitchell',
@@ -313,8 +314,8 @@ export async function resizeImage(options = {}) {
     ]);
     const filter = filters.has(options.filter) ? options.filter : 'lanczos3';
     const rotate = [0, 90, 180, 270].includes(options.rotate) ? options.rotate : 0;
-    const brightness = finite(options.brightness, '亮度');
-    const saturation = finite(options.saturation, '飽和度');
+    const brightness = finite(options.brightness, 'Brightness');
+    const saturation = finite(options.saturation, 'Saturation');
     const format = options.format === 'png' ? 'png' : 'jpeg';
 
     let image = new Bun.Image(inputFile, { autoOrient: options.autoOrient !== false });
@@ -334,17 +335,17 @@ export async function resizeImage(options = {}) {
 
     if (format === 'jpeg') {
       image = image.jpeg({
-        quality: integer(options.jpegQuality, 'JPEG 品質', { min: 1, max: 100 }),
+        quality: integer(options.jpegQuality, 'JPEG quality', { min: 1, max: 100 }),
         progressive: Boolean(options.progressive),
       });
     } else {
       const palette = Boolean(options.pngPalette);
       const pngOptions = {
-        compressionLevel: integer(options.pngCompression, 'PNG 壓縮等級', { min: 0, max: 9 }),
+        compressionLevel: integer(options.pngCompression, 'PNG compression level', { min: 0, max: 9 }),
         palette,
       };
       if (palette) {
-        pngOptions.colors = integer(options.pngColors, 'PNG 調色盤色數', { min: 2, max: 256 });
+        pngOptions.colors = integer(options.pngColors, 'PNG palette color count', { min: 2, max: 256 });
         pngOptions.dither = Boolean(options.pngDither);
       }
       image = image.png(pngOptions);

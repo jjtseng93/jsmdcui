@@ -2,7 +2,11 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
-## [0.7.0] - 2026-07-19
+## [0.7.0] - 2026-07-20
+
+This update adds native Kitty image rendering, turns heading task lists into
+Array-style collections in both interfaces, and keeps TUI layout, interaction,
+and checkbox styling consistent at every terminal width.
 
 ### Added
 
@@ -17,6 +21,39 @@ All notable user-visible changes to jsmdcui are documented here.
   jsmdcui.
 - Set Kitty's `C=1` placement flag so displaying an image cannot advance the
   terminal cursor and trigger an unwanted scroll at the bottom of the screen.
+- Add `.push()`, `.pop()`, `.shift()`, `.unshift()`, and `.splice()` to heading
+  selectors in both the TUI and WUI. The methods follow their
+  `Array.prototype` argument and return-value conventions, operate on direct
+  items in the first task list belonging to the heading, and remove nested
+  content together with its parent item.
+- Allow inserted task items to be passed as strings for unchecked items or as
+  `{ value, checked }` objects, and preserve an emptied TUI list's insertion
+  point so later mutations still target the same list.
+- Add read-only heading `.slice(start, end)`, returning fresh
+  `{ value, checked }` snapshots that include both checked and unchecked direct
+  task items.
+- Add `todo-zh.md`, a runnable Todo example that uses text controls and the new
+  list methods to add and remove items and display completed or pending tasks.
+- Add `clean.sh` as a convenience helper for removing generated Markdown
+  companion files from the project directory.
+
+### Changed
+
+- Document the Array-style heading task-list API, its return values, nested-item
+  behavior, existing-list requirement, and non-persistent rendered-state
+  semantics in the README and bundled help.
+- Use the complete pane content width consistently for Markdown rendering,
+  soft wrapping, cursor and mouse mapping, and Kitty image sizing instead of
+  reserving the terminal's final column.
+
+### Fixed
+
+- Fix soft wrapping at affected terminal widths shifting the visual cursor by
+  one row, which could activate the preceding Markdown action and leave the
+  final action unresponsive.
+- Update the Bun Markdown ANSI glyph and style together when toggling a task
+  checkbox, so checked items become green and unchecked items no longer retain
+  the checked color.
 
 ## [0.6.3] - 2026-07-18
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env jsmdcui
+
 # Select and Task List Demo
 
 Use `Enter` or `Space` to toggle a task item in the TUI, then activate these

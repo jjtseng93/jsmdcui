@@ -133,6 +133,7 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js app.md` | Render `app.md` as a read-only terminal UI and write five generated files beside it. |
 | `bun src/index.js --kitty app.md` | Display Markdown images with Kitty graphics and the jsgotty MIME extension. |
 | `bun src/index.js --kitty-compat app.md` | Display Markdown images with Kitty graphics without the non-standard MIME `U` field. |
+| `bun src/index.js --kitty --allow-url URL.md` | Download trusted HTTP(S) Markdown and its HTTP(S) images, then display supported images with Kitty graphics. |
 | `JSMDCUI_KITTY_DEBUG=1 bun src/index.js --kitty app.md` | Enable Kitty image placement logging to `kitty-placement.log`. |
 | `bun src/index.js --check app.md` | Check heading and fenced-block IDs for collisions, print line-by-line details, and exit. |
 | `bun src/index.js --edit app.md` | Open `app.md` as editable UTF-8 source, overriding automatic Markdown UI detection. |
@@ -352,6 +353,15 @@ $('#features').slice()
 // ]
 ```
 
+`todo-zh.md` is a runnable Todo example that demonstrates `.push()`,
+`.splice()`, `.slice()`, and `{ value, checked }` snapshots using editable text
+controls instead of `prompt()` dialogs. Open it in either interface:
+
+```sh
+bun src/index.js todo-zh.md
+bun src/index.js --wui todo-zh.md
+```
+
 The bundled `select.md` is a multilevel runnable example. Use `--demo-select`
 to write it into the current directory when missing and open it in the TUI, or
 open it explicitly in either interface:
@@ -454,8 +464,14 @@ Local Markdown images are displayed automatically in terminals that support
 the Kitty graphics protocol. Relative image paths are resolved from the
 Markdown file's directory. jsmdcui reads the image dimensions, reserves the
 corresponding terminal rows, and updates the placement when the document is
-scrolled, resized, or shown in a split pane. Unsupported, missing, or remote
-images retain Bun's normal `📷` link rendering.
+scrolled, resized, or shown in a split pane. Unsupported or missing images, as
+well as remote images not authorized with `--allow-url`, retain Bun's normal
+linked `📷` fallback. To download trusted remote Markdown and display its
+supported HTTP(S) images with Kitty graphics, combine the options:
+
+```sh
+bun src/index.js --kitty --allow-url https://example.com/app.md
+```
 
 ## Browser interaction
 
@@ -489,6 +505,13 @@ app.md-server.js
 
 They are regenerated from `app.md`, so edit the Markdown source rather than the
 generated files. The source directory must be writable.
+
+From the project directory, remove generated `*.md.*` and `*.md-*` companion
+files while keeping the Markdown source files:
+
+```sh
+bun ./clean.sh
+```
 
 ### Generated heading sections
 

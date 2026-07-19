@@ -1,4 +1,4 @@
-![jsmdcui](demo.jpg)
+#!/usr/bin/env jsmdcui
 
 # Todo List
 
