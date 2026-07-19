@@ -47,9 +47,10 @@ On other platforms, follow the [official Bun installation guide](https://bun.com
 Choose either of these two ways to run jsmdcui.
 
 > **Important:** Opening or rendering a local `.md` file writes or overwrites
-> 5 generated files beside it. Starting `--wui` without a file writes the
-> 5 files generated from `testapp.md` in the current directory. The source
-> Markdown is not changed, but you should run the demo in a directory where
+> 5 generated files beside it. 
+> Starting `--wui` without a file or starting all the `--demo`s writes the
+> 5 files generated from `testapp.md` in the current directory. 
+> The source Markdown is not changed, but you should run the demo in a directory where
 > overwriting generated files is safe.
 
 ### Route 1: Run with npx
@@ -72,9 +73,10 @@ npx jsmdcui
 npx jsmdcui --demo
 ```
 
+List every bundled demo and its command-line option:
+
 ```sh
-# Heading and task-list selector demo
-npx jsmdcui --demo-select
+npx jsmdcui --demo-list
 ```
 
 ```sh
@@ -140,10 +142,11 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --cat app.md` | Render the terminal version to stdout, write five generated files beside it, and exit. |
 | `bun src/index.js --testapp.md` | Write the bundled `testapp.md` source to stdout and exit. |
 | `bun src/index.js --export-readme` | Write or overwrite `./README.md` with the bundled README source and exit. |
+| `bun src/index.js --demo-list` | List `testapp.md` and every bundled `demos/*.md` example with its command-line option, then exit. |
 | `bun src/index.js --demo` | Use local `testapp.md` when present, otherwise write the bundled demo; open it in the terminal UI and write five generated files beside it. |
-| `bun src/index.js --demo-select` | Use local `select.md` when present, otherwise write the bundled selector demo; open it in the terminal UI and write five generated files beside it. |
-| `bun src/index.js --demo-imgtool` | Use local `image-processor.md` when present, otherwise write the bundled Bun.Image processor; open it in the terminal UI and write five generated files beside it. |
-| `bun src/index.js --demo-imgtool-zh` | Use local `image-processor.zh-TW.md` when present, otherwise write the bundled Traditional Chinese Bun.Image processor; open it in the terminal UI and write five generated files beside it. |
+| `bun src/index.js --demo-<filename>` | Load `demos/<filename>.md`; preserve an existing local copy or write the bundled copy, then open it and generate its five companion files. New files added under `demos/` work automatically. |
+| `bun src/index.js --demo-imgtool` | Compatibility alias for `--demo-image-processor`. |
+| `bun src/index.js --demo-imgtool-zh` | Compatibility alias for `--demo-image-processor.zh-TW`. |
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory and, with Kitty mode enabled, download its HTTP(S) images; write 5 generated files and allow embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |
@@ -353,23 +356,27 @@ $('#features').slice()
 // ]
 ```
 
-`todo-zh.md` is a runnable Todo example that demonstrates `.push()`,
+`demos/todo.md` and `demos/todo-zh.md` are runnable Todo examples that
+demonstrate `.push()`,
 `.splice()`, `.slice()`, and `{ value, checked }` snapshots using editable text
-controls instead of `prompt()` dialogs. Open it in either interface:
+controls instead of `prompt()` dialogs. Materialize one in the current
+directory with its demo flag, or open the source-tree copy directly:
 
 ```sh
-bun src/index.js todo-zh.md
-bun src/index.js --wui todo-zh.md
+bun src/index.js --demo-todo
+bun src/index.js --demo-todo-zh
+bun src/index.js demos/todo.md
+bun src/index.js --wui demos/todo-zh.md
 ```
 
-The bundled `select.md` is a multilevel runnable example. Use `--demo-select`
+The bundled `demos/select.md` is a multilevel runnable example. Use `--demo-select`
 to write it into the current directory when missing and open it in the TUI, or
 open it explicitly in either interface:
 
 ```sh
 bun src/index.js --demo-select
-bun src/index.js select.md
-bun src/index.js --wui select.md
+bun src/index.js demos/select.md
+bun src/index.js --wui demos/select.md
 ```
 
 The available selector methods are:

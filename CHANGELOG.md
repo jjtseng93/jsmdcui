@@ -32,8 +32,15 @@ and checkbox styling consistent at every terminal width.
 - Add read-only heading `.slice(start, end)`, returning fresh
   `{ value, checked }` snapshots that include both checked and unchecked direct
   task items.
-- Add `todo-zh.md`, a runnable Todo example that uses text controls and the new
-  list methods to add and remove items and display completed or pending tasks.
+- Add `demos/todo.md` and `demos/todo-zh.md`, runnable Todo examples that use
+  text controls and the new list methods to add and remove items and display
+  completed or pending tasks.
+- Move secondary examples under `demos/` and add automatic
+  `--demo-<filename>` discovery, so newly bundled `demos/<filename>.md` files
+  need no parser changes. Keep `--demo` mapped to the root `testapp.md` and
+  retain the existing image-processor aliases.
+- Add `--demo-list` to list the root demo and every automatically discovered
+  Markdown example from bundled assets or the source tree's `demos/` directory.
 - Add `clean.sh` as a convenience helper for removing generated Markdown
   companion files from the project directory.
 
