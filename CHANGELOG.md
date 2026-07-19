@@ -2,15 +2,19 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
-## Unreleased
+## [0.7.0] - 2026-07-19
 
 ### Added
 
 - Display local Markdown images at their rendered TUI positions with the
   Kitty graphics protocol. Image rows are reserved according to intrinsic
   dimensions, and placements follow scrolling, resizing, and split panes.
-- Keep Bun's normal linked `📷` fallback for missing, unsupported, and remote
-  images, and scope Kitty cleanup to image IDs owned by jsmdcui.
+- With `--allow-url` and Kitty mode enabled, download HTTP(S) Markdown images
+  through the existing `curl`, `wget`, then Bun `fetch` fallback chain. Relative
+  image URLs in downloaded Markdown resolve against the original document URL.
+- Keep Bun's normal linked `📷` fallback for missing, unsupported, and
+  unauthorized remote images, and scope Kitty cleanup to image IDs owned by
+  jsmdcui.
 - Set Kitty's `C=1` placement flag so displaying an image cannot advance the
   terminal cursor and trigger an unwanted scroll at the bottom of the screen.
 
