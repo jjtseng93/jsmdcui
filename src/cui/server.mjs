@@ -103,7 +103,7 @@ const server = Bun.serve({
   },
 });
 
-console.log(mda("- Bun RPC server listening on"));
+console.error(mda("- Bun RPC server listening on"));
 console.log(`http://localhost:${server.port}${pathname}`);
 
 

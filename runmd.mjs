@@ -6,6 +6,7 @@ import { readInternalAssetText } from './src/runtime/assets.js'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
+const cse=console.error
 const mda=Bun.markdown.ansi
 const mdh=Bun.markdown.html
 const jss=JSON.stringify
@@ -18,7 +19,7 @@ const TEST_COL=5
 function logWroteFile(label,path)
 {
   if(!process.stdin.isRaw)
-  csl(mda(`- Wrote to ${label} file: ${path}`))
+  cse(mda(`- Wrote to ${label} file: ${path}`))
 }
 
 async function readTemplate(pathname)
@@ -62,32 +63,35 @@ export async function main(tuiWidth=30)
 
 	// 3. Create Terminal UI
 	let tui = createTui(md,tuiWidth)
-	csl(mda("\n# TUI"))
-	csl(tui)
-	csl(mda('## TUI raw'))
-	csl(jss(tui))
+	cse(mda("\n# TUI"))
+	cse(tui)
+	cse(mda('## TUI raw'))
+	cse(jss(tui))
 
 
 	// 4. Create Web UI
 	let wui = await createWui(md,mdpath)
-	csl(mda('\n# HTML'))
-	csl(wui)
+	cse(mda('\n# HTML'))
+	cse(wui)
 
 
+    /*
 	// 5. Get character from point for TUI
 	let ch = charFromPoint(tui,TEST_ROW,TEST_COL)
 
-	csl(mda(
+	cse(mda(
 	  '# Slicing row,col: '+TEST_ROW+','+TEST_COL
 	))
 
-	csl(jss(ch))
+	cse(jss(ch))
+	
+	*/
 
 
     const serverPath = mdpath + "-server.js"
     const svmod = await import(pathToFileURL(path.resolve(serverPath)).href)
 
-    csl("\n\n"+mda('# Server'))
+    cse("\n\n"+mda('# Server'))
     svmod.main();
 }
 
