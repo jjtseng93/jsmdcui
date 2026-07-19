@@ -71,16 +71,13 @@ function isWebHeading(element)
   return /^h[1-6]$/i.test(String(element?.tagName ?? ""));
 }
 
-function firstHeadingTaskList(heading)
+function firstHeadingList(heading)
 {
   for (let sibling = heading?.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
     if (isWebHeading(sibling) || String(sibling.tagName ?? "").toLowerCase() === "section")
       break;
-    const task = sibling.matches?.("li.task-list-item")
-      ? sibling
-      : sibling.querySelector?.("li.task-list-item");
-    if (!task) continue;
-    const list = task.closest?.("ul, ol");
+    if (sibling.matches?.("ul, ol")) return sibling;
+    const list = sibling.querySelector?.("ul, ol");
     if (list) return list;
   }
   return null;
@@ -109,7 +106,7 @@ function webTaskItemValue(item, checkbox)
 function webHeadingValue(heading)
 {
   const single = String(heading?.id ?? "").startsWith("select");
-  const list = firstHeadingTaskList(heading);
+  const list = firstHeadingList(heading);
   if (!list) return single ? null : [];
 
   const selected = [];
@@ -122,6 +119,114 @@ function webHeadingValue(heading)
     selected.push(value);
   }
   return single ? null : selected;
+}
+
+function directWebTaskItems(list)
+{
+  const items = [];
+  for (const item of list?.children ?? []) {
+    if (!item.matches?.("li.task-list-item")) continue;
+    if (directTaskCheckbox(item)) items.push(item);
+  }
+  return items;
+}
+
+function webTaskItemSnapshot(item)
+{
+  const checkbox = directTaskCheckbox(item);
+  return {
+    value: webTaskItemValue(item, checkbox),
+    checked: Boolean(checkbox?.checked),
+  };
+}
+
+function normalizedTaskItem(input)
+{
+  if (input && typeof input === "object") {
+    return {
+      value: String(input.value ?? input.label ?? "").replace(/\r?\n/g, " "),
+      checked: Boolean(input.checked),
+    };
+  }
+  return {
+    value: String(input ?? "").replace(/\r?\n/g, " "),
+    checked: false,
+  };
+}
+
+function normalizedSpliceRange(length, argumentCount, start, deleteCount)
+{
+  if (argumentCount === 0) return { start: 0, deleteCount: 0 };
+  let relativeStart = Number(start);
+  if (Number.isNaN(relativeStart)) relativeStart = 0;
+  relativeStart = Math.trunc(relativeStart);
+  const actualStart = relativeStart < 0
+    ? Math.max(length + relativeStart, 0)
+    : Math.min(relativeStart, length);
+  if (argumentCount === 1) return { start: actualStart, deleteCount: length - actualStart };
+  let requestedDelete = Number(deleteCount);
+  if (Number.isNaN(requestedDelete)) requestedDelete = 0;
+  requestedDelete = Math.max(0, Math.trunc(requestedDelete));
+  return {
+    start: actualStart,
+    deleteCount: Math.min(requestedDelete, length - actualStart),
+  };
+}
+
+function appendWebTaskItem(list, input, before = null)
+{
+  const documentObject = list?.ownerDocument;
+  if (!documentObject?.createElement || !documentObject?.createTextNode) return false;
+
+  const itemValue = normalizedTaskItem(input);
+  const item = documentObject.createElement("li");
+  item.classList?.add("task-list-item");
+  const label = documentObject.createElement("label");
+  const checkbox = documentObject.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.classList?.add("task-list-item-checkbox");
+  checkbox.checked = itemValue.checked;
+  label.append(checkbox, documentObject.createTextNode(itemValue.value));
+  item.append(label);
+  list.insertBefore(item, before);
+  return true;
+}
+
+function mutateWebHeadingList(heading, method, args)
+{
+  const list = firstHeadingList(heading);
+  if (!list) {
+    if (method === "push" || method === "unshift") return 0;
+    if (method === "splice") return [];
+    return undefined;
+  }
+
+  const items = directWebTaskItems(list);
+  if (method === "splice") {
+    const range = normalizedSpliceRange(items.length, args.length, args[0], args[1]);
+    const removed = items
+      .slice(range.start, range.start + range.deleteCount)
+      .map((item) => webTaskItemValue(item, directTaskCheckbox(item)));
+    const before = items[range.start] ?? null;
+    for (const input of args.slice(2)) appendWebTaskItem(list, input, before);
+    for (const item of items.slice(range.start, range.start + range.deleteCount)) item.remove?.();
+    return removed;
+  }
+  if (method === "pop" || method === "shift") {
+    const item = method === "pop" ? items.at(-1) : items[0];
+    if (!item) return undefined;
+    const value = webTaskItemValue(item, directTaskCheckbox(item));
+    item.remove?.();
+    return value;
+  }
+
+  if (method === "push") {
+    for (const input of args) appendWebTaskItem(list, input);
+  } else {
+    const before = items[0] ?? list.firstChild ?? null;
+    for (const input of args) appendWebTaskItem(list, input, before);
+  }
+  return directWebTaskItems(list).length;
 }
 
 function resizeWebTextarea(element)
@@ -192,6 +297,57 @@ export function createWebDollar(documentObject = globalThis.document)
           return webDollarValue(element);
         } catch {
           return args.length > 0 ? selection : "";
+        }
+      },
+      push(...items) {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return isWebHeading(element) ? mutateWebHeadingList(element, "push", items) : 0;
+        } catch {
+          return 0;
+        }
+      },
+      pop() {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return isWebHeading(element) ? mutateWebHeadingList(element, "pop", []) : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      shift() {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return isWebHeading(element) ? mutateWebHeadingList(element, "shift", []) : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      unshift(...items) {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return isWebHeading(element) ? mutateWebHeadingList(element, "unshift", items) : 0;
+        } catch {
+          return 0;
+        }
+      },
+      splice(...args) {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          return isWebHeading(element) ? mutateWebHeadingList(element, "splice", args) : [];
+        } catch {
+          return [];
+        }
+      },
+      slice(...args) {
+        try {
+          const element = findWebDollarElement(documentObject, selectorText, selector);
+          if (!isWebHeading(element)) return [];
+          const list = firstHeadingList(element);
+          if (!list) return [];
+          return directWebTaskItems(list).map(webTaskItemSnapshot).slice(...args);
+        } catch {
+          return [];
         }
       },
     };

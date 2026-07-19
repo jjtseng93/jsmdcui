@@ -840,31 +840,185 @@ function _tuiHeadingLines(buffer) {
 }
 
 function _headingCheckboxValue(buffer, heading, id) {
-  const headingLine = _headingTuiLine(buffer, heading);
-  if (!headingLine || !Array.isArray(buffer?.lines))
-    return id.startsWith("select") ? null : [];
-
-  const tuiHeadings = _tuiHeadingLines(buffer);
-  const nextHeading = tuiHeadings[heading.ordinal + 1];
-  const endLine = nextHeading?.line ?? buffer.lines.length + 1;
-
-  let optionIndent = null;
+  const list = _tuiHeadingTaskList(buffer, heading);
+  if (!list) return id.startsWith("select") ? null : [];
   const selected = [];
-  for (let lineNumber = headingLine + 1; lineNumber < endLine; lineNumber++) {
-    const line = String(buffer.lines[lineNumber - 1] ?? "");
-    const checkbox = line.match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
-    if (!checkbox) continue;
-    const indent = checkbox[1].length;
-    if (optionIndent == null) optionIndent = indent;
-    if (indent !== optionIndent || checkbox[2] !== "☒") continue;
-    const value = checkbox[3].trim();
-    if (id.startsWith("select")) return value;
-    selected.push(value);
+  for (const item of list.items) {
+    const checkbox = String(buffer.lines[item.start] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
+    if (checkbox?.[2] !== "☒") continue;
+    if (id.startsWith("select")) return item.value;
+    selected.push(item.value);
   }
   return id.startsWith("select") ? null : selected;
 }
 
-function _spliceBufferLines(buffer, start, deleteCount, replacement) {
+function _tuiHeadingTaskList(buffer, heading) {
+  const savedAnchor = buffer?._mdcuiHeadingTaskListAnchors?.get(heading.ordinal);
+  if (savedAnchor) {
+    return {
+      first: savedAnchor.index,
+      end: savedAnchor.index,
+      indent: savedAnchor.indent,
+      items: [],
+    };
+  }
+  const headingLine = _headingTuiLine(buffer, heading);
+  if (!headingLine || !Array.isArray(buffer?.lines)) return null;
+
+  const tuiHeadings = _tuiHeadingLines(buffer);
+  const nextHeading = tuiHeadings[heading.ordinal + 1];
+  const endLine = nextHeading?.line ?? buffer.lines.length + 1;
+  let first = -1;
+  let indent = "";
+
+  for (let y = headingLine; y < endLine - 1; y++) {
+    const checkbox = String(buffer.lines[y] ?? "").match(/^(\s*)[☐☒](?:\s+|$)/);
+    if (!checkbox) continue;
+    first = y;
+    indent = checkbox[1];
+    break;
+  }
+  if (first < 0) return null;
+
+  let end = endLine - 1;
+  let pendingBlank = -1;
+  for (let y = first + 1; y < endLine - 1; y++) {
+    const line = String(buffer.lines[y] ?? "");
+    if (line.trim() === "") {
+      if (pendingBlank < 0) pendingBlank = y;
+      continue;
+    }
+    const leading = line.match(/^\s*/)?.[0].length ?? 0;
+    const checkbox = line.match(/^(\s*)[☐☒](?:\s+|$)/);
+    if (checkbox || leading > indent.length) {
+      pendingBlank = -1;
+      continue;
+    }
+    end = pendingBlank >= 0 ? pendingBlank : y;
+    break;
+  }
+  if (end === endLine - 1 && pendingBlank >= 0) end = pendingBlank;
+
+  const items = [];
+  for (let y = first; y < end; y++) {
+    const checkbox = String(buffer.lines[y] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
+    if (checkbox && checkbox[1] === indent) {
+      items.push({
+        start: y,
+        end,
+        value: checkbox[3].trim(),
+      });
+    }
+  }
+  for (let index = 0; index < items.length - 1; index++)
+    items[index].end = items[index + 1].start;
+
+  return { first, end, indent, items };
+}
+
+function _normalizedSpliceRange(length, argumentCount, start, deleteCount) {
+  if (argumentCount === 0) return { start: 0, deleteCount: 0 };
+  let relativeStart = Number(start);
+  if (Number.isNaN(relativeStart)) relativeStart = 0;
+  relativeStart = Math.trunc(relativeStart);
+  const actualStart = relativeStart < 0
+    ? Math.max(length + relativeStart, 0)
+    : Math.min(relativeStart, length);
+  if (argumentCount === 1) return { start: actualStart, deleteCount: length - actualStart };
+  let requestedDelete = Number(deleteCount);
+  if (Number.isNaN(requestedDelete)) requestedDelete = 0;
+  requestedDelete = Math.max(0, Math.trunc(requestedDelete));
+  return {
+    start: actualStart,
+    deleteCount: Math.min(requestedDelete, length - actualStart),
+  };
+}
+
+function _tuiTaskItemReplacement(indent, inputs) {
+  const normalized = inputs.map((input) => {
+    const item = input && typeof input === "object"
+      ? { value: input.value ?? input.label ?? "", checked: Boolean(input.checked) }
+      : { value: input ?? "", checked: false };
+    return {
+      value: String(item.value).replace(/\r?\n/g, " "),
+      checked: item.checked,
+    };
+  });
+  return {
+    lines: normalized.map((item) =>
+      `${indent}${item.checked ? "☒" : "☐"} ${item.value}`,
+    ),
+    styles: normalized.map((item) => {
+      const styles = [];
+      if (item.checked) {
+        styles[indent.length] = { fg: "green" };
+        styles[indent.length + 1] = { fg: "green" };
+      }
+      return styles;
+    }),
+    ansi: normalized.map((item) =>
+      `${indent}\x1b[${item.checked ? "32" : "2"}m${item.checked ? "☒" : "☐"} \x1b[0m${item.value}`,
+    ),
+  };
+}
+
+function _mutateTuiHeadingList(buffer, heading, method, args) {
+  const list = _tuiHeadingTaskList(buffer, heading);
+  if (!list) {
+    if (method === "push" || method === "unshift") return 0;
+    if (method === "splice") return [];
+    return undefined;
+  }
+
+  if (method === "splice") {
+    const range = _normalizedSpliceRange(list.items.length, args.length, args[0], args[1]);
+    const removedItems = list.items.slice(range.start, range.start + range.deleteCount);
+    const removed = removedItems.map((item) => item.value);
+    const replacement = _tuiTaskItemReplacement(list.indent, args.slice(2));
+    if (range.deleteCount === 0 && replacement.lines.length === 0) return [];
+    const start = list.items[range.start]?.start ?? list.end;
+    const end = removedItems.at(-1)?.end ?? start;
+    if (range.deleteCount === list.items.length && replacement.lines.length === 0 && list.items.length > 0) {
+      if (!(buffer._mdcuiHeadingTaskListAnchors instanceof Map))
+        buffer._mdcuiHeadingTaskListAnchors = new Map();
+      buffer._mdcuiHeadingTaskListAnchors.set(heading.ordinal, { index: start, indent: list.indent });
+    }
+    _spliceBufferLines(buffer, start, end - start, replacement.lines, {
+      styles: replacement.styles,
+      ansi: replacement.ansi,
+    });
+    if (replacement.lines.length > 0)
+      buffer._mdcuiHeadingTaskListAnchors?.delete(heading.ordinal);
+    return removed;
+  }
+
+  if (method === "pop" || method === "shift") {
+    const item = method === "pop" ? list.items.at(-1) : list.items[0];
+    if (!item) return undefined;
+    if (list.items.length === 1) {
+      if (!(buffer._mdcuiHeadingTaskListAnchors instanceof Map))
+        buffer._mdcuiHeadingTaskListAnchors = new Map();
+      buffer._mdcuiHeadingTaskListAnchors.set(heading.ordinal, {
+        index: item.start,
+        indent: list.indent,
+      });
+    }
+    _spliceBufferLines(buffer, item.start, item.end - item.start, []);
+    return item.value;
+  }
+
+  const replacement = _tuiTaskItemReplacement(list.indent, args);
+  if (replacement.lines.length === 0) return list.items.length;
+  const start = method === "push" ? list.end : list.first;
+  _spliceBufferLines(buffer, start, 0, replacement.lines, {
+    styles: replacement.styles,
+    ansi: replacement.ansi,
+  });
+  if (replacement.lines.length > 0) buffer._mdcuiHeadingTaskListAnchors?.delete(heading.ordinal);
+  return list.items.length + replacement.lines.length;
+}
+
+function _spliceBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
   buffer.lines.splice(start, deleteCount, ...replacement);
 
@@ -873,13 +1027,13 @@ function _spliceBufferLines(buffer, start, deleteCount, replacement) {
     buffer._ansiStyleLines.splice(
       start,
       deleteCount,
-      ...replacement.map(() => template),
+      ...(replacementMeta.styles ?? replacement.map(() => template)),
     );
   }
 
   if (typeof buffer._mdcuiAnsiText === "string") {
     const ansiLines = buffer._mdcuiAnsiText.split("\n");
-    ansiLines.splice(start, deleteCount, ...replacement);
+    ansiLines.splice(start, deleteCount, ...(replacementMeta.ansi ?? replacement));
     buffer._mdcuiAnsiText = ansiLines.join("\n");
   }
   if (Array.isArray(buffer._mdcuiImages)) {
@@ -887,6 +1041,14 @@ function _spliceBufferLines(buffer, start, deleteCount, replacement) {
     buffer._mdcuiImages = buffer._mdcuiImages
       .filter((image) => image.line < start || image.line >= start + deleteCount)
       .map((image) => image.line >= start + deleteCount ? { ...image, line: image.line + delta } : image);
+  }
+  if (buffer._mdcuiHeadingTaskListAnchors instanceof Map) {
+    const oldEnd = start + deleteCount;
+    const delta = replacement.length - deleteCount;
+    for (const anchor of buffer._mdcuiHeadingTaskListAnchors.values()) {
+      if (anchor.index >= oldEnd) anchor.index += delta;
+      else if (anchor.index >= start) anchor.index = start;
+    }
   }
 
   buffer.invalidateHighlightFrom?.(start, { force: replacement.length !== deleteCount });
@@ -965,6 +1127,65 @@ export function createTuiSelector(getBuffer) {
           return _blockValue(lines, parsedSelector) ?? "";
         } catch {
           return args.length > 0 ? selection : "";
+        }
+      },
+      push(...items) {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          return heading ? _mutateTuiHeadingList(buffer, heading, "push", items) : 0;
+        } catch {
+          return 0;
+        }
+      },
+      pop() {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          return heading ? _mutateTuiHeadingList(buffer, heading, "pop", []) : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      shift() {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          return heading ? _mutateTuiHeadingList(buffer, heading, "shift", []) : undefined;
+        } catch {
+          return undefined;
+        }
+      },
+      unshift(...items) {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          return heading ? _mutateTuiHeadingList(buffer, heading, "unshift", items) : 0;
+        } catch {
+          return 0;
+        }
+      },
+      splice(...args) {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          return heading ? _mutateTuiHeadingList(buffer, heading, "splice", args) : [];
+        } catch {
+          return [];
+        }
+      },
+      slice(...args) {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          const list = heading ? _tuiHeadingTaskList(buffer, heading) : null;
+          if (!list) return [];
+          return list.items.map((item) => ({
+            value: item.value,
+            checked: String(buffer.lines[item.start] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)/)?.[2] === "☒",
+          })).slice(...args);
+        } catch {
+          return [];
         }
       },
     };
