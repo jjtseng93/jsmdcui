@@ -34,21 +34,24 @@ export class Screen {
     this.kittyImages = [];
     this._shownKittySignature = "";
     this._shownKittyIds = [];
+    this._transmittedKittyIds = new Set();
   }
 
   init() {
     this._shownKittySignature = "";
     this._shownKittyIds = [];
+    this._transmittedKittyIds.clear();
     this.write("\x1b[?1049h\x1b[?25l");
     if (this.mouse) this.write(ENABLE_MOUSE);
     this.write(ENABLE_PASTE);
   }
 
   fini() {
-    for (const id of this._shownKittyIds)
-      this.write(`${KITTY_APC}a=d,d=i,i=${id},q=2;${KITTY_ST}`);
+    for (const id of this._transmittedKittyIds)
+      this.write(`${KITTY_APC}a=d,d=I,i=${id},q=2;${KITTY_ST}`);
     this._shownKittySignature = "";
     this._shownKittyIds = [];
+    this._transmittedKittyIds.clear();
     if (this.mouse) this.write(DISABLE_MOUSE);
     this.write(DISABLE_PASTE);
     this.write("\x1b[0 q\x1b[?25h\x1b[?1049l\x1b[0m");
@@ -127,6 +130,7 @@ export class Screen {
       for (const id of this._shownKittyIds)
         out += `${KITTY_APC}a=d,d=i,i=${id},q=2;${KITTY_ST}`;
       for (const image of this.kittyImages) {
+        const transmitted = this._transmittedKittyIds.has(image.id);
         logKittyPlacement("screen-placement-packet", {
           imageId: image.id,
           placementId: image.placementId ?? image.id,
@@ -145,24 +149,34 @@ export class Screen {
           C: 1,
           mime: image.mime,
           bytes: image.data?.length ?? 0,
+          action: transmitted ? "p" : "T",
         });
         out += this.move(image.y + 1, image.x + 1);
+        const placementFields = [
+          `i=${image.id}`, `p=${image.placementId ?? image.id}`, "q=2",
+          ...(image.sourceWidth && image.sourceHeight ? [
+            `x=${image.sourceX ?? 0}`,
+            `y=${image.sourceY ?? 0}`,
+            `w=${image.sourceWidth}`,
+            `h=${image.sourceHeight}`,
+          ] : []),
+          `c=${image.cols}`, `r=${image.rows}`, "C=1",
+          ...(image.mime ? [`U=${image.mime}`] : []),
+        ];
+        if (transmitted) {
+          out += `${KITTY_APC}a=p,${placementFields.join(",")};${KITTY_ST}`;
+          continue;
+        }
         const base64 = Buffer.from(image.data).toString("base64");
         for (let offset = 0; offset < base64.length; offset += KITTY_CHUNK_SIZE) {
           const payload = base64.slice(offset, offset + KITTY_CHUNK_SIZE);
           const more = offset + KITTY_CHUNK_SIZE < base64.length;
           const fields = [
-            "a=T", "f=100", `i=${image.id}`, `p=${image.placementId ?? image.id}`, "q=2", "t=d",
-            ...(image.sourceWidth && image.sourceHeight ? [
-              `x=${image.sourceX ?? 0}`,
-              `y=${image.sourceY ?? 0}`,
-              `w=${image.sourceWidth}`,
-              `h=${image.sourceHeight}`,
-            ] : []),
-            `c=${image.cols}`, `r=${image.rows}`, "C=1", `m=${more ? 1 : 0}`, `U=${image.mime}`,
+            "a=T", "f=100", "t=d", ...placementFields, `m=${more ? 1 : 0}`,
           ];
           out += `${KITTY_APC}${fields.join(",")};${payload}${KITTY_ST}`;
         }
+        this._transmittedKittyIds.add(image.id);
       }
       if (this.cursor && this.cursorVisible) out += this.move(this.cursor.y + 1, this.cursor.x + 1);
       this._shownKittySignature = kittySignature;

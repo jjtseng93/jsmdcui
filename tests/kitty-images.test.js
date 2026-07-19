@@ -54,11 +54,23 @@ test("Screen emits chunked Kitty placement at the requested cell and deletes onl
   screen.Show();
   const first = writes.join("");
   expect(first).toContain("\x1b[5;4H");
-  expect(first).toContain("\x1b_Ga=T,f=100,i=77,p=77,q=2,t=d,x=0,y=0,w=1,h=1,c=5,r=2,C=1,m=0,U=image/png;");
+  expect(first).toContain("\x1b_Ga=T,f=100,t=d,i=77,p=77,q=2,x=0,y=0,w=1,h=1,c=5,r=2,C=1,U=image/png,m=0;");
 
   writes.length = 0;
   screen.setKittyImages([]);
   screen.Show();
   expect(writes.join("")).toContain("\x1b_Ga=d,d=i,i=77,q=2;");
   expect(writes.join("")).not.toContain("d=a");
+
+  writes.length = 0;
+  screen.setKittyImages([{
+    id: 77, x: 3, y: 2, cols: 5, rows: 2,
+    sourceX: 0, sourceY: 0, sourceWidth: 1, sourceHeight: 1,
+    mime: "image/png", data: ONE_PIXEL_PNG,
+  }]);
+  screen.Show();
+  const replaced = writes.join("");
+  expect(replaced).toContain("\x1b_Ga=p,i=77,p=77,q=2,x=0,y=0,w=1,h=1,c=5,r=2,C=1,U=image/png;");
+  expect(replaced).not.toContain("a=T");
+  expect(replaced).not.toContain(ONE_PIXEL_PNG.toString("base64"));
 });
