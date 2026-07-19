@@ -98,7 +98,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
-import { toggleTaskCheckboxBeforeColumn } from "./cui/task-checkbox.mjs";
+import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/task-checkbox.mjs";
 import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
 import { fitKittyImageToWidth, prepareKittyImages } from "./cui/kitty-images.mjs";
 import { logKittyPlacement } from "./cui/kitty-debug.mjs";
@@ -3021,10 +3021,7 @@ class App {
     this.updateScrollForPane(pane);
     const gutterW = editorGutterWidth(buf);
     const braceMatches = findMatchingBracePositions(buf);
-    // Match viu.mjs: keep the terminal's final column unused. This is based
-    // on the image's actual starting column, so pane offsets and the editor
-    // gutter are both accounted for.
-    const maxW = Math.max(0, pane.x + pane.w - (pane.x + gutterW) - 1);
+    const maxW = Math.max(0, pane.w - gutterW);
     const softwrap = buf.Settings?.softwrap ?? false;
     const wordwrap = softwrap && (buf.Settings?.wordwrap ?? false);
     const tabsize = buf.Settings?.tabsize ?? DEFAULT_SETTINGS.tabsize;
@@ -4209,6 +4206,22 @@ class App {
       const checkboxResult = toggleTaskCheckboxBeforeColumn(payload.line, x);
       if (checkboxResult.toggled) {
         buf.lines[y] = checkboxResult.line;
+        const checkboxStyle = checkboxResult.checked ? { fg: "green" } : null;
+        const styleLine = buf._ansiStyleLines?.[y];
+        if (Array.isArray(styleLine)) {
+          styleLine[checkboxResult.checkboxAt] = checkboxStyle;
+          if (checkboxResult.line[checkboxResult.checkboxAt + 1] === " ")
+            styleLine[checkboxResult.checkboxAt + 1] = checkboxStyle;
+        }
+        if (typeof buf._mdcuiAnsiText === "string") {
+          const ansiLines = buf._mdcuiAnsiText.split("\n");
+          ansiLines[y] = updateAnsiTaskCheckbox(
+            ansiLines[y],
+            checkboxResult.checkboxAt,
+            checkboxResult.checked,
+          );
+          buf._mdcuiAnsiText = ansiLines.join("\n");
+        }
         buf.modified = true;
       }
     

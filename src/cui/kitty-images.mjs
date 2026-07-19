@@ -130,7 +130,7 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
   const inputLines = String(ansiText).split("\n");
   const outputLines = [];
   const images = [];
-  const maxCols = Math.max(1, Math.trunc(Number(terminalCols) || 80) - 1);
+  const maxCols = Math.max(1, Math.trunc(Number(terminalCols) || 80));
   const oscImage = /\x1b\]8;;([^\x1b]*)\x1b\\(?=[^\n]*📷)/;
 
   for (let sourceLine = 0; sourceLine < inputLines.length; sourceLine++) {

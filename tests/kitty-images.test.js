@@ -75,9 +75,8 @@ test("remote Markdown resolves relative Kitty image URLs against its source URL"
 });
 
 test("Kitty image sizing subtracts the gutter width without depending on remaining rows", () => {
-  // A 100-column pane with a 5-column gutter has 94 usable image columns:
-  // five for the gutter and one final column reserved like viu.mjs.
-  expect(fitKittyImageToWidth({ cols: 100, rows: 40 }, 94)).toEqual({ cols: 94, rows: 38 });
+  // A 100-column pane with a 5-column gutter has 95 usable image columns.
+  expect(fitKittyImageToWidth({ cols: 100, rows: 40 }, 95)).toEqual({ cols: 95, rows: 38 });
   expect(fitKittyImageToWidth({ cols: 62, rows: 21 }, 95)).toEqual({ cols: 62, rows: 21 });
   expect(fitKittyImageToWidth({ cols: 62, rows: 21 }, 40)).toEqual({ cols: 40, rows: 14 });
 });
