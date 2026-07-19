@@ -131,6 +131,8 @@ bun src/index.js --wui testapp.md
 | Command | Result |
 | --- | --- |
 | `bun src/index.js app.md` | Render `app.md` as a read-only terminal UI and write five generated files beside it. |
+| `bun src/index.js --kitty app.md` | Display Markdown images with Kitty graphics and the jsgotty MIME extension. |
+| `bun src/index.js --kitty-compat app.md` | Display Markdown images with Kitty graphics without the non-standard MIME `U` field. |
 | `bun src/index.js --check app.md` | Check heading and fenced-block IDs for collisions, print line-by-line details, and exit. |
 | `bun src/index.js --edit app.md` | Open `app.md` as editable UTF-8 source, overriding automatic Markdown UI detection. |
 | `bun src/index.js --cat app.md` | Render the terminal version to stdout, write five generated files beside it, and exit. |

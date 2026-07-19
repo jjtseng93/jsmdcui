@@ -35,7 +35,7 @@ test("Kitty image sizing subtracts the gutter width without depending on remaini
 });
 
 test("Screen emits chunked Kitty placement at the requested cell and deletes only its IDs", () => {
-  const screen = new Screen({ mouse: false });
+  const screen = new Screen({ mouse: false, kittyMode: "extended" });
   const writes = [];
   screen.write = (value) => writes.push(String(value));
   screen.setKittyImages([{
@@ -73,4 +73,28 @@ test("Screen emits chunked Kitty placement at the requested cell and deletes onl
   expect(replaced).toContain("\x1b_Ga=p,i=77,p=77,q=2,x=0,y=0,w=1,h=1,c=5,r=2,C=1,U=image/png;");
   expect(replaced).not.toContain("a=T");
   expect(replaced).not.toContain(ONE_PIXEL_PNG.toString("base64"));
+});
+
+test("Screen gates Kitty output by mode and compat mode omits the MIME U extension", () => {
+  const image = {
+    id: 88, x: 0, y: 0, cols: 1, rows: 1,
+    sourceX: 0, sourceY: 0, sourceWidth: 1, sourceHeight: 1,
+    mime: "image/jpeg", data: ONE_PIXEL_PNG,
+  };
+
+  const off = new Screen({ mouse: false });
+  const offWrites = [];
+  off.write = (value) => offWrites.push(String(value));
+  off.setKittyImages([image]);
+  off.Show();
+  expect(offWrites.join("")).not.toContain("\x1b_G");
+
+  const compat = new Screen({ mouse: false, kittyMode: "compat" });
+  const compatWrites = [];
+  compat.write = (value) => compatWrites.push(String(value));
+  compat.setKittyImages([image]);
+  compat.Show();
+  const output = compatWrites.join("");
+  expect(output).toContain("\x1b_Ga=T");
+  expect(output).not.toContain("U=image/jpeg");
 });

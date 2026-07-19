@@ -23,8 +23,9 @@ export function cursorShapeSequence(shape) {
 }
 
 export class Screen {
-  constructor({ mouse = true } = {}) {
+  constructor({ mouse = true, kittyMode = "off" } = {}) {
     this.mouse = mouse;
+    this.kittyMode = kittyMode;
     this.cols = process.stdout.columns || 80;
     this.rows = process.stdout.rows || 24;
     this.cells = new CellBuffer(this.cols, this.rows);
@@ -161,7 +162,7 @@ export class Screen {
             `h=${image.sourceHeight}`,
           ] : []),
           `c=${image.cols}`, `r=${image.rows}`, "C=1",
-          ...(image.mime ? [`U=${image.mime}`] : []),
+          ...(this.kittyMode === "extended" && image.mime ? [`U=${image.mime}`] : []),
         ];
         if (transmitted) {
           out += `${KITTY_APC}a=p,${placementFields.join(",")};${KITTY_ST}`;
@@ -196,10 +197,11 @@ export class Screen {
   }
 
   setKittyImages(images = []) {
-    this.kittyImages = images;
+    this.kittyImages = this.kittyMode === "off" ? [] : images;
     logKittyPlacement("screen-frame-images", {
-      count: images.length,
-      images: images.map((image) => ({
+      count: this.kittyImages.length,
+      kittyMode: this.kittyMode,
+      images: this.kittyImages.map((image) => ({
         imageId: image.id,
         placementId: image.placementId ?? image.id,
         x: image.x,

@@ -121,6 +121,8 @@ import { shellSplit } from "./shell/shell.js";
 import { styleToAnsi } from "./display/ansi-style.js";
 import { encodeBinaryToBuffer, decodeBinaryBytes } from "./buffer/fixed3-codec.js";
 import { writeBackup, removeBackup, applyBackup } from "./buffer/backup.js";
+
+let kittyImageMode = "off";
 import { isHex3Encoding, isMdcuiEncoding } from "./runtime/encodings.js";
 import { createInterface } from "node:readline/promises";
 
@@ -351,11 +353,10 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     md = await runmd.extractJs(md, mdpath);
     await runmd.createWui(md, mdpath);
   }
-  const prepared = await prepareKittyImages(
-    runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80))),
-    imageBasePath,
-    width,
-  );
+  const tui = runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80)));
+  const prepared = kittyImageMode === "off"
+    ? { rendered: tui, images: [] }
+    : await prepareKittyImages(tui, imageBasePath, width);
   return {
     rendered: prepared.rendered,
     images: prepared.images,
@@ -982,6 +983,7 @@ function parseArgs(argv) {
     plugin: "",
     cdpPort: 0,
     cdpAddress: "",
+    kittyMode: "off",
     settings: new Map(),
   };
   const files = [];
@@ -1019,6 +1021,8 @@ function parseArgs(argv) {
     else if (arg === "--demo-imgtool") flags.demoImgtool = true;
     else if (arg === "--demo-imgtool-zh") flags.demoImgtoolZh = true;
     else if (arg === "--allow-url") flags.allowUrl = true;
+    else if (arg === "--kitty") flags.kittyMode = "extended";
+    else if (arg === "--kitty-compat") flags.kittyMode = "compat";
     else if (arg === "--build-exe") flags.buildExe = true;
     else if (arg === "--build-for") flags.buildFor = argv[++i] ?? "";
     else if (arg === "-debug") flags.debug = true;
@@ -1070,6 +1074,10 @@ Modes:
   -encoding mdcui
       Render Markdown through runmd.mjs#createTui; .md files use this automatically
       Writes .front.js, .back.js, .html, -rpc.js, and -server.js beside the .md file
+  --kitty
+      Display Markdown images with Kitty graphics and the jsgotty MIME extension
+  --kitty-compat
+      Display Markdown images with Kitty graphics without the non-standard MIME U field
 
 Settings:
   -SETTING VALUE
@@ -2424,7 +2432,10 @@ class App {
     this.clipboard = new ClipboardManager();
     this.context = context;
     this.shellRunning = false;
-    this.screen = new Screen({ mouse: DEFAULT_SETTINGS.mouse !== false });
+    this.screen = new Screen({
+      mouse: DEFAULT_SETTINGS.mouse !== false,
+      kittyMode: context.kittyMode ?? "off",
+    });
     this.tabRects = [];
     this._escBuf = null;   // pending lone ESC bytes waiting for alt-key combo
     this._escTimer = null;
@@ -7665,6 +7676,7 @@ async function main() {
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
   
   const { flags, files: rawFiles } = parseArgs(process.argv.slice(2));
+  kittyImageMode = flags.kittyMode;
 
   if (flags.help) {
     console.log(usage());
@@ -7826,7 +7838,16 @@ async function main() {
 
   const { files, command } = parseInput(rawFiles);
   const jsPlugins = new JsPluginManager();
-  const context = { colorscheme, syntaxDefinitions, config, runtime, jsPlugins, encodingExplicit, allowUrl: flags.allowUrl };
+  const context = {
+    colorscheme,
+    syntaxDefinitions,
+    config,
+    runtime,
+    jsPlugins,
+    encodingExplicit,
+    allowUrl: flags.allowUrl,
+    kittyMode: flags.kittyMode,
+  };
   jsPlugins.setContext(context);
   buildMicroGlobal(jsPlugins);   // sets globalThis.micro
 
