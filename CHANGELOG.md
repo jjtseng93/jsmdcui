@@ -2,6 +2,18 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## Unreleased
+
+### Added
+
+- Display local Markdown images at their rendered TUI positions with the
+  Kitty graphics protocol. Image rows are reserved according to intrinsic
+  dimensions, and placements follow scrolling, resizing, and split panes.
+- Keep Bun's normal linked `📷` fallback for missing, unsupported, and remote
+  images, and scope Kitty cleanup to image IDs owned by jsmdcui.
+- Set Kitty's `C=1` placement flag so displaying an image cannot advance the
+  terminal cursor and trigger an unwanted scroll at the bottom of the screen.
+
 ## [0.6.3] - 2026-07-18
 
 This update enforces unique heading IDs at the Markdown source level and

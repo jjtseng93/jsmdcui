@@ -2,6 +2,7 @@ import process from "node:process";
 import { styleToAnsi } from "../display/ansi-style.js";
 import { CellBuffer } from "./cell-buffer.js";
 import { DISABLE_MOUSE, DISABLE_PASTE, ENABLE_MOUSE, ENABLE_PASTE, ResizeEvent } from "./events.js";
+import { logKittyPlacement } from "../cui/kitty-debug.mjs";
 
 const CURSOR_SHAPE_SEQUENCE = {
   default: "\x1b[0 q",
@@ -12,6 +13,10 @@ const CURSOR_SHAPE_SEQUENCE = {
   "blinking-bar": "\x1b[5 q",
   bar: "\x1b[6 q",
 };
+
+const KITTY_APC = "\x1b_G";
+const KITTY_ST = "\x1b\\";
+const KITTY_CHUNK_SIZE = 4096;
 
 export function cursorShapeSequence(shape) {
   return CURSOR_SHAPE_SEQUENCE[shape] ?? CURSOR_SHAPE_SEQUENCE.block;
@@ -26,15 +31,24 @@ export class Screen {
     this.previous = null;
     this.cursor = null;
     this.cursorVisible = false;
+    this.kittyImages = [];
+    this._shownKittySignature = "";
+    this._shownKittyIds = [];
   }
 
   init() {
+    this._shownKittySignature = "";
+    this._shownKittyIds = [];
     this.write("\x1b[?1049h\x1b[?25l");
     if (this.mouse) this.write(ENABLE_MOUSE);
     this.write(ENABLE_PASTE);
   }
 
   fini() {
+    for (const id of this._shownKittyIds)
+      this.write(`${KITTY_APC}a=d,d=i,i=${id},q=2;${KITTY_ST}`);
+    this._shownKittySignature = "";
+    this._shownKittyIds = [];
     if (this.mouse) this.write(DISABLE_MOUSE);
     this.write(DISABLE_PASTE);
     this.write("\x1b[0 q\x1b[?25h\x1b[?1049l\x1b[0m");
@@ -97,6 +111,63 @@ export class Screen {
     if (this.cursor && this.cursorVisible) {
       out += cursorShapeSequence(this.cursor.shape) + this.move(this.cursor.y + 1, this.cursor.x + 1) + "\x1b[?25h";
     } else out += "\x1b[?25l";
+    const kittySignature = this.kittyImages.map((image) =>
+      `${image.id}:${image.placementId ?? image.id}:${image.x}:${image.y}:${image.cols}:${image.rows}:${image.sourceX ?? 0}:${image.sourceY ?? 0}:${image.sourceWidth ?? 0}:${image.sourceHeight ?? 0}`
+    ).join("|");
+    if (kittySignature !== this._shownKittySignature) {
+      logKittyPlacement("screen-overlay-change", {
+        previousSignature: this._shownKittySignature,
+        nextSignature: kittySignature,
+        deletingImageIds: this._shownKittyIds,
+        terminalCols: this.cols,
+        terminalRows: this.rows,
+        textCursor: this.cursor,
+        textCursorVisible: this.cursorVisible,
+      });
+      for (const id of this._shownKittyIds)
+        out += `${KITTY_APC}a=d,d=i,i=${id},q=2;${KITTY_ST}`;
+      for (const image of this.kittyImages) {
+        logKittyPlacement("screen-placement-packet", {
+          imageId: image.id,
+          placementId: image.placementId ?? image.id,
+          zeroBasedX: image.x,
+          zeroBasedY: image.y,
+          csiCol: image.x + 1,
+          csiRow: image.y + 1,
+          cols: image.cols,
+          rows: image.rows,
+          sourceRect: image.sourceWidth && image.sourceHeight ? {
+            x: image.sourceX ?? 0,
+            y: image.sourceY ?? 0,
+            width: image.sourceWidth,
+            height: image.sourceHeight,
+          } : null,
+          C: 1,
+          mime: image.mime,
+          bytes: image.data?.length ?? 0,
+        });
+        out += this.move(image.y + 1, image.x + 1);
+        const base64 = Buffer.from(image.data).toString("base64");
+        for (let offset = 0; offset < base64.length; offset += KITTY_CHUNK_SIZE) {
+          const payload = base64.slice(offset, offset + KITTY_CHUNK_SIZE);
+          const more = offset + KITTY_CHUNK_SIZE < base64.length;
+          const fields = [
+            "a=T", "f=100", `i=${image.id}`, `p=${image.placementId ?? image.id}`, "q=2", "t=d",
+            ...(image.sourceWidth && image.sourceHeight ? [
+              `x=${image.sourceX ?? 0}`,
+              `y=${image.sourceY ?? 0}`,
+              `w=${image.sourceWidth}`,
+              `h=${image.sourceHeight}`,
+            ] : []),
+            `c=${image.cols}`, `r=${image.rows}`, "C=1", `m=${more ? 1 : 0}`, `U=${image.mime}`,
+          ];
+          out += `${KITTY_APC}${fields.join(",")};${payload}${KITTY_ST}`;
+        }
+      }
+      if (this.cursor && this.cursorVisible) out += this.move(this.cursor.y + 1, this.cursor.x + 1);
+      this._shownKittySignature = kittySignature;
+      this._shownKittyIds = [...new Set(this.kittyImages.map((image) => image.id))];
+    }
     this.write(out);
     this.previous = this.cells.clone();
   }
@@ -108,6 +179,25 @@ export class Screen {
   setCursor(x, y, visible = true, shape = "block") {
     this.cursor = { x, y, shape };
     this.cursorVisible = visible;
+  }
+
+  setKittyImages(images = []) {
+    this.kittyImages = images;
+    logKittyPlacement("screen-frame-images", {
+      count: images.length,
+      images: images.map((image) => ({
+        imageId: image.id,
+        placementId: image.placementId ?? image.id,
+        x: image.x,
+        y: image.y,
+        cols: image.cols,
+        rows: image.rows,
+        sourceX: image.sourceX ?? null,
+        sourceY: image.sourceY ?? null,
+        sourceWidth: image.sourceWidth ?? null,
+        sourceHeight: image.sourceHeight ?? null,
+      })),
+    });
   }
 
   hideCursor() {
@@ -133,6 +223,7 @@ export class Screen {
     this.rows = process.stdout.rows || this.rows;
     this.cells.resize(this.cols, this.rows);
     this.previous = null;
+    this._shownKittySignature = "";
     return new ResizeEvent(this.cols, this.rows);
   }
 

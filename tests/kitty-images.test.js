@@ -1,0 +1,64 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { fitKittyImageToWidth, prepareKittyImages } from "../src/cui/kitty-images.mjs";
+import { Screen } from "../src/screen/screen.js";
+
+const ONE_PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
+
+test("Bun-rendered Markdown image links reserve rows and retain Kitty data", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-"));
+  const markdownPath = join(dir, "app.md");
+  await writeFile(join(dir, "pixel.png"), ONE_PIXEL_PNG);
+  const ansi = Bun.markdown.ansi("before\n\n![pixel](pixel.png)\n\nafter\n", {
+    hyperlinks: true,
+    columns: 40,
+  });
+  const result = await prepareKittyImages(ansi, markdownPath, 40);
+
+  expect(result.images).toHaveLength(1);
+  expect(result.images[0]).toMatchObject({ mime: "image/png", cols: 1, rows: 1 });
+  expect(result.images[0].data.equals(ONE_PIXEL_PNG)).toBe(true);
+  expect(Bun.stripANSI(result.rendered)).toContain("📷 pixel");
+});
+
+test("Kitty image sizing subtracts the gutter width without depending on remaining rows", () => {
+  // A 100-column pane with a 5-column gutter has 94 usable image columns:
+  // five for the gutter and one final column reserved like viu.mjs.
+  expect(fitKittyImageToWidth({ cols: 100, rows: 40 }, 94)).toEqual({ cols: 94, rows: 38 });
+  expect(fitKittyImageToWidth({ cols: 62, rows: 21 }, 95)).toEqual({ cols: 62, rows: 21 });
+  expect(fitKittyImageToWidth({ cols: 62, rows: 21 }, 40)).toEqual({ cols: 40, rows: 14 });
+});
+
+test("Screen emits chunked Kitty placement at the requested cell and deletes only its IDs", () => {
+  const screen = new Screen({ mouse: false });
+  const writes = [];
+  screen.write = (value) => writes.push(String(value));
+  screen.setKittyImages([{
+    id: 77,
+    x: 3,
+    y: 4,
+    cols: 5,
+    rows: 2,
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 1,
+    sourceHeight: 1,
+    mime: "image/png",
+    data: ONE_PIXEL_PNG,
+  }]);
+  screen.Show();
+  const first = writes.join("");
+  expect(first).toContain("\x1b[5;4H");
+  expect(first).toContain("\x1b_Ga=T,f=100,i=77,p=77,q=2,t=d,x=0,y=0,w=1,h=1,c=5,r=2,C=1,m=0,U=image/png;");
+
+  writes.length = 0;
+  screen.setKittyImages([]);
+  screen.Show();
+  expect(writes.join("")).toContain("\x1b_Ga=d,d=i,i=77,q=2;");
+  expect(writes.join("")).not.toContain("d=a");
+});

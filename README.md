@@ -402,6 +402,13 @@ The terminal automatically reflows the Markdown when its width changes.
 Only `javascript:` links execute in the TUI; ordinary web links behave as
 normal links in the browser.
 
+Local Markdown images are displayed automatically in terminals that support
+the Kitty graphics protocol. Relative image paths are resolved from the
+Markdown file's directory. jsmdcui reads the image dimensions, reserves the
+corresponding terminal rows, and updates the placement when the document is
+scrolled, resized, or shown in a split pane. Unsupported, missing, or remote
+images retain Bun's normal `📷` link rendering.
+
 ## Browser interaction
 
 The WUI uses normal browser mouse and keyboard behavior. Clicking a

@@ -100,6 +100,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
 import { toggleTaskCheckboxBeforeColumn } from "./cui/task-checkbox.mjs";
 import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
+import { fitKittyImageToWidth, prepareKittyImages } from "./cui/kitty-images.mjs";
+import { logKittyPlacement } from "./cui/kitty-debug.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
@@ -337,20 +339,26 @@ async function decodeAndRenderTextBytes(bytes, encoding = "utf-8", width = proce
   const decoded = decodeTextBytesWithEncoding(bytes, encoding);
   if (!isMdcuiEncoding(decoded.encoding)) return decoded;
   const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
-  const { rendered, tuiSourceText } = await renderMdcui(decoded.text, renderWidth, mdpath);
+  const { rendered, tuiSourceText, images } = await renderMdcui(decoded.text, renderWidth, mdpath, mdpath);
   const styled = parseAnsiStyledText(rendered);
-  return { text: styled.text, encoding: "mdcui", sourceText: decoded.text, tuiSourceText, ansiText: rendered, ansiStyleLines: styled.styleLines, mdcuiRenderWidth: renderWidth };
+  return { text: styled.text, encoding: "mdcui", sourceText: decoded.text, tuiSourceText, ansiText: rendered, ansiStyleLines: styled.styleLines, mdcuiImages: images, mdcuiRenderWidth: renderWidth };
 }
 
-async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpath = null) {
+async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpath = null, imageBasePath = mdpath) {
   const runmd = await import("../runmd.mjs");
   let md = String(markdown);
   if (mdpath && !isHttpUrl(mdpath)) {
     md = await runmd.extractJs(md, mdpath);
     await runmd.createWui(md, mdpath);
   }
+  const prepared = await prepareKittyImages(
+    runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80))),
+    imageBasePath,
+    width,
+  );
   return {
-    rendered: runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80))),
+    rendered: prepared.rendered,
+    images: prepared.images,
     tuiSourceText: md,
   };
 }
@@ -589,6 +597,12 @@ function resizeMdcuiTextBlock(buf, y, x) {
     const ansiLines = buf._mdcuiAnsiText.split("\n");
     ansiLines.splice(row, deleteCount, ...replacement);
     buf._mdcuiAnsiText = ansiLines.join("\n");
+  }
+  if (Array.isArray(buf._mdcuiImages)) {
+    const delta = replacement.length - deleteCount;
+    buf._mdcuiImages = buf._mdcuiImages
+      .filter((image) => image.line < row || image.line >= row + deleteCount)
+      .map((image) => image.line >= row + deleteCount ? { ...image, line: image.line + delta } : image);
   }
 
   if (insertAt >= 0) {
@@ -1149,7 +1163,7 @@ class BufferModel {
   get searchPattern() { return this._searchPattern ?? ""; }
   set searchPattern(v) { this._searchPattern = v ?? ""; this.searchMatches?.clear(); }
 
-  constructor({ path = "", text = "", command = {}, type = "default", readonly = false, modTimeMs = null, encoding = DEFAULT_SETTINGS.encoding, ansiStyleLines = null, ansiText = null, sourceText = null, tuiSourceText = null, mdcuiRenderWidth = 0 } = {}) {
+  constructor({ path = "", text = "", command = {}, type = "default", readonly = false, modTimeMs = null, encoding = DEFAULT_SETTINGS.encoding, ansiStyleLines = null, ansiText = null, sourceText = null, tuiSourceText = null, mdcuiImages = null, mdcuiRenderWidth = 0 } = {}) {
     this.path = path;
     this.type = type;
     this.name = path ? basename(path) : "No name";
@@ -1162,6 +1176,7 @@ class BufferModel {
     this._mdcuiAnsiText = isMdcuiEncoding(this.encoding) ? String(ansiText ?? "") : null;
     this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(sourceText ?? text) : null;
     this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(tuiSourceText ?? sourceText ?? text) : null;
+    this._mdcuiImages = isMdcuiEncoding(this.encoding) ? (mdcuiImages ?? []) : [];
     this._mdcuiRenderWidth = Math.trunc(Number(mdcuiRenderWidth) || 0);
     this.cursor = { x: 0, y: 0 };
     this.scroll = { x: 0, y: 0, row: 0 };
@@ -1262,6 +1277,7 @@ class BufferModel {
     let sourceText = null;
     let tuiSourceText = null;
     let mdcuiRenderWidth = 0;
+    let mdcuiImages = null;
     if (existsSync(path)) {
       const info = statSync(path);
       if (info.isDirectory()) throw new Error(`${path} is a directory`);
@@ -1275,9 +1291,10 @@ class BufferModel {
       sourceText = decoded.sourceText ?? null;
       tuiSourceText = decoded.tuiSourceText ?? null;
       mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
+      mdcuiImages = decoded.mdcuiImages ?? null;
       if (isMdcuiEncoding(encoding)) readonly = true;
     }
-    const buffer = new BufferModel({ path, text, command, readonly, modTimeMs, encoding, ansiStyleLines, ansiText, sourceText, tuiSourceText, mdcuiRenderWidth });
+    const buffer = new BufferModel({ path, text, command, readonly, modTimeMs, encoding, ansiStyleLines, ansiText, sourceText, tuiSourceText, mdcuiImages, mdcuiRenderWidth });
     buffer._configDir = context?.config?.configDir ?? null;
     attachSyntax(buffer, context, path, text);
     return buffer;
@@ -1678,6 +1695,7 @@ class BufferModel {
       this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.sourceText ?? text) : null;
       this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.tuiSourceText ?? decoded.sourceText ?? text) : null;
       this._mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
+      this._mdcuiImages = decoded.mdcuiImages ?? [];
       const readonly = isMdcuiEncoding(this.encoding);
       this.fileformat = detectFileFormat(text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
       this.Settings.fileformat = this.fileformat;
@@ -1710,6 +1728,7 @@ class BufferModel {
     this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.sourceText ?? text) : null;
     this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.tuiSourceText ?? decoded.sourceText ?? text) : null;
     this._mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
+    this._mdcuiImages = decoded.mdcuiImages ?? [];
     this.fileformat = detectFileFormat(text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
     this.Settings.fileformat = this.fileformat;
     this.lines = normalizeBufferText(text).split("\n");
@@ -1733,12 +1752,13 @@ class BufferModel {
     if (!isMdcuiEncoding(this.encoding) || this._mdcuiTuiSourceText == null) return false;
     const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
     if (renderWidth === this._mdcuiRenderWidth) return false;
-    const { rendered } = await renderMdcui(this._mdcuiTuiSourceText, renderWidth);
+    const { rendered, images } = await renderMdcui(this._mdcuiTuiSourceText, renderWidth, null, this.path);
     const styled = parseAnsiStyledText(rendered);
     this.lines = normalizeBufferText(styled.text).split("\n");
     if (this.lines.length === 0) this.lines = [""];
     this._ansiStyleLines = styled.styleLines;
     this._mdcuiAnsiText = rendered;
+    this._mdcuiImages = images;
     this._mdcuiRenderWidth = renderWidth;
     this.fileformat = detectFileFormat(styled.text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
     this.Settings.fileformat = this.fileformat;
@@ -2638,6 +2658,7 @@ class App {
 
     const defaultStyle = this.context.colorscheme?.defaultStyle ?? {};
     this.screen.fill(" ", defaultStyle);
+    this._kittyFrameImages = [];
 
     this.tabRects = [];
     if (tabBarHeight) this.renderTabbar(defaultStyle);
@@ -2813,6 +2834,7 @@ class App {
       this.screen.setCursor(0, 0, false);
     }
 
+    this.screen.setKittyImages(this._kittyFrameImages);
     this.screen.show();
   }
 
@@ -2976,7 +2998,10 @@ class App {
     this.updateScrollForPane(pane);
     const gutterW = editorGutterWidth(buf);
     const braceMatches = findMatchingBracePositions(buf);
-    const maxW = Math.max(0, pane.w - gutterW);
+    // Match viu.mjs: keep the terminal's final column unused. This is based
+    // on the image's actual starting column, so pane offsets and the editor
+    // gutter are both accounted for.
+    const maxW = Math.max(0, pane.x + pane.w - (pane.x + gutterW) - 1);
     const softwrap = buf.Settings?.softwrap ?? false;
     const wordwrap = softwrap && (buf.Settings?.wordwrap ?? false);
     const tabsize = buf.Settings?.tabsize ?? DEFAULT_SETTINGS.tabsize;
@@ -2995,6 +3020,59 @@ class App {
       ? (this.context.colorscheme.get("cursor-line")?.fg ?? null)
       : null;
 
+    const addKittyImage = (lineNo, screenRow, subRow = 0) => {
+      if (subRow !== 0 || !Array.isArray(buf._mdcuiImages)) return;
+      for (const image of buf._mdcuiImages) {
+        if (image.line !== lineNo) continue;
+        const { cols, rows } = fitKittyImageToWidth(image, maxW);
+        const visibleTop = Math.max(pane.y, screenRow);
+        const visibleBottom = Math.min(pane.y + pane.h, screenRow + rows);
+        const visibleRows = visibleBottom - visibleTop;
+        if (visibleRows < 1 || cols < 1) continue;
+        const clippedTopRows = visibleTop - screenRow;
+        const pixelHeight = Math.max(1, Math.trunc(Number(image.pixelHeight) || 1));
+        const sourceY = Math.min(pixelHeight - 1, Math.round(pixelHeight * clippedTopRows / rows));
+        const sourceBottom = Math.min(pixelHeight, Math.round(pixelHeight * (clippedTopRows + visibleRows) / rows));
+        const sourceHeight = Math.max(1, sourceBottom - sourceY);
+        const sourceWidth = Math.max(1, Math.trunc(Number(image.pixelWidth) || 1));
+        const x = pane.x + gutterW;
+        const placementId = ((image.id ^ Math.imul(x + 1, 73856093) ^ Math.imul(visibleTop + 1, 19349663) ^ Math.imul(sourceY + 1, 83492791)) >>> 0) % 2147483646 + 1;
+        logKittyPlacement("app-placement", {
+          buffer: buf.path,
+          imagePath: image.path,
+          imageId: image.id,
+          placementId,
+          imageLogicalLine: image.line,
+          renderedLine: lineNo,
+          subRow,
+          pane: { x: pane.x, y: pane.y, width: pane.w, height: pane.h },
+          scroll: { ...buf.scroll },
+          gutterWidth: gutterW,
+          maxWidth: maxW,
+          screenX: x,
+          nominalScreenY: screenRow,
+          screenY: visibleTop,
+          cols,
+          rows: visibleRows,
+          originalCols: image.cols,
+          originalRows: image.rows,
+          sourceRect: { x: 0, y: sourceY, width: sourceWidth, height: sourceHeight },
+        });
+        this._kittyFrameImages.push({
+          ...image,
+          x,
+          y: visibleTop,
+          cols,
+          rows: visibleRows,
+          sourceX: 0,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          placementId,
+        });
+      }
+    };
+
     const hasDiff   = (buf.Settings?.diffgutter ?? false) && !!buf.diffBase;
     if (hasDiff && !buf._diffOnUpdate) buf._diffOnUpdate = () => this.render();
     const diffMarks = hasDiff ? getDiffMarkers(buf) : null;
@@ -3008,6 +3086,18 @@ class App {
     const msgInfoStyle = cs?.styles?.has("gutter-info") ? cs.get("gutter-info") : defaultStyle;
     const msgWarnStyle = cs?.styles?.has("gutter-warning") ? cs.get("gutter-warning") : defaultStyle;
     const msgErrStyle = cs?.styles?.has("gutter-error") ? cs.get("gutter-error") : defaultStyle;
+
+    // When the image anchor has scrolled above the pane, its lower portion can
+    // still intersect the viewport. It will not be encountered by the normal
+    // visible-line loop, so add that clipped placement explicitly.
+    for (const image of buf._mdcuiImages ?? []) {
+      if (image.line >= buf.scroll.y) continue;
+      const nominalScreenRow = pane.y + image.line - buf.scroll.y;
+      const { rows } = fitKittyImageToWidth(image, maxW);
+      if (nominalScreenRow < pane.y && nominalScreenRow + rows > pane.y) {
+        addKittyImage(image.line, nominalScreenRow);
+      }
+    }
 
     const renderGutter = (lineNo, row, screenRow, subRow = 0) => {
       // Message indicator: 2 cols, '> ' with kind-based style (Go: drawGutter)
@@ -3052,6 +3142,7 @@ class App {
         if (lineNo < buf.lines.length) {
           const cells = renderHighlightedCells(buf, lineNo, buf.scroll.x, maxW, this.context.colorscheme, pane.selection, getLineSearchRanges(buf, lineNo), braceMatches, isCL ? clBg : null);
           putCells(this.screen, pane.x + gutterW, screenRow, cells, maxW);
+          addKittyImage(lineNo, screenRow);
         }
       }
     } else {
@@ -3075,6 +3166,7 @@ class App {
 
         const cells = renderHighlightedCells(buf, lineNo, segStart, maxW, this.context.colorscheme, pane.selection, _swSearchRanges, braceMatches, isCL ? clBg : null);
         putCells(this.screen, pane.x + gutterW, screenRow, cells, maxW);
+        addKittyImage(lineNo, screenRow, subRow);
 
         if (subRow + 1 < breaks.length) {
           sloc = { line: lineNo, row: subRow + 1 };
@@ -6807,6 +6899,7 @@ async function loadBufferForPath(pathOrUrl, context, command = {}, { interactive
       sourceText: decoded.sourceText ?? null,
       tuiSourceText: decoded.tuiSourceText ?? null,
       mdcuiRenderWidth: decoded.mdcuiRenderWidth ?? 0,
+      mdcuiImages: decoded.mdcuiImages ?? null,
     });
     buffer._configDir = context?.config?.configDir ?? null;
     attachSyntax(buffer, loadContext, urlPath, text);
@@ -7517,6 +7610,7 @@ async function loadBuffers(files, command) {
       sourceText: decoded.sourceText ?? null,
       tuiSourceText: decoded.tuiSourceText ?? null,
       mdcuiRenderWidth: decoded.mdcuiRenderWidth ?? 0,
+      mdcuiImages: decoded.mdcuiImages ?? null,
     });
     if (loadBuffers.context) attachSyntax(stdinBuf, loadBuffers.context, "", stdinText);
     buffers.push(stdinBuf);

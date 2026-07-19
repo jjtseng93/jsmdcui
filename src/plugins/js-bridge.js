@@ -882,6 +882,12 @@ function _spliceBufferLines(buffer, start, deleteCount, replacement) {
     ansiLines.splice(start, deleteCount, ...replacement);
     buffer._mdcuiAnsiText = ansiLines.join("\n");
   }
+  if (Array.isArray(buffer._mdcuiImages)) {
+    const delta = replacement.length - deleteCount;
+    buffer._mdcuiImages = buffer._mdcuiImages
+      .filter((image) => image.line < start || image.line >= start + deleteCount)
+      .map((image) => image.line >= start + deleteCount ? { ...image, line: image.line + delta } : image);
+  }
 
   buffer.invalidateHighlightFrom?.(start, { force: replacement.length !== deleteCount });
   if (oldCursor) {
