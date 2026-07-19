@@ -1,6 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { logKittyPlacement } from "./kitty-debug.mjs";
+import { fetchHttpBytes as defaultFetchHttpBytes } from "../platform/commands.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -75,13 +76,33 @@ function imageSize(buffer) {
   return null;
 }
 
-function localImagePath(href, markdownPath) {
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value ?? ""));
+}
+
+function imageSource(href, markdownPath, allowUrl) {
   try {
-    if (href.startsWith("file:")) return fileURLToPath(href);
-    if (process.platform === "win32" && /^[A-Za-z]:[\\/]/.test(href)) return resolve(href);
-    if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(href) || href.startsWith("//")) return null;
+    if (href.startsWith("file:")) return { kind: "local", value: fileURLToPath(href) };
+    if (process.platform === "win32" && /^[A-Za-z]:[\\/]/.test(href)) {
+      return { kind: "local", value: resolve(href) };
+    }
+    if (isHttpUrl(href)) {
+      return allowUrl ? { kind: "remote", value: new URL(href).href } : null;
+    }
+    if (href.startsWith("//")) {
+      if (!allowUrl) return null;
+      const protocol = isHttpUrl(markdownPath) ? new URL(markdownPath).protocol : "https:";
+      return { kind: "remote", value: new URL(`${protocol}${href}`).href };
+    }
+    if (/^[A-Za-z][A-Za-z\d+.-]*:/.test(href)) return null;
+    if (isHttpUrl(markdownPath)) {
+      return allowUrl ? { kind: "remote", value: new URL(href, markdownPath).href } : null;
+    }
     const decoded = decodeURIComponent(href.replace(/[?#].*$/, ""));
-    return resolve(markdownPath ? dirname(markdownPath) : process.cwd(), decoded);
+    return {
+      kind: "local",
+      value: resolve(markdownPath ? dirname(markdownPath) : process.cwd(), decoded),
+    };
   } catch {
     return null;
   }
@@ -105,7 +126,7 @@ export function fitKittyImageToWidth(image, maxCols) {
   return { cols, rows };
 }
 
-export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 80) {
+export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 80, options = {}) {
   const inputLines = String(ansiText).split("\n");
   const outputLines = [];
   const images = [];
@@ -115,15 +136,21 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
   for (let sourceLine = 0; sourceLine < inputLines.length; sourceLine++) {
     const line = inputLines[sourceLine];
     const match = line.match(oscImage);
-    const pathname = match ? localImagePath(match[1], markdownPath) : null;
-    if (!pathname) {
+    const source = match ? imageSource(match[1], markdownPath, options.allowUrl === true) : null;
+    if (!source) {
       outputLines.push(line);
       continue;
     }
     try {
-      const file = Bun.file(pathname);
-      if (!(await file.exists())) throw new Error("missing image");
-      const data = Buffer.from(await file.arrayBuffer());
+      let data;
+      if (source.kind === "remote") {
+        const fetchBytes = options.fetchHttpBytes ?? defaultFetchHttpBytes;
+        data = Buffer.from(await fetchBytes(source.value));
+      } else {
+        const file = Bun.file(source.value);
+        if (!(await file.exists())) throw new Error("missing image");
+        data = Buffer.from(await file.arrayBuffer());
+      }
       const size = imageSize(data);
       if (!size?.width || !size?.height) throw new Error("unsupported image");
       const estimatedCols = Math.max(1, Math.round(size.width / 8));
@@ -132,7 +159,7 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
       const lineIndex = outputLines.length;
       outputLines.push(line, ...Array(Math.max(0, rows - 1)).fill(""));
       images.push({
-        id: stableImageId(pathname, sourceLine, data),
+        id: stableImageId(source.value, sourceLine, data),
         line: lineIndex,
         cols,
         rows,
@@ -140,10 +167,11 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
         pixelHeight: size.height,
         mime: size.mime,
         data,
-        path: pathname,
+        path: source.value,
       });
       logKittyPlacement("image-prepared", {
-        path: pathname,
+        path: source.value,
+        sourceKind: source.kind,
         sourceLine,
         renderedLine: lineIndex,
         imageId: images.at(-1).id,

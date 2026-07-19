@@ -123,6 +123,8 @@ import { encodeBinaryToBuffer, decodeBinaryBytes } from "./buffer/fixed3-codec.j
 import { writeBackup, removeBackup, applyBackup } from "./buffer/backup.js";
 
 let kittyImageMode = "off";
+let allowRemoteKittyImages = false;
+const remoteMarkdownSources = new Map();
 import { isHex3Encoding, isMdcuiEncoding } from "./runtime/encodings.js";
 import { createInterface } from "node:readline/promises";
 
@@ -317,7 +319,12 @@ async function readTextFileWithEncoding(path, encoding = "utf-8", inferMdcui = t
 
 async function fetchTextWithEncoding(url, encoding = "utf-8", inferMdcui = true) {
   const bytes = await fetchHttpBytes(url);
-  return decodeAndRenderTextBytes(new Uint8Array(bytes), encodingForPath(url, encoding, inferMdcui));
+  return decodeAndRenderTextBytes(
+    new Uint8Array(bytes),
+    encodingForPath(url, encoding, inferMdcui),
+    process.stdout.columns || 80,
+    url,
+  );
 }
 
 function normalizeEncodingLabel(encoding = "utf-8") {
@@ -354,9 +361,14 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     await runmd.createWui(md, mdpath);
   }
   const tui = runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80)));
+  const resolvedImageBasePath = mdpath && !isHttpUrl(mdpath)
+    ? remoteMarkdownSources.get(resolve(mdpath)) ?? imageBasePath
+    : imageBasePath;
   const prepared = kittyImageMode === "off"
     ? { rendered: tui, images: [] }
-    : await prepareKittyImages(tui, imageBasePath, width);
+    : await prepareKittyImages(tui, resolvedImageBasePath, width, {
+      allowUrl: allowRemoteKittyImages,
+    });
   return {
     rendered: prepared.rendered,
     images: prepared.images,
@@ -1123,7 +1135,7 @@ Demo:
 
 Remote Markdown:
   --allow-url
-      Download HTTP(S) Markdown to cwd, write 5 generated files, and allow its code to run
+      Download HTTP(S) Markdown and, with Kitty mode, its HTTP(S) images; allow its code to run
 
 Experimental:
   --build-exe                   Build a Bun single-file executable and exit
@@ -6891,6 +6903,7 @@ async function loadBufferForPath(pathOrUrl, context, command = {}, { interactive
     if (!name.toLowerCase().endsWith(".md")) name += ".md";
     const localPath = resolve(name);
     await Bun.write(localPath, await fetchHttpBytes(pathOrUrl));
+    remoteMarkdownSources.set(localPath, new URL(pathOrUrl).href);
     return await loadBufferForPath(localPath, loadContext, command, { interactive });
   }
   let buffer;
@@ -7677,6 +7690,7 @@ async function main() {
   
   const { flags, files: rawFiles } = parseArgs(process.argv.slice(2));
   kittyImageMode = flags.kittyMode;
+  allowRemoteKittyImages = flags.allowUrl;
 
   if (flags.help) {
     console.log(usage());

@@ -26,6 +26,54 @@ test("Bun-rendered Markdown image links reserve rows and retain Kitty data", asy
   expect(Bun.stripANSI(result.rendered)).toContain("📷 pixel");
 });
 
+test("remote Kitty images require allowUrl and use the configured HTTP byte fetcher", async () => {
+  const imageUrl = "https://example.test/assets/pixel.png";
+  const ansi = Bun.markdown.ansi(`![pixel](${imageUrl})`, {
+    hyperlinks: true,
+    columns: 40,
+  });
+  const requests = [];
+  const fetchHttpBytes = async (url) => {
+    requests.push(url);
+    return ONE_PIXEL_PNG;
+  };
+
+  const blocked = await prepareKittyImages(ansi, "/tmp/app.md", 40, { fetchHttpBytes });
+  expect(blocked.images).toHaveLength(0);
+  expect(requests).toHaveLength(0);
+
+  const allowed = await prepareKittyImages(ansi, "/tmp/app.md", 40, {
+    allowUrl: true,
+    fetchHttpBytes,
+  });
+  expect(requests).toEqual([imageUrl]);
+  expect(allowed.images).toHaveLength(1);
+  expect(allowed.images[0].path).toBe(imageUrl);
+});
+
+test("remote Markdown resolves relative Kitty image URLs against its source URL", async () => {
+  const ansi = Bun.markdown.ansi("![pixel](../images/pixel.png?size=1)", {
+    hyperlinks: true,
+    columns: 40,
+  });
+  const requests = [];
+  const result = await prepareKittyImages(
+    ansi,
+    "https://example.test/docs/guide/app.md",
+    40,
+    {
+      allowUrl: true,
+      fetchHttpBytes: async (url) => {
+        requests.push(url);
+        return ONE_PIXEL_PNG;
+      },
+    },
+  );
+
+  expect(requests).toEqual(["https://example.test/docs/images/pixel.png?size=1"]);
+  expect(result.images).toHaveLength(1);
+});
+
 test("Kitty image sizing subtracts the gutter width without depending on remaining rows", () => {
   // A 100-column pane with a 5-column gutter has 94 usable image columns:
   // five for the gutter and one final column reserved like viu.mjs.
