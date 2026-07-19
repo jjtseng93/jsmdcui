@@ -397,16 +397,16 @@ The available selector methods are:
 TUI heading rows are recalculated after text-block rows are added, removed, or
 replaced with multiline `.val(value)` content.
 
-The three UI building blocks are:
+The 3 UI building blocks are:
 
-- Regular Markdown provides headings, text, lists, task checkboxes, code, and
+- 1. `Regular Markdown` provides headings, text, lists, task checkboxes, code, and
   links.
-- A `js front` block contains UI code. Exported functions can use
+- 2. `js front` block contains UI code. Exported functions can use
   `alert`, `confirm`, `prompt`, and the generated `rpc` client.
-- A front module may export `async function onMdcuiExit({ reason, path, $ })`.
-  The terminal UI awaits it before closing an `mdcui` buffer. Modified
-  `mdcui` buffers close without a save prompt.
-- A `js back` block exports trusted backend functions. In the browser WUI,
+  * A front module may export `async function onMdcuiExit({ reason, path, $ })`.
+  * The terminal UI awaits it before closing an `mdcui` buffer. 
+  * Modified `mdcui` buffers close without a save prompt.
+- 3. `js back` block exports trusted backend functions. In the browser WUI,
   `rpc` publishes only exported functions whose exported names do not start
   with `_`. Call a published function from the front end with
   `await rpc.functionName(arg1, arg2)`.
