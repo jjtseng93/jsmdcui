@@ -18,8 +18,24 @@ test("--help describes the non-overwriting demo behavior", () => {
   expect(output).toContain("If ./testapp.md is missing, write the bundled demo there first");
   expect(output).toContain("--demo-<filename>");
   expect(output).toContain("demos/<filename>.md");
+  expect(output.match(/Open it in the TUI and write 5 generated files beside it/g)?.length).toBe(2);
   expect(output).toContain("--demo-imgtool");
   expect(output).toContain("--demo-imgtool-zh");
+});
+
+test("--demo-list lists root and automatically discovered demos", () => {
+  const result = Bun.spawnSync([bunBin, tui, "--demo-list"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  expect(result.exitCode).toBe(0);
+  const output = result.stdout.toString();
+  expect(output).toMatch(/--demo\s+testapp\.md/);
+  expect(output).toMatch(/--demo-image-processor\s+demos\/image-processor\.md/);
+  expect(output).toMatch(/--demo-select\s+demos\/select\.md/);
+  expect(output).toMatch(/--demo-todo-zh\s+demos\/todo-zh\.md/);
+  expect(output).toContain("--demo-imgtool     --demo-image-processor");
 });
 
 test("--demo writes bundled testapp.md to cwd before opening it", async () => {

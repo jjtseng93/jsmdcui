@@ -106,7 +106,7 @@ import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
-import { assetPath, hasInternalAssets, listInternalAssetDirs, readInternalAssetText } from "./runtime/assets.js";
+import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "./runtime/assets.js";
 //import { PluginManager } from "./plugins/manager.js";
 import { JsPluginManager, buildMicroGlobal, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
@@ -982,6 +982,7 @@ function parseArgs(argv) {
     exportReadme: false,
     changelog: false,
     testapp: false,
+    demoList: false,
     demo: null,
     allowUrl: false,
     buildExe: false,
@@ -1025,6 +1026,7 @@ function parseArgs(argv) {
     else if (arg === "--export-readme") flags.exportReadme = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
+    else if (arg === "--demo-list") flags.demoList = true;
     else if (arg === "--demo") {
       flags.demo = { option: arg, filename: "testapp.md", asset: "testapp.md" };
     }
@@ -1128,11 +1130,14 @@ Information:
 Demo:
   --testapp.md
       Write the bundled testapp.md to stdout & exit
+  --demo-list
+      List the bundled demos and their command-line options, then exit
   --demo
       Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
   --demo-<filename>
       Load demos/<filename>.md, preserving an existing ./<filename>.md or writing the bundled copy
+      Open it in the TUI and write 5 generated files beside it
       For example: --demo-select, --demo-todo, or --demo-todo-zh
   --demo-imgtool
       Alias for --demo-image-processor
@@ -7695,6 +7700,42 @@ async function bundledMarkdownSource(filename) {
   return readInternalAssetText(filename) ?? await Bun.file(join(REPO_ROOT, filename)).text();
 }
 
+function availableDemoAssets() {
+  let paths;
+  if (hasInternalAssets()) {
+    paths = listInternalAssetPaths("demos");
+  } else {
+    try {
+      paths = readdirSync(join(REPO_ROOT, "demos"), { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => assetPath("demos", entry.name));
+    } catch {
+      paths = [];
+    }
+  }
+
+  return [...new Set(paths)]
+    .filter((path) => /^demos\/[^/]+\.md$/i.test(path))
+    .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+}
+
+function printDemoList() {
+  const demos = availableDemoAssets().map((asset) => ({
+    option: `--demo-${asset.slice("demos/".length, -".md".length)}`,
+    asset,
+  }));
+  const entries = [{ option: "--demo", asset: "testapp.md" }, ...demos];
+  const optionWidth = Math.max(...entries.map(({ option }) => option.length));
+
+  console.log("Available demos:\n");
+  for (const { option, asset } of entries) {
+    console.log(`  ${option.padEnd(optionWidth)}  ${asset}`);
+  }
+  console.log("\nCompatibility aliases:\n");
+  console.log("  --demo-imgtool     --demo-image-processor");
+  console.log("  --demo-imgtool-zh  --demo-image-processor.zh-TW");
+}
+
 async function main() {
   if (process.argv[2] === "--wui") {
     process.argv.splice(2, 1);
@@ -7773,6 +7814,10 @@ async function main() {
   }
   if (flags.testapp) {
     await printTestappSource();
+    return;
+  }
+  if (flags.demoList) {
+    printDemoList();
     return;
   }
   if (flags.demo) {
