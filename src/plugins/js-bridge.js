@@ -1033,7 +1033,7 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
         buffer._mdcuiHeadingTaskListAnchors = new Map();
       buffer._mdcuiHeadingTaskListAnchors.set(heading.ordinal, { index: start, indent: list.indent });
     }
-    _spliceBufferLines(buffer, start, end - start, replacement.lines, {
+    spliceTuiBufferLines(buffer, start, end - start, replacement.lines, {
       styles: replacement.styles,
       ansi: replacement.ansi,
     });
@@ -1053,14 +1053,14 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
         indent: list.indent,
       });
     }
-    _spliceBufferLines(buffer, item.start, item.end - item.start, []);
+    spliceTuiBufferLines(buffer, item.start, item.end - item.start, []);
     return item.value;
   }
 
   const replacement = _tuiTaskItemReplacement(list.indent, args);
   if (replacement.lines.length === 0) return list.items.length;
   const start = method === "push" ? list.end : list.first;
-  _spliceBufferLines(buffer, start, 0, replacement.lines, {
+  spliceTuiBufferLines(buffer, start, 0, replacement.lines, {
     styles: replacement.styles,
     ansi: replacement.ansi,
   });
@@ -1068,9 +1068,10 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
   return list.items.length + replacement.lines.length;
 }
 
-function _spliceBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
+export function spliceTuiBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
   buffer._mdcuiFenceBlockIndex = null;
+  buffer._mdcuiControlBlockIndex = null;
   buffer.lines.splice(start, deleteCount, ...replacement);
 
   if (Array.isArray(buffer._ansiStyleLines)) {
@@ -1116,24 +1117,57 @@ function _spliceBufferLines(buffer, start, deleteCount, replacement, replacement
   buffer.ensureCursor?.();
 }
 
+export function insertTuiTextareaNewline(buffer, block) {
+  if (!buffer || block?.header?.tag !== "textarea") return false;
+  const prefix = block.header.indent + block.header.bodyMarker + " ";
+  const line = String(buffer.lines?.[buffer.cursor.y] ?? "");
+  const left = line.slice(0, buffer.cursor.x);
+  const right = line.slice(buffer.cursor.x);
+  buffer.lines[buffer.cursor.y] = left;
+  spliceTuiBufferLines(buffer, buffer.cursor.y + 1, 0, [prefix + right]);
+  buffer.cursor.y++;
+  buffer.cursor.x = prefix.length;
+  buffer.ensureCursor?.();
+  return true;
+}
+
+export function mergeTuiTextareaBackward(buffer, block) {
+  if (!buffer || block?.header?.tag !== "textarea") return false;
+  const prefix = block.header.indent + block.header.bodyMarker + " ";
+  if (buffer.cursor.x > prefix.length || buffer.cursor.y <= block.start + 1) return false;
+  const previousY = buffer.cursor.y - 1;
+  const previousLength = String(buffer.lines?.[previousY] ?? "").length;
+  const line = String(buffer.lines?.[buffer.cursor.y] ?? "");
+  const body = line.startsWith(prefix) ? line.slice(prefix.length) : line;
+  buffer.lines[previousY] += body;
+  spliceTuiBufferLines(buffer, buffer.cursor.y, 1, []);
+  buffer.cursor.y = previousY;
+  buffer.cursor.x = previousLength;
+  buffer.ensureCursor?.();
+  return true;
+}
+
 function _setBlockValue(buffer, selector, value) {
   const lines = buffer.lines;
   const block = _findBlock(lines, selector);
   if (!block) return false;
 
-  const values = String(value ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const normalizedValue = String(value ?? "").replace(/\r\n?/g, "\n");
+  if ((_blockValue(lines, selector) ?? "") === normalizedValue) return true;
+  buffer.pushUndo?.(true);
+  const values = normalizedValue.split("\n");
   const contentStart = block.start + 1;
   const capacity = Math.max(0, block.end - contentStart);
 
   if (block.header.kind === "fenced") {
     const replacement = values.map((line) => block.header.indent + line);
-    _spliceBufferLines(buffer, contentStart, capacity, replacement);
+    spliceTuiBufferLines(buffer, contentStart, capacity, replacement);
     return true;
   }
 
   const rowPrefix = block.header.indent + block.header.bodyMarker + " ";
   const replacement = values.map((line) => rowPrefix + line);
-  _spliceBufferLines(buffer, contentStart, capacity, replacement);
+  spliceTuiBufferLines(buffer, contentStart, capacity, replacement);
   return true;
 }
 

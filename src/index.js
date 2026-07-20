@@ -109,7 +109,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "./runtime/assets.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -668,6 +668,21 @@ function canEditMdcuiSelection(buf, selection) {
   const { first, last } = selectionBounds(selection);
   const prefixLength = mdcuiEditablePrefixLength(buf, first.y);
   return first.y === last.y && prefixLength > 0 && first.x >= prefixLength;
+}
+
+function mdcuiTextareaAtCursor(buf) {
+  if (!isMdcuiEncoding(buf?.encoding)) return null;
+  let cache = buf._mdcuiControlBlockIndex;
+  if (!cache || cache.lines !== buf.lines || cache.lineCount !== buf.lines.length) {
+    cache = {
+      lines: buf.lines,
+      lineCount: buf.lines.length,
+      blocks: buildTuiBlockIndex(buf.lines),
+    };
+    buf._mdcuiControlBlockIndex = cache;
+  }
+  const block = findTuiBlockInIndex(cache.blocks, buf.cursor.y);
+  return block?.header?.tag === "textarea" ? block : null;
 }
 
 function isEditLockedBuffer(buf) {
@@ -1662,9 +1677,39 @@ class BufferModel {
     this.cursor.x = x;
   }
 
+  _historyState() {
+    return {
+      lines: this.lines.slice(),
+      cursor: { ...this.cursor },
+      serial: this._undoSerial,
+      ansiStyleLines: Array.isArray(this._ansiStyleLines)
+        ? this._ansiStyleLines.map((line) => Array.isArray(line) ? line.slice() : line)
+        : this._ansiStyleLines,
+      mdcuiAnsiText: this._mdcuiAnsiText,
+      mdcuiImages: Array.isArray(this._mdcuiImages)
+        ? this._mdcuiImages.map((image) => ({ ...image }))
+        : this._mdcuiImages,
+      headingTaskListAnchors: this._mdcuiHeadingTaskListAnchors instanceof Map
+        ? new Map([...this._mdcuiHeadingTaskListAnchors].map(([key, value]) => [key, { ...value }]))
+        : this._mdcuiHeadingTaskListAnchors,
+    };
+  }
+
+  _restoreHistoryState(state) {
+    this.lines = state.lines;
+    this.cursor = { ...state.cursor };
+    this._undoSerial = state.serial ?? 0;
+    this._ansiStyleLines = state.ansiStyleLines;
+    this._mdcuiAnsiText = state.mdcuiAnsiText;
+    this._mdcuiImages = state.mdcuiImages;
+    this._mdcuiHeadingTaskListAnchors = state.headingTaskListAnchors;
+    this._mdcuiFenceBlockIndex = null;
+    this._mdcuiControlBlockIndex = null;
+  }
+
   pushUndo(force = false) {
     if (!force && this.isEditLocked() && !canEditMdcuiAtCursor(this)) return;
-    this.undoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
+    this.undoStack.push(this._historyState());
     this._undoSerial = (this._undoSerial ?? 0) + 1;
     if (this.undoStack.length > 500) this.undoStack.shift();
     this.redoStack = [];
@@ -1673,12 +1718,10 @@ class BufferModel {
   undo() {
     if (this.isEditLocked() && !isMdcuiEncoding(this.encoding)) return false;
     if (!this.undoStack.length) return false;
-    this.redoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
+    this.redoStack.push(this._historyState());
     const s = this.undoStack.pop();
-    this.lines = s.lines;
+    this._restoreHistoryState(s);
     this.invalidateHighlightFrom(0, { force: true });
-    this.cursor = { ...s.cursor };
-    this._undoSerial = s.serial ?? 0;
     this.modified = this._undoSerial !== this._savedSerial;
     return true;
   }
@@ -1686,12 +1729,10 @@ class BufferModel {
   redo() {
     if (this.isEditLocked() && !isMdcuiEncoding(this.encoding)) return false;
     if (!this.redoStack.length) return false;
-    this.undoStack.push({ lines: this.lines.slice(), cursor: { ...this.cursor }, serial: this._undoSerial });
+    this.undoStack.push(this._historyState());
     const s = this.redoStack.pop();
-    this.lines = s.lines;
+    this._restoreHistoryState(s);
     this.invalidateHighlightFrom(0, { force: true });
-    this.cursor = { ...s.cursor };
-    this._undoSerial = s.serial ?? 0;
     this.modified = this._undoSerial !== this._savedSerial;
     return true;
   }
@@ -4210,7 +4251,10 @@ class App {
       case "backspace":
         buf.pushUndo();
         if (this.pane?.selection) deleteSelection(buf, this.pane);
-        else if (await this.runPluginBool("preBackspace")) buf.backspace();
+        else if (await this.runPluginBool("preBackspace")) {
+          const textarea = mdcuiTextareaAtCursor(buf);
+          if (!mergeTuiTextareaBackward(buf, textarea)) buf.backspace();
+        }
         break;
       case "delete":
         buf.pushUndo();
@@ -4219,6 +4263,13 @@ class App {
         break;
       case "enter":
         if (isMdcuiEncoding(buf?.encoding)) {
+          const textarea = mdcuiTextareaAtCursor(buf);
+          if (textarea && canEditMdcuiAtCursor(buf)) {
+            buf.pushUndo();
+            if (this.pane?.selection) deleteSelection(buf, this.pane);
+            insertTuiTextareaNewline(buf, textarea);
+            break;
+          }
           await this.handleMdcuiCellCallback(buf, buf.cursor.y, buf.cursor.x, "enter");
           break;
         }
