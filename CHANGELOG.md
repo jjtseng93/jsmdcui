@@ -23,6 +23,10 @@ prompts safe across every TUI frontend action path.
 - Add native multiline editing to TUI `textarea` controls. Enter splits a body
   row and expands the frame; Backspace at the start of a later row and Delete
   at the end of a row join adjacent body rows without exposing frame borders.
+- Add the `bun ./edit` launcher as a short equivalent of
+  `bun src/index.js --edit`, opening Markdown as ordinary editable UTF-8 source.
+- Add the automatically discovered `--demo-maze` example, demonstrating
+  portable `@keydown.prevent` controls with keyboard and arrow-key navigation.
 
 ### Changed
 
@@ -47,8 +51,13 @@ prompts safe across every TUI frontend action path.
   is redirected, so piped Markdown retains keyboard and protected-prompt input.
 - Preserve `ctrlKey`, `shiftKey`, `altKey`, and `metaKey` when the WUI maps an
   unidentified mobile keydown through its `beforeinput` fallback.
+- Recover modified A-Z keys in the WUI from key codes 65-90 or physical
+  `KeyA`-`KeyZ` codes, including Android browsers that transform Alt-S into
+  `ß`; exclude AltGraph so international text composition remains intact.
 - Add matching non-enumerable `event.toJSON()` methods to TUI and WUI keydown
   events, allowing `JSON.stringify(event)` to produce portable event details.
+- Keep fenced-block IDs visible to collision checking when the info string also
+  contains inline event attributes such as `@keydown="..."`.
 
 ## [0.7.0] - 2026-07-20
 
