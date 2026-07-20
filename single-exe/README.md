@@ -6,9 +6,9 @@
 - First run `bun ./packAssets.sh` to bundle the assets into `assets.tar`
 - Then run the build script like this
 
-  ```shell
-  bun build --compile --bytecode --minify ./entry.mjs --outfile=binname
-  ```
+```shell
+bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=binname
+```
 
 - You'll get a binname executable
 
