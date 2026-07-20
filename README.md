@@ -558,10 +558,13 @@ its associated text. `alert`, `confirm`, and `prompt` use the browser's built-in
 dialogs. Checkbox changes exist only in the current page: refreshing does not
 preserve them and does not update the Markdown file.
 
-The WUI uses port `3000` by default and accepts connections through the
-machine's available network interfaces. The printed `localhost` URL is for the
-same machine. From another device on the same network, replace `localhost` with
-the server machine's IP address and keep the same port and full path.
+The WUI first tries port `3000` and accepts connections through the machine's
+available network interfaces. If port `3000` is already in use, the operating
+system selects an available port instead; the printed URL always contains the
+actual port. Set `PORT` to request another fixed port. The printed `localhost`
+URL is for the same machine. From another device on the same network, replace
+`localhost` with the server machine's IP address and keep the printed port and
+full path.
 
 Each server start prints a new random path. The old URL stops working after the
 server is stopped or restarted. Keep the process running while using the page,

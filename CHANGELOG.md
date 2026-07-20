@@ -26,7 +26,8 @@ prompts safe across every TUI frontend action path.
 - Add the `bun ./edit` launcher as a short equivalent of
   `bun src/index.js --edit`, opening Markdown as ordinary editable UTF-8 source.
 - Add the automatically discovered `--demo-maze` example, demonstrating
-  portable `@keydown.prevent` controls with keyboard and arrow-key navigation.
+  portable `@keydown.prevent` controls with keyboard and arrow-key navigation;
+  add `Ctrl-R` as a keyboard shortcut for resetting the maze.
 
 ### Changed
 
@@ -58,6 +59,9 @@ prompts safe across every TUI frontend action path.
   events, allowing `JSON.stringify(event)` to produce portable event details.
 - Keep fenced-block IDs visible to collision checking when the info string also
   contains inline event attributes such as `@keydown="..."`.
+- When the WUI's default port 3000 is already in use, retry with port 0 so the
+  operating system selects an available port, and print that actual port in the
+  generated URL. Other server startup errors continue to fail normally.
 
 ## [0.7.0] - 2026-07-20
 
