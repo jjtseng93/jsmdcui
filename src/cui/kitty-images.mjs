@@ -117,6 +117,10 @@ function stableImageId(pathname, line, data) {
   return (hash >>> 0) % 2147483646 + 1;
 }
 
+async function convertToKittyPng(data) {
+  return Buffer.from(await new Bun.Image(data).png().toBuffer());
+}
+
 export function fitKittyImageToWidth(image, maxCols) {
   const originalCols = Math.max(1, Math.trunc(Number(image?.cols) || 1));
   const originalRows = Math.max(1, Math.trunc(Number(image?.rows) || 1));
@@ -151,8 +155,14 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
         if (!(await file.exists())) throw new Error("missing image");
         data = Buffer.from(await file.arrayBuffer());
       }
-      const size = imageSize(data);
+      let size = imageSize(data);
       if (!size?.width || !size?.height) throw new Error("unsupported image");
+      if (options.kittyMode === "compat" && size.mime !== "image/png") {
+        data = await convertToKittyPng(data);
+        size = imageSize(data);
+        if (size?.mime !== "image/png" || !size.width || !size.height)
+          throw new Error("PNG conversion failed");
+      }
       const estimatedCols = Math.max(1, Math.round(size.width / 8));
       const cols = Math.min(maxCols, estimatedCols);
       const rows = Math.max(1, Math.round((cols * size.height) / size.width / 2));

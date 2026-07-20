@@ -370,6 +370,7 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     ? { rendered: tui, images: [] }
     : await prepareKittyImages(tui, resolvedImageBasePath, width, {
       allowUrl: allowRemoteKittyImages,
+      kittyMode: kittyImageMode,
     });
   return {
     rendered: prepared.rendered,

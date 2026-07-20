@@ -134,7 +134,7 @@ bun src/index.js --wui testapp.md
 | --- | --- |
 | `bun src/index.js app.md` | Render `app.md` as a read-only terminal UI and write five generated files beside it. |
 | `bun src/index.js --kitty app.md` | Display Markdown images with Kitty graphics and the jsgotty MIME extension. |
-| `bun src/index.js --kitty-compat app.md` | Display Markdown images with Kitty graphics without the non-standard MIME `U` field. |
+| `bun src/index.js --kitty-compat app.md` | Convert Markdown images to PNG with `Bun.Image` and display them using the standard Kitty graphics protocol without the non-standard MIME `U` field. |
 | `bun src/index.js --kitty --allow-url URL.md` | Download trusted HTTP(S) Markdown and its HTTP(S) images, then display supported images with Kitty graphics. |
 | `JSMDCUI_KITTY_DEBUG=1 bun src/index.js --kitty app.md` | Enable Kitty image placement logging to `kitty-placement.log`. |
 | `bun src/index.js --check app.md` | Check heading and fenced-block IDs for collisions, print line-by-line details, and exit. |

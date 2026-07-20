@@ -26,6 +26,28 @@ test("Bun-rendered Markdown image links reserve rows and retain Kitty data", asy
   expect(Bun.stripANSI(result.rendered)).toContain("📷 pixel");
 });
 
+test("Kitty compat converts compressed images to standard PNG payloads", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-compat-"));
+  const markdownPath = join(dir, "app.md");
+  const jpeg = Buffer.from(await new Bun.Image(ONE_PIXEL_PNG).jpeg().toBuffer());
+  await writeFile(join(dir, "pixel.jpg"), jpeg);
+  const ansi = Bun.markdown.ansi("![pixel](pixel.jpg)", {
+    hyperlinks: true,
+    columns: 40,
+  });
+
+  const result = await prepareKittyImages(ansi, markdownPath, 40, {
+    kittyMode: "compat",
+  });
+
+  expect(result.images).toHaveLength(1);
+  expect(result.images[0].mime).toBe("image/png");
+  expect(result.images[0].data.subarray(0, 8).equals(Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]))).toBe(true);
+  expect(result.images[0].data.equals(jpeg)).toBe(false);
+});
+
 test("remote Kitty images require allowUrl and use the configured HTTP byte fetcher", async () => {
   const imageUrl = "https://example.test/assets/pixel.png";
   const ansi = Bun.markdown.ansi(`![pixel](${imageUrl})`, {
