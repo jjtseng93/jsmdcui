@@ -1147,6 +1147,19 @@ export function mergeTuiTextareaBackward(buffer, block) {
   return true;
 }
 
+export function mergeTuiTextareaForward(buffer, block) {
+  if (!buffer || block?.header?.tag !== "textarea") return false;
+  const line = String(buffer.lines?.[buffer.cursor.y] ?? "");
+  if (buffer.cursor.x < line.length || buffer.cursor.y >= block.end - 1) return false;
+  const prefix = block.header.indent + block.header.bodyMarker + " ";
+  const nextLine = String(buffer.lines?.[buffer.cursor.y + 1] ?? "");
+  const body = nextLine.startsWith(prefix) ? nextLine.slice(prefix.length) : nextLine;
+  buffer.lines[buffer.cursor.y] += body;
+  spliceTuiBufferLines(buffer, buffer.cursor.y + 1, 1, []);
+  buffer.ensureCursor?.();
+  return true;
+}
+
 function _setBlockValue(buffer, selector, value) {
   const lines = buffer.lines;
   const block = _findBlock(lines, selector);

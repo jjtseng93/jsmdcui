@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fenceEventMap, inlineFenceEventCode, parseFenceDeclarations } from "../src/cui/fence-events.mjs";
 import { evalFront } from "../src/cui/rpc.mjs";
-import { buildTuiBlockIndex, createTuiSelector, findTuiBlockAtLine, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward } from "../src/plugins/js-bridge.js";
+import { buildTuiBlockIndex, createTuiSelector, findTuiBlockAtLine, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward } from "../src/plugins/js-bridge.js";
 import { convertWuiTextareas } from "../runmd.mjs";
 
 const tui = join(import.meta.dir, "..", "tui");
@@ -235,6 +235,25 @@ test("TUI textarea Enter splits a body row and Backspace joins it", () => {
   expect(mergeTuiTextareaBackward(buffer, findTuiBlockAtLine(buffer.lines, buffer.cursor.y))).toBeTrue();
   expect(buffer.lines).toEqual(["┌─ textarea#field", "│ abcd", "└─", "after"]);
   expect(buffer.cursor).toEqual({ x: 4, y: 1 });
+});
+
+test("TUI textarea Delete at line end joins the next body row", () => {
+  const buffer = {
+    lines: ["┌─ textarea#field", "│ ab", "│ cd", "└─", "after"],
+    cursor: { x: 4, y: 1 },
+    _mdcuiFenceBlockIndex: { stale: true },
+    _mdcuiControlBlockIndex: { stale: true },
+    invalidateHighlightFrom() {},
+    ensureCursor() {},
+  };
+  const block = findTuiBlockAtLine(buffer.lines, buffer.cursor.y);
+
+  expect(mergeTuiTextareaForward(buffer, block)).toBeTrue();
+  expect(buffer.lines).toEqual(["┌─ textarea#field", "│ abcd", "└─", "after"]);
+  expect(buffer.cursor).toEqual({ x: 4, y: 1 });
+  expect(buffer._mdcuiFenceBlockIndex).toBeNull();
+  expect(buffer._mdcuiControlBlockIndex).toBeNull();
+  expect(mergeTuiTextareaForward(buffer, findTuiBlockAtLine(buffer.lines, buffer.cursor.y))).toBeFalse();
 });
 
 test("TUI keyboard lookup indexes event blocks once and uses binary lookup", () => {

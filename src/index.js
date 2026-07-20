@@ -109,7 +109,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "./runtime/assets.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -4259,7 +4259,10 @@ class App {
       case "delete":
         buf.pushUndo();
         if (this.pane?.selection) deleteSelection(buf, this.pane);
-        else buf.deleteForward();
+        else {
+          const textarea = mdcuiTextareaAtCursor(buf);
+          if (!mergeTuiTextareaForward(buf, textarea)) buf.deleteForward();
+        }
         break;
       case "enter":
         if (isMdcuiEncoding(buf?.encoding)) {
