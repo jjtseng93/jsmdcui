@@ -143,8 +143,10 @@ async function readResourceText(path) {
 In the source tree, `REPO_ROOT` is the project root. In a compiled executable,
 it is the executable's directory, which is also where `--assets-extract`
 places the external resource tree. Apply the same embedded-first fallback to
-every file that must work in both modes. `assetsHelper.js` also exports byte,
-path-listing, and directory-listing helpers.
+every file that must work in both modes. Use `readInternalAssetBytes()` when
+a resource should be returned as bytes instead of decoded text.
+Use `listInternalAssetPaths()` to list embedded asset paths and
+`listInternalAssetDirs()` to list embedded directories.
 
 ### 5. Add the optional build commands to the regular CLI
 
