@@ -26,11 +26,16 @@ prompts safe across every TUI frontend action path.
 - Install protected `alert`, `confirm`, and `prompt` globals once for the TUI
   lifetime and share them across OSC 8 actions, fenced keyboard handlers, and
   JS plugins. Restore Bun's original globals when the TUI stops.
+- Make `micro.alert()`, `micro.confirm()`, and `micro.prompt()` synchronous like
+  their native counterparts, and update the bundled JS plugin examples so they
+  do not `await` these calls.
 
 ### Fixed
 
 - Prevent `alert()` called from a keydown handler from competing with the TUI
   for stdin by suspending raw mode and screen rendering around native prompts.
+- Restore the terminal's previous raw-mode and input-listener state after a
+  protected prompt, including setup, prompt, and cleanup error paths.
 
 ## [0.7.0] - 2026-07-20
 

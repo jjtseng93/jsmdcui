@@ -93,7 +93,7 @@ function printProfileReport() {
 }
 
 import child_process from "node:child_process"
-import { accessSync, constants, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { accessSync, closeSync, constants, existsSync, openSync, readSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -2551,7 +2551,6 @@ class App {
   }
 
   async start() {
-    this._started = true;
     this.installProtectedPrompts();
     // When stdin was a pipe (content already consumed in loadBuffers), open the
     // controlling terminal directly so the event loop has a live handle and
@@ -2591,6 +2590,7 @@ class App {
     });
     process.on("SIGINT", () => {}); // Ctrl+C is handled as copy in handleEvent
     this.screen.init();
+    this._started = true;
     // Update backup prompt to screen-aware version now that TUI is running.
     if (this.context._termPrompt) {
       this.context._termPrompt = async (msg) => {
@@ -2722,23 +2722,97 @@ class App {
 
   runProtectedPrompt(name, fallback, args) {
     const nativeFn = this._protectedPrompts?.[name]?.value;
-    if (!this._started || typeof nativeFn !== "function") {
+    const tty = this._ttyStream ?? process.stdin;
+    const wasRaw = typeof tty?.isRaw === "boolean" ? tty.isRaw : true;
+    if (
+      !this._started
+      || this.shellRunning
+      || this._alertRunning
+      || !wasRaw
+      || typeof nativeFn !== "function"
+    ) {
       this.message = String(args[0] ?? "");
       return fallback;
     }
-    const tty = this._ttyStream ?? process.stdin;
-    this._alertRunning = true;
-    tty.setRawMode?.(false);
-    this.screen.fini();
-    this.screen.previous = null;
+
+    const inputHandler = this._inputHandler;
+    const listenerAttached = Boolean(
+      inputHandler && tty.listeners?.("data").includes(inputHandler),
+    );
+    const wasPaused = tty.isPaused?.() ?? false;
+    let value;
+    let failed = false;
+    let failure;
+    const cleanupFailures = [];
+    const cleanup = (fn) => {
+      try { fn(); } catch (error) { cleanupFailures.push(error); }
+    };
+
     try {
-      return nativeFn(...args);
-    } finally {
-      tty.setRawMode?.(true);
+      this._alertRunning = true;
+      if (listenerAttached) tty.removeListener("data", inputHandler);
+      tty.pause?.();
+      tty.setRawMode?.(false);
+      this.screen.fini();
       this.screen.previous = null;
-      this.screen.init();
-      this._alertRunning = false;
-      this.render();
+      value = tty !== process.stdin
+        ? this.runProtectedTtyPrompt(name, fallback, args)
+        : Reflect.apply(nativeFn, globalThis, args);
+    } catch (error) {
+      failed = true;
+      failure = error;
+    } finally {
+      cleanup(() => tty.setRawMode?.(wasRaw));
+      cleanup(() => { this.screen.previous = null; });
+      cleanup(() => this.screen.init());
+      cleanup(() => { this._alertRunning = false; });
+      cleanup(() => {
+        if (listenerAttached) tty.on("data", inputHandler);
+      });
+      cleanup(() => {
+        if (!wasPaused) tty.resume?.();
+      });
+      cleanup(() => this.render());
+    }
+    if (failed) throw failure;
+    if (cleanupFailures.length > 0) throw cleanupFailures[0];
+    return value;
+  }
+
+  runProtectedTtyPrompt(name, fallback, args) {
+    const message = String(args[0] ?? "");
+    const defaultValue = String(args[1] ?? "");
+    const ttyPath = process.platform === "win32" ? "\\\\.\\CON" : "/dev/tty";
+    const fd = openSync(ttyPath, "r");
+    try {
+      if (name === "alert") {
+        process.stdout.write(`${message}\n\nPress ENTER to continue...`);
+        this.readProtectedPromptLine(fd);
+        return undefined;
+      }
+      const suffix = name === "confirm"
+        ? " [y/N] "
+        : defaultValue ? ` (${defaultValue}) ` : " ";
+      process.stdout.write(message + suffix);
+      const answer = this.readProtectedPromptLine(fd);
+      if (answer == null) return fallback;
+      if (name === "confirm") return /^(?:y|yes)$/i.test(answer.trim());
+      return answer === "" ? defaultValue : answer;
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  readProtectedPromptLine(fd) {
+    const chunks = [];
+    const chunk = Buffer.allocUnsafe(1024);
+    while (true) {
+      const length = readSync(fd, chunk, 0, chunk.length, null);
+      if (length === 0) return chunks.length > 0 ? Buffer.concat(chunks).toString() : null;
+      const bytes = chunk.subarray(0, length);
+      const newline = bytes.findIndex((byte) => byte === 0x0a || byte === 0x0d);
+      chunks.push(Buffer.from(newline < 0 ? bytes : bytes.subarray(0, newline)));
+      if (newline >= 0) return Buffer.concat(chunks).toString();
     }
   }
 
@@ -8170,6 +8244,7 @@ async function main() {
   addCheckpoint("App Instantiation");
   const app = new App(buffers, context);
   jsPlugins.setApp(app);
+  app.installProtectedPrompts();
   // if (plugins && !pluginErr && app.buffer) plugins.curPaneAdapter = makePaneAdapter(app.buffer, app);
   // Dispatch all JS plugin lifecycle hooks after setApp so TermMessage,
   // CurPane, cmd/action proxies, and buffer APIs all work correctly.

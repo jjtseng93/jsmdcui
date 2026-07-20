@@ -182,7 +182,7 @@ test("TUI keydown alert releases and restores terminal input", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-keydown-alert-"));
   const markdownPath = join(dir, "app.md");
   const markdown = [
-    '```text#field @keydown.prevent="celebrate()"',
+    '```text#field @keydown.prevent="celebrate(event)"',
     "focus here",
     "```",
     "",
@@ -191,9 +191,13 @@ test("TUI keydown alert releases and restores terminal input", async () => {
     "```",
     "",
     "```js front",
-    "export function celebrate() {",
-    "  alert('KEYDOWN ALERT');",
-    "  $('#status').val('input restored');",
+    "export function celebrate(event) {",
+    "  if (event.key === 'x') {",
+    "    alert('KEYDOWN ALERT');",
+    "    $('#status').val('alert closed');",
+    "    return;",
+    "  }",
+    "  $('#status').val(`second input: ${event.key}`);",
     "}",
     "```",
     "",
@@ -220,10 +224,16 @@ test("TUI keydown alert releases and restores terminal input", async () => {
     terminal.write("x");
     await waitFor(() => Bun.stripANSI(output).includes("KEYDOWN ALERT"));
     terminal.write("\r");
-    await waitFor(() => Bun.stripANSI(output).includes("input restored"));
+    await waitFor(() => Bun.stripANSI(output).includes("alert closed"));
+    terminal.write("z");
+    await waitFor(() => Bun.stripANSI(output).includes("second input:z"));
     terminal.write("\x11");
-    await Promise.race([proc.exited, Bun.sleep(2000)]);
-    expect(Bun.stripANSI(output)).toContain("input restored");
+    const exitCode = await Promise.race([
+      proc.exited,
+      Bun.sleep(2000).then(() => null),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(Bun.stripANSI(output)).toContain("second input:z");
   } finally {
     if (proc && proc.exitCode == null) proc.kill();
     terminal?.close();

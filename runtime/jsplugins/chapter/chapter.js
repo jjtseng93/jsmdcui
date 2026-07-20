@@ -43,7 +43,10 @@ Other micro APIs:
   micro.MakeCommand(name, fn)  — register Ctrl+E command; fn(bp, args[])
   micro.RegisterAction(name, fn) — register bindable action
   micro.TermMessage(msg)       — show msg in editor status row
-  micro.alert(msg)             — suspend editor, print msg, wait for Enter
+  micro.alert(msg)             — synchronous; suspend editor, print msg, wait for Enter
+                                 e.g. micro.alert("Done") (do not await)
+  micro.confirm(msg)           — synchronous boolean result
+  micro.prompt(msg, default?)  — synchronous string or null result
   micro.Log(...args)           — console.log passthrough
   micro.GetOption(name)        micro.SetOption(name, value)
   micro.cmd.save()             — call any editor command via proxy
@@ -104,5 +107,4 @@ micro.on("init", () => {
   });
 
 });
-
 
