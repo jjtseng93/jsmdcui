@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { readInternalAssetBytes } from "../runtime/assets.js";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { isCompiledBinary, resolveCompiledBaseDir } from "../runtime/compiled.js";
 import { REPO_ROOT } from "../../single-exe/compiled.js";
 
 export async function createLuaEngine() {
@@ -44,9 +43,7 @@ async function resolveLuaWasmLocation() {
     }
   }
 
-  const fallbackPath = isCompiledBinary(process.argv)
-    ? join(resolveCompiledBaseDir({ argv: process.argv }), wasmAssetPath)
-    : join(REPO_ROOT, wasmAssetPath);
+  const fallbackPath = join(REPO_ROOT, wasmAssetPath);
 
   return existsSync(fallbackPath) ? fallbackPath : undefined;
 }
