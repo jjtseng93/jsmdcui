@@ -1436,6 +1436,18 @@ export function buildMicroGlobal(jsManager) {
       return handled;
     },
 
+    // Sends terminal input through the App's normal parser and event pipeline.
+    async _dispatchRawInput(raw) {
+      const app = getApp();
+      if (!app) return false;
+      const bytes = typeof raw === "string"
+        ? new TextEncoder().encode(raw)
+        : raw;
+      await app._dispatchInput(bytes);
+      app.render?.();
+      return true;
+    },
+
     // Replaces the entire buffer content with text (may contain newlines).
     putAllText(text) {
       const app = getApp();

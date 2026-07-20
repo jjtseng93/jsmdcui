@@ -554,8 +554,30 @@ async function dispatch(ctx, state, method, params, sessionId, emit) {
       return {};
     }
     case "Input.dispatchKeyEvent": {
-      if (params.type === "keyDown" || params.type === "char") {
-        await ctx.press?.(params.key ?? params.text, { modifiers: params.modifiers ?? 0 });
+      const target = getSessionTarget(state, sessionId);
+      const key = params.key ?? params.text ?? "";
+      const signature = `${params.code ?? key}:${params.modifiers ?? 0}`;
+      if (params.type === "rawKeyDown" || params.type === "keyDown") {
+        if (target.cdpKeyDown !== signature || params.autoRepeat) {
+          await ctx.press?.(key, {
+            modifiers: params.modifiers ?? 0,
+            text: params.text ?? "",
+            code: params.code ?? "",
+            repeat: !!params.autoRepeat,
+          });
+          target.cdpKeyDown = signature;
+        }
+      } else if (params.type === "char") {
+        if (!target.cdpKeyDown) {
+          await ctx.press?.(key, {
+            modifiers: params.modifiers ?? 0,
+            text: params.text ?? "",
+            code: params.code ?? "",
+            repeat: !!params.autoRepeat,
+          });
+        }
+      } else if (params.type === "keyUp") {
+        target.cdpKeyDown = null;
       }
       return {};
     }

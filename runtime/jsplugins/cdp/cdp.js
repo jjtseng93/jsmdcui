@@ -113,54 +113,8 @@ micro.on("init", () => {
           bp.Insert(text);
         },
         async press(key, options){
-          const bp = micro.CurPane();
-          if (!bp) return;
-
-          // modifiers bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8
-          const mod = options?.modifiers ?? 0;
-          const ctrl  = !!(mod & 2);
-          const shift = !!(mod & 8);
-
-          if (ctrl) {
-            const ctrlMap = {
-              a: () => micro.action.SelectAll(),
-              c: () => micro.action.Copy(),
-              x: () => micro.action.Cut(),
-              v: () => micro.action.Paste(),
-              z: () => micro.action.Undo(),
-              y: () => micro.action.Redo(),
-              s: () => micro.action.Save(),
-            };
-            const h = ctrlMap[key.toLowerCase()];
-            if (h) await h();
-            return;
-          }
-
-          const arrowAction = shift
-            ? { ArrowUp: 'SelectUp', ArrowDown: 'SelectDown', ArrowLeft: 'SelectLeft', ArrowRight: 'SelectRight' }
-            : { ArrowUp: 'CursorUp', ArrowDown: 'CursorDown', ArrowLeft: 'CursorLeft', ArrowRight: 'CursorRight' };
-
-          const keyMap = {
-            ...arrowAction,
-            Enter:     () => micro.action.InsertNewline(),
-            Backspace: () => micro.action.Backspace(),
-            Delete:    () => micro.action.Delete(),
-            Tab:       () => micro.action.InsertTab(),
-            Escape:    () => micro.action.Escape(),
-            Home:      () => shift ? micro.action.SelectToStartOfLine() : micro.action.StartOfLine(),
-            End:       () => shift ? micro.action.SelectToEndOfLine()   : micro.action.EndOfLine(),
-            PageUp:    () => shift ? micro.action.SelectPageUp()        : micro.action.CursorPageUp(),
-            PageDown:  () => shift ? micro.action.SelectPageDown()      : micro.action.CursorPageDown(),
-          };
-
-          const entry = keyMap[key];
-          if (typeof entry === 'string') {
-            await micro.action[entry]();
-          } else if (typeof entry === 'function') {
-            await entry();
-          } else if (key.length === 1) {
-            bp.Insert(key);
-          }
+          const raw = cdpKeyToTerminalInput(key, options);
+          if (raw) await micro._dispatchRawInput(raw);
         },
       }
     
@@ -194,4 +148,54 @@ function selectorToSearchPattern(selector) {
 function toInteger(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.trunc(number) : 0;
+}
+
+function cdpKeyToTerminalInput(key, options = {}) {
+  const modifiers = Number(options.modifiers) || 0;
+  const alt = !!(modifiers & 1);
+  const ctrl = !!(modifiers & 2);
+  const meta = !!(modifiers & 4);
+  const shift = !!(modifiers & 8);
+  const modifierCode = 1 + (shift ? 1 : 0) + (alt || meta ? 2 : 0) + (ctrl ? 4 : 0);
+  const value = String(key ?? options.text ?? "");
+
+  const cursorFinal = {
+    ArrowUp: "A",
+    ArrowDown: "B",
+    ArrowRight: "C",
+    ArrowLeft: "D",
+    Home: "H",
+    End: "F",
+  }[value];
+  if (cursorFinal) {
+    return modifierCode === 1
+      ? `\x1b[${cursorFinal}`
+      : `\x1b[1;${modifierCode}${cursorFinal}`;
+  }
+
+  if (value === "PageUp" || value === "PageDown" || value === "Delete") {
+    const number = value === "PageUp" ? 5 : value === "PageDown" ? 6 : 3;
+    return modifierCode === 1
+      ? `\x1b[${number}~`
+      : `\x1b[${number};${modifierCode}~`;
+  }
+
+  if (value === "Tab") return shift ? "\x1b[Z" : "\t";
+  if (value === "Enter") return alt || meta ? "\x1b\r" : "\r";
+  if (value === "Backspace") return "\x7f";
+  if (value === "Escape") return "\x1b";
+
+  let text = typeof options.text === "string" && options.text
+    ? options.text
+    : value === "Space" ? " " : value;
+  if ([...text].length !== 1) return "";
+
+  if (ctrl) {
+    const code = text.toUpperCase().charCodeAt(0);
+    if (code >= 64 && code <= 95) text = String.fromCharCode(code & 31);
+  } else if (shift && /^[a-z]$/.test(text)) {
+    text = text.toUpperCase();
+  }
+
+  return alt || meta ? `\x1b${text}` : text;
 }
