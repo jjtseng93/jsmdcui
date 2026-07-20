@@ -972,6 +972,28 @@ function takeDisplay(text, maxWidth) {
   return out;
 }
 
+function keyboardEventJson(event) {
+  const target = event?.target;
+  return {
+    type: String(event?.type ?? ""),
+    key: String(event?.key ?? ""),
+    code: String(event?.code ?? ""),
+    raw: String(event?.raw ?? ""),
+    ctrlKey: Boolean(event?.ctrlKey),
+    shiftKey: Boolean(event?.shiftKey),
+    altKey: Boolean(event?.altKey),
+    metaKey: Boolean(event?.metaKey),
+    repeat: Boolean(event?.repeat),
+    defaultPrevented: Boolean(event?.defaultPrevented),
+    target: {
+      id: String(target?.id ?? ""),
+      tagName: String(target?.tagName ?? ""),
+      className: String(target?.className ?? ""),
+      value: String(target?.value ?? ""),
+    },
+  };
+}
+
 function tuiKeyEventForFront(event, target, type) {
   const sequence = String(event?.key ?? "");
   const parts = sequence.split("-");
@@ -998,7 +1020,7 @@ function tuiKeyEventForFront(event, target, type) {
   const key = aliases[base] ?? (sequence === raw && [...raw].length === 1 ? raw : base);
   let defaultPrevented = false;
   let propagationStopped = false;
-  return {
+  const result = {
     type,
     key,
     raw,
@@ -1014,6 +1036,11 @@ function tuiKeyEventForFront(event, target, type) {
     preventDefault() { defaultPrevented = true; },
     stopPropagation() { propagationStopped = true; },
   };
+  Object.defineProperty(result, "toJSON", {
+    configurable: true,
+    value() { return keyboardEventJson(this); },
+  });
+  return result;
 }
 
 function indexedMdcuiFenceBlockAtLine(buffer, lineIndex) {

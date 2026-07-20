@@ -5,6 +5,6 @@ hello
 ```js front
 export function handle(e)
 {
-  alert(e.key)
+  alert(JSON.stringify(e,null,1))
 }
 ```

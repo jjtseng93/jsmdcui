@@ -262,9 +262,15 @@ to the generated textarea's native `onkeydown` attribute. Mobile browsers may
 report ordinary software-keyboard letters as `Unidentified`, so the WUI also
 generates an `onbeforeinput` fallback. The unidentified event is hidden from
 the handler; `beforeinput.data` becomes `event.key`, then the same keydown code
-runs once. A short zero-delay timer distinguishes that fallback from the
-`beforeinput` that normally follows an already identified keydown, preventing
-duplicate calls.
+runs once. The fallback also preserves `ctrlKey`, `shiftKey`, `altKey`, and
+`metaKey` from the unidentified keydown. A short zero-delay timer distinguishes
+it from the `beforeinput` that normally follows an already identified keydown,
+preventing duplicate calls.
+
+On Android browsers, `Alt-E`, `Alt-N`, `Alt-U`, and `Alt-I` may be consumed or
+transformed by the software keyboard and therefore cannot always be observed
+reliably by a keydown handler. Avoid relying on these combinations for portable
+WUI controls.
 
 In the TUI, the full source info string is kept in an event table before Bun
 renders it. The keydown statements run with a synthetic `event` before the
@@ -273,6 +279,11 @@ flags, `event.target.id`, and `event.target.value`. Use `event`, the native
 inline-handler variable, rather than Vue's `$event` alias. Double quotes
 delimit the handler; use single-quoted JavaScript strings inside it or escape
 an embedded double quote as `\"`.
+
+Both interfaces add a non-enumerable `event.toJSON()` method with matching
+keyboard, modifier, prevention, and target fields. `JSON.stringify(event)`
+calls it automatically, so the resulting JSON is portable between the TUI and
+WUI.
 
 A keydown handler can call `event.preventDefault()` to stop text insertion or
 cursor movement. The `.prevent` modifier applies this automatically:

@@ -45,10 +45,12 @@ test("WUI writes keyboard code as native inline handlers with a mobile beforeinp
   const markdown = '```text#myid.field @keydown.prevent="guard(event)"\nvalue\n```\n';
   const html = convertWuiTextareas(Bun.markdown.html(markdown), fenceEventMap(markdown));
   expect(html).toContain('id="myid"');
-  expect(html).toContain('onkeydown="this.__mdcuiIdentifiedKeydown=!!event.key&amp;&amp;event.key!==&quot;Unidentified&quot;;');
-  expect(html).toContain('if(event.key!==&quot;Unidentified&quot;){\nevent.preventDefault();guard(event)\n}"');
+  expect(html).toContain('const __mdcuiKeyCode=Number(event.keyCode||event.which||0);');
+  expect(html).toContain('if(event.key!==&quot;Unidentified&quot;){\nObject.defineProperty(event,&quot;toJSON&quot;');
+  expect(html).toContain('event.preventDefault();guard(event)\n}"');
   expect(html).toContain('onbeforeinput="if(!this.__mdcuiIdentifiedKeydown&amp;&amp;event.data!=null');
-  expect(html).toContain('Object.defineProperty(event,&quot;key&quot;,{configurable:true,value:String(event.data)});this.onkeydown(event)');
+  expect(html).toContain('ctrlKey:{configurable:true,value:!!m.ctrlKey}');
+  expect(html).toContain('metaKey:{configurable:true,value:!!m.metaKey}');
   expect(html).not.toContain("onkeyup=");
   expect(html).not.toContain("addEventListener");
 });
@@ -74,7 +76,7 @@ test("WUI keeps a trailing line comment inside the generated keydown block", () 
   expect(() => new Function("event", "guard", code)).not.toThrow();
 });
 
-test("WUI beforeinput retries an unidentified keydown with InputEvent.data", () => {
+test("WUI restores modifier letters from keyCode or code during keydown", () => {
   const markdown = '```text#myid @keydown.prevent="guard(event)"\nvalue\n```\n';
   const html = convertWuiTextareas(Bun.markdown.html(markdown), fenceEventMap(markdown));
   const decodeAttribute = (value) => value
@@ -87,25 +89,86 @@ test("WUI beforeinput retries an unidentified keydown with InputEvent.data", () 
   const seen = [];
   const element = {};
   const runKeydown = new Function("event", "guard", keydownCode);
-  element.onkeydown = (event) => runKeydown.call(element, event, (current) => seen.push(current.key));
+  element.onkeydown = (event) => runKeydown.call(element, event, (current) => seen.push({
+    key: current.key,
+    ctrlKey: current.ctrlKey,
+    shiftKey: current.shiftKey,
+    altKey: current.altKey,
+    metaKey: current.metaKey,
+    json: JSON.parse(JSON.stringify(current)),
+    toJSONEnumerable: Object.keys(current).includes("toJSON"),
+  }));
 
   const unidentified = {
-    key: "Unidentified",
+    key: "ß",
+    keyCode: 0,
+    code: "KeyS",
+    ctrlKey: true,
+    shiftKey: false,
+    altKey: true,
+    metaKey: true,
     defaultPrevented: false,
     preventDefault() { this.defaultPrevented = true; },
   };
   element.onkeydown(unidentified);
-  expect(unidentified.defaultPrevented).toBeFalse();
+  expect(unidentified.defaultPrevented).toBeTrue();
+  expect(unidentified.key).toBe("s");
 
   const beforeInput = {
-    data: "a",
+    data: "β",
     defaultPrevented: false,
     preventDefault() { this.defaultPrevented = true; },
   };
   new Function("event", beforeInputCode).call(element, beforeInput);
-  expect(seen).toEqual(["a"]);
-  expect(beforeInput.key).toBe("a");
-  expect(beforeInput.defaultPrevented).toBeTrue();
+  expect(seen).toEqual([{
+    key: "s",
+    ctrlKey: true,
+    shiftKey: false,
+    altKey: true,
+    metaKey: true,
+    json: {
+      type: "",
+      key: "s",
+      code: "KeyS",
+      raw: "",
+      ctrlKey: true,
+      shiftKey: false,
+      altKey: true,
+      metaKey: true,
+      repeat: false,
+      defaultPrevented: true,
+      target: { id: "", tagName: "", className: "", value: "" },
+    },
+    toJSONEnumerable: false,
+  }]);
+  expect(beforeInput.key).toBeUndefined();
+  expect(beforeInput.defaultPrevented).toBeFalse();
+  clearTimeout(element.__mdcuiKeydownReset);
+});
+
+test("WUI beforeinput keeps composed text for AltGraph and unmodified input", () => {
+  const markdown = '```text#myid @keydown="guard(event)"\nvalue\n```\n';
+  const html = convertWuiTextareas(Bun.markdown.html(markdown), fenceEventMap(markdown));
+  const decodeAttribute = (value) => value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&");
+  const keydownCode = decodeAttribute(html.match(/onkeydown="([^"]*)"/)?.[1] ?? "");
+  const beforeInputCode = decodeAttribute(html.match(/onbeforeinput="([^"]*)"/)?.[1] ?? "");
+  const seen = [];
+  const element = {};
+  const runKeydown = new Function("event", "guard", keydownCode);
+  element.onkeydown = (event) => runKeydown.call(element, event, current => seen.push(current.key));
+  const retry = (keydown, data) => {
+    element.onkeydown({ key: "Unidentified", ...keydown });
+    new Function("event", beforeInputCode).call(element, { data });
+  };
+
+  retry({ keyCode: 83, altKey: true, getModifierState: name => name === "AltGraph" }, "β");
+  retry({ keyCode: 83 }, "絲");
+
+  expect(seen).toEqual(["β", "絲"]);
   clearTimeout(element.__mdcuiKeydownReset);
 });
 
@@ -164,7 +227,8 @@ test("TUI keydown.prevent runs before editing and blocks text input", async () =
     "",
     "```js front",
     "export function record(event) {",
-    "  $('#status').val(`${event.key}:${event.target.value}:${event.defaultPrevented}`);",
+    "  const data = JSON.parse(JSON.stringify(event));",
+    "  $('#status').val(`${data.key}:${data.target.id}:${data.target.value}:${data.defaultPrevented}:${Object.keys(event).includes('toJSON')}`);",
     "}",
     "```",
     "",
@@ -189,10 +253,10 @@ test("TUI keydown.prevent runs before editing and blocks text input", async () =
     });
     await waitFor(() => Bun.stripANSI(output).includes("waiting"));
     terminal.write("x");
-    await waitFor(() => Bun.stripANSI(output).includes("x:a:true"));
+    await waitFor(() => Bun.stripANSI(output).includes("x:field:a:true:false"));
     terminal.write("\x11");
     await Promise.race([proc.exited, Bun.sleep(2000)]);
-    expect(Bun.stripANSI(output)).toContain("x:a:true");
+    expect(Bun.stripANSI(output)).toContain("x:field:a:true:false");
   } finally {
     if (proc && proc.exitCode == null) proc.kill();
     terminal?.close();

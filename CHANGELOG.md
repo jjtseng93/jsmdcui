@@ -40,6 +40,10 @@ prompts safe across every TUI frontend action path.
   instead of rescanning the rendered Markdown document on every keypress.
 - Open Windows controlling-terminal input through read-only `CONIN$` when stdin
   is redirected, so piped Markdown retains keyboard and protected-prompt input.
+- Preserve `ctrlKey`, `shiftKey`, `altKey`, and `metaKey` when the WUI maps an
+  unidentified mobile keydown through its `beforeinput` fallback.
+- Add matching non-enumerable `event.toJSON()` methods to TUI and WUI keydown
+  events, allowing `JSON.stringify(event)` to produce portable event details.
 
 ## [0.7.0] - 2026-07-20
 

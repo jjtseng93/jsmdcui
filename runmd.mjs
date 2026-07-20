@@ -237,10 +237,18 @@ export function convertWuiTextareas(html, eventsById = new Map())
       const keydownHandler = declaration?.events.get("keydown");
       const keydownCode = keydownHandler
         ? [
+            "const __mdcuiKeyCode=Number(event.keyCode||event.which||0);",
+            "const __mdcuiCodeLetter=/^Key[A-Z]$/.test(event.code||\"\")?event.code.charCodeAt(3):0;",
+            "const __mdcuiLetterCode=__mdcuiKeyCode>=65&&__mdcuiKeyCode<=90?__mdcuiKeyCode:__mdcuiCodeLetter;",
+            "const __mdcuiAltGraph=!!event.getModifierState&&event.getModifierState(\"AltGraph\");",
+            "const __mdcuiLetter=!__mdcuiAltGraph&&(event.ctrlKey||event.altKey||event.metaKey)&&__mdcuiLetterCode>=65&&__mdcuiLetterCode<=90;",
+            "if(__mdcuiLetter)Object.defineProperty(event,\"key\",{configurable:true,value:String.fromCharCode(__mdcuiLetterCode+(event.shiftKey?0:32))});",
             "this.__mdcuiIdentifiedKeydown=!!event.key&&event.key!==\"Unidentified\";",
+            "this.__mdcuiUnidentifiedKeydown=event.key===\"Unidentified\"?{keyCode:__mdcuiKeyCode,ctrlKey:!!event.ctrlKey,shiftKey:!!event.shiftKey,altKey:!!event.altKey,metaKey:!!event.metaKey,altGraph:__mdcuiAltGraph}:null;",
             "clearTimeout(this.__mdcuiKeydownReset);",
-            "this.__mdcuiKeydownReset=setTimeout(()=>{this.__mdcuiIdentifiedKeydown=false},0);",
+            "this.__mdcuiKeydownReset=setTimeout(()=>{this.__mdcuiIdentifiedKeydown=false;this.__mdcuiUnidentifiedKeydown=null},0);",
             "if(event.key!==\"Unidentified\"){\n",
+            "Object.defineProperty(event,\"toJSON\",{configurable:true,value:function(){const t=this.target||{};return{type:String(this.type||\"\"),key:String(this.key||\"\"),code:String(this.code||\"\"),raw:String(this.raw||\"\"),ctrlKey:!!this.ctrlKey,shiftKey:!!this.shiftKey,altKey:!!this.altKey,metaKey:!!this.metaKey,repeat:!!this.repeat,defaultPrevented:!!this.defaultPrevented,target:{id:String(t.id||\"\"),tagName:String(t.tagName||\"\"),className:String(t.className||\"\"),value:String(t.value??\"\")}}}});",
             keydownHandler.modifiers.includes("prevent")
               ? "event.preventDefault();"
               : "",
@@ -251,7 +259,9 @@ export function convertWuiTextareas(html, eventsById = new Map())
       const beforeInputCode = keydownHandler
         ? [
             "if(!this.__mdcuiIdentifiedKeydown&&event.data!=null&&event.data!==\"\"){",
-            "Object.defineProperty(event,\"key\",{configurable:true,value:String(event.data)});",
+            "const m=this.__mdcuiUnidentifiedKeydown||{};",
+            "const letter=!m.altGraph&&(m.ctrlKey||m.altKey||m.metaKey)&&m.keyCode>=65&&m.keyCode<=90?String.fromCharCode(m.keyCode+(m.shiftKey?0:32)):String(event.data);",
+            "Object.defineProperties(event,{key:{configurable:true,value:letter},ctrlKey:{configurable:true,value:!!m.ctrlKey},shiftKey:{configurable:true,value:!!m.shiftKey},altKey:{configurable:true,value:!!m.altKey},metaKey:{configurable:true,value:!!m.metaKey}});",
             "this.onkeydown(event)",
             "}",
           ].join("")
