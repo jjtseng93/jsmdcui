@@ -537,6 +537,10 @@ selection, search, and copy remain available.
 | `Alt-G` | Show or hide the shortcut bar. |
 | `Ctrl-Q` or `Alt-Q` | Close the current UI. |
 
+To preview another color theme, press `Ctrl-E` or click on `€`, type `theme `, then use `Tab`
+and the arrow keys to browse the available themes. Press `Enter` to switch to
+the selected theme, or `Esc` to cancel and restore the previous one.
+
 The terminal automatically reflows the Markdown when its width changes.
 Only `javascript:` links execute in the TUI; ordinary web links behave as
 normal links in the browser.
