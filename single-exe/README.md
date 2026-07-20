@@ -1,20 +1,42 @@
-# This is completely optional
-- I still recommend using the methods in the root README.md
-- Bun's Android build is currently not supported
+# Bun Single-File Executable Bootstrap
 
-# Usage
-- First run `bun ./packAssets.sh` to bundle the assets into `assets.tar`
-- Then run the build script like this
+Build a Bun application and its runtime assets into one executable while
+keeping the regular main module free of Bun-specific asset imports.
+
+You can copy and adapt this build setup for your own project by changing its
+main-module path and asset list as described below.
+
+- Bundle an asset tree alongside the application code in one executable.
+- Keep the regular main module available to the Node.js ESM execution path.
+- Read embedded resources first with an optional external-file fallback.
+- List, extract, or bypass embedded assets with built-in CLI flags.
+- Build for the current platform or pass a Bun cross-compilation target.
+
+> This workflow is optional; the standard methods in the root README remain
+> available. Bun's Android build is currently not supported.
+
+## Quick start for jsmdcui
+
+From the repository root, build for the current platform:
 
 ```shell
-bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=binname
+bun ./src/index.js --build-exe
+./mdcui --version
 ```
 
-- You'll get a binname executable
+`--build-exe` runs `packAssets.sh` automatically and writes the `mdcui`
+executable to the current directory. To pass a Bun compilation target, use:
 
-# Single Executable Intro
+```shell
+bun ./src/index.js --build-for <target>
+```
 
-This folder contains the Bun single-exe bootstrap used by the project.
+To perform the same steps manually, run these commands from `single-exe/`:
+
+```shell
+bun ./packAssets.sh
+bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=mdcui
+```
 
 ## Adapting this folder to another project
 
@@ -55,18 +77,23 @@ the first packing step.
 
 ### 2. Point `entry.mjs` at the main program
 
-Keep the asset loader as the first import and change the second import to the
-other project's real entry module:
+Keep the asset loader as the first import and change the path passed to the
+final `await import()` so it points to the other project's real entry module:
 
 ```js
 #!/usr/bin/env bun
 
 import "./assetsLoader.mjs";
-import "../src/index.js";
+await globalThis.assetsLoaderPromise;
+await import("../src/index.js");
 ```
 
-Only the Bun single-executable build should use this bootstrap entry. Continue
-to run the regular main module directly when using Node:
+> **Important:** Keep the final import dynamic. Do not replace it with a static
+> `import "../src/index.js"`, because static dependencies are evaluated before
+> the asset Promise is awaited.
+
+Only the Bun single-file executable build should use this bootstrap entry.
+Continue to run the regular main module directly when using Node:
 
 ```shell
 node ./src/index.js
@@ -96,37 +123,7 @@ tar -cvf single-exe/assets.tar public templates README.md
 Do not retain jsmdcui's `demos`, `runtime`, `src/cui`, or `testapp.md` entries
 unless the adopting project actually contains and needs them.
 
-### 4. Make the main program wait before starting
-
-`assetsLoader.mjs` assigns the archive-loading Promise to
-`globalThis.assetsLoaderPromise`. Capture that optional Promise near the start
-of the regular main module and start the application only after it settles:
-
-```js
-const assetsReady = globalThis.assetsLoaderPromise || Promise.resolve();
-
-async function main() {
-  // Parse arguments, load resources, and start the application here.
-}
-
-assetsReady
-  .then(() => main())
-  .catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-  });
-```
-
-Code evaluated by top-level imports must not try to read embedded assets before
-`main()` starts. Move such reads into `main()` or functions called after
-`assetsReady` resolves.
-
-The loader catches archive-level failures and resolves after reporting them, so
-the application can still try its external-file fallback. If the adopting
-project wants asset-loading failures to be fatal, change the catch behavior in
-`assetsLoader.mjs`.
-
-### 5. Read embedded assets with an external fallback
+### 4. Read embedded assets with an external fallback
 
 Import the Node-compatible helpers from `assetsHelper.js`. They return `null`
 when the embedded store is unavailable or a path is not present:
@@ -149,7 +146,7 @@ places the external resource tree. Apply the same embedded-first fallback to
 every file that must work in both modes. `assetsHelper.js` also exports byte,
 path-listing, and directory-listing helpers.
 
-### 6. Add the optional build commands to the regular CLI
+### 5. Add the optional build commands to the regular CLI
 
 Before normal argument parsing, call `buildEarlyExit` from the regular main
 module:
@@ -177,7 +174,7 @@ bun ./packAssets.sh
 bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=my-bin
 ```
 
-### 7. Verify both execution paths
+### 6. Verify both execution paths
 
 Verify the compiled asset archive and then run the program normally:
 
@@ -212,20 +209,21 @@ If the regular main module imported `assetsLoader.mjs`, that Bun-specific
 `type: "file"` dependency would enter the main module graph. Node would then be
 unable to load the program before it could select an external-file fallback.
 
-Instead, only Bun's `entry.mjs` imports the Bun-specific loader. The regular
-main module sees an optional, ordinary Promise through `globalThis` and does
-not import the loader at all. Under the supported Node.js 20.11+ ESM path the
-Promise is absent and the main module continues with external files; in the
-compiled Bun entry it is present and delays `main()` until the archive is
-ready. The Promise is therefore an intentional Node-compatibility boundary,
-not a failure to use a more modern dependency or top-level-`await` design.
+Instead, only Bun's `entry.mjs` imports the Bun-specific loader, awaits its
+Promise, and then dynamically imports the regular main module. The main module
+does not import the loader, inspect the Promise, or contain Bun bootstrap code.
+Under the supported Node.js 20.11+ ESM path, Node runs that clean main module
+directly with external files. The Promise is therefore an intentional
+Node-compatibility boundary inside the Bun-only bootstrap, not a failure to use
+a more modern dependency or top-level-`await` design.
 
 ## Entry Flow
 
 - `entry.mjs` imports `assetsLoader.mjs` first
 - `assetsLoader.mjs` loads `assets.tar` with `Bun.Archive` and mounts it as `globalThis.internalAssets`
 - `assetsLoaderPromise` is exposed on `globalThis`
-- The main program waits for `assetsLoaderPromise` if it exists
+- `entry.mjs` awaits `assetsLoaderPromise`
+- `entry.mjs` dynamically imports the main program after the assets are ready
 
 That keeps the main program bootable even if asset loading reports errors.
 
@@ -235,6 +233,12 @@ That keeps the main program bootable even if asset loading reports errors.
 - Load failures are collected and printed to `stderr`
 - Asset loading never rejects the bootstrap promise
 - When loading succeeds, the archive is available through `globalThis.internalAssets`
+
+This loader is not zero-copy: it materializes every bundled file in memory and
+keeps the resulting bytes in `globalThis.internalAssets`. Large asset archives
+can therefore increase startup and ongoing RAM usage. For workloads where that
+matters, I also wrote an experimental Linux-only zero-copy hack:
+[bun-assets-zerocopy](https://github.com/jjtseng93/bun-assets-zerocopy).
 
 ## CLI Flags
 
