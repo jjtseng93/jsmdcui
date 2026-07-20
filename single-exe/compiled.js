@@ -12,9 +12,12 @@ const SINGLE_EXE_DIR = resolve(REPO_ROOT, "single-exe");
 const SINGLE_EXE_ENTRY = resolve(SINGLE_EXE_DIR, "entry.mjs");
 
 
-export function isCompiledBinary() {
-  const argv = process.argv
-  return Boolean(argv?.[1]?.startsWith?.("/$bunfs/"));
+export function isCompiledBinary(argv = process.argv) {
+  const entry = argv?.[1];
+  return Boolean(
+    entry?.startsWith?.("/$bunfs/") ||
+    entry?.startsWith?.("B:/~BUN")
+  );
 }
 
 export function getExeDirname() {
