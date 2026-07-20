@@ -29,6 +29,7 @@ T / Y 向上移動
 空白鍵向下移動
 
 Arrow keys   ←↑→↓ / 正常方向移動
+Ctrl-R       Reset maze / 重新開始
 
 Do not hit 🧱 / 不能撞牆
 ```
@@ -85,9 +86,13 @@ export function reset() {
 }
 
 export function handle(event) {
+  const key = String(event.key ?? '').toLowerCase();
+  if (event.ctrlKey && key === 'r') {
+    reset();
+    return;
+  }
   if (completed) return;
 
-  const key = String(event.key ?? '').toLowerCase();
   let row = player.row;
   let col = player.col;
   let direction;
