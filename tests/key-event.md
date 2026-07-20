@@ -1,4 +1,4 @@
-```text#myid @keydown="handle(event)"
+```text#myid @keydown.prevent="handle(event)"
 hello
 ```
 
