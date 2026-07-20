@@ -244,8 +244,16 @@ handles a key by placing a quoted HTML-style `@keydown` attribute after its
 identity:
 
 ````md
-```text#command.field @keydown.prevent="handleCommand(event)"
+```text#command.field @keydown="handleCommand(event)"
 Initial value
+```
+
+```js front
+export function handleCommand(event) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  alert(`Command: ${$('#command').val()}`);
+}
 ```
 ````
 

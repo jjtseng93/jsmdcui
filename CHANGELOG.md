@@ -2,6 +2,35 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.8.0] - 2026-07-20
+
+This update adds portable inline keyboard events to Markdown text controls,
+including mobile software-keyboard fallback behavior, and makes interactive
+prompts safe across every TUI frontend action path.
+
+### Added
+
+- Add quoted `@keydown="..."` and `@keyup="..."` attributes to named `text`
+  and `textarea` fences. The TUI preserves source event metadata and evaluates
+  it before or after key handling; the WUI emits native inline event
+  attributes. Add `.prevent` to apply `event.preventDefault()` before the
+  handler runs.
+- In the WUI, automatically map `beforeinput.data` back through `onkeydown`
+  when a mobile software keyboard reports `event.key` as `Unidentified`.
+  Unidentified events are hidden from application handlers, while identified
+  desktop keydowns are marked briefly to prevent duplicate calls.
+
+### Changed
+
+- Install protected `alert`, `confirm`, and `prompt` globals once for the TUI
+  lifetime and share them across OSC 8 actions, fenced keyboard handlers, and
+  JS plugins. Restore Bun's original globals when the TUI stops.
+
+### Fixed
+
+- Prevent `alert()` called from a keydown handler from competing with the TUI
+  for stdin by suspending raw mode and screen rendering around native prompts.
+
 ## [0.7.0] - 2026-07-20
 
 This update adds native Kitty image rendering, turns heading task lists into
@@ -41,10 +70,6 @@ and checkbox styling consistent at every terminal width.
   retain the existing image-processor aliases.
 - Add `--demo-list` to list the root demo and every automatically discovered
   Markdown example from bundled assets or the source tree's `demos/` directory.
-- Add quoted `@keydown="..."` and `@keyup="..."` attributes to named `text`
-  and `textarea` fences. The TUI preserves source event metadata and evaluates
-  it before or after key handling; the WUI emits native inline event
-  attributes. Add `.prevent` to prepend `event.preventDefault();`.
 - Add `clean.sh` as a convenience helper for removing generated Markdown
   companion files from the project directory.
 
