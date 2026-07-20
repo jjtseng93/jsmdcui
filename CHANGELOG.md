@@ -4,17 +4,18 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ## [0.8.0] - 2026-07-20
 
-This update adds portable inline keyboard events to Markdown text controls,
+This update adds portable inline keydown handling to Markdown text controls,
 including mobile software-keyboard fallback behavior, and makes interactive
 prompts safe across every TUI frontend action path.
 
 ### Added
 
-- Add quoted `@keydown="..."` and `@keyup="..."` attributes to named `text`
-  and `textarea` fences. The TUI preserves source event metadata and evaluates
-  it before or after key handling; the WUI emits native inline event
-  attributes. Add `.prevent` to apply `event.preventDefault()` before the
-  handler runs.
+- Add quoted `@keydown="..."` attributes to named `text` and `textarea`
+  fences. The TUI preserves source event metadata and evaluates it before key
+  handling; the WUI emits a native inline event attribute. Add `.prevent` to
+  apply `event.preventDefault()` before the handler runs. Keyup is intentionally
+  not exposed because traditional terminals do not report key releases
+  reliably.
 - In the WUI, automatically map `beforeinput.data` back through `onkeydown`
   when a mobile software keyboard reports `event.key` as `Unidentified`.
   Unidentified events are hidden from application handlers, while identified

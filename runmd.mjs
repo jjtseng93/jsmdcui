@@ -3,7 +3,7 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readInternalAssetText } from './src/runtime/assets.js'
-import { fenceEventMap, inlineFenceEventCode } from './src/cui/fence-events.mjs'
+import { fenceEventMap } from './src/cui/fence-events.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -240,12 +240,12 @@ export function convertWuiTextareas(html, eventsById = new Map())
             "this.__mdcuiIdentifiedKeydown=!!event.key&&event.key!==\"Unidentified\";",
             "clearTimeout(this.__mdcuiKeydownReset);",
             "this.__mdcuiKeydownReset=setTimeout(()=>{this.__mdcuiIdentifiedKeydown=false},0);",
-            "if(event.key!==\"Unidentified\"){",
+            "if(event.key!==\"Unidentified\"){\n",
             keydownHandler.modifiers.includes("prevent")
               ? "event.preventDefault();"
               : "",
             keydownHandler.code,
-            "}",
+            "\n}",
           ].join("")
         : "";
       const beforeInputCode = keydownHandler
@@ -256,13 +256,9 @@ export function convertWuiTextareas(html, eventsById = new Map())
             "}",
           ].join("")
         : "";
-      const keyupHandler = declaration?.events.get("keyup");
       const inlineEventAttrs = [
         keydownCode ? `onkeydown="${escapeHtmlAttribute(keydownCode)}"` : "",
         beforeInputCode ? `onbeforeinput="${escapeHtmlAttribute(beforeInputCode)}"` : "",
-        keyupHandler
-          ? `onkeyup="${escapeHtmlAttribute(inlineFenceEventCode(keyupHandler))}"`
-          : "",
       ];
       const attrs = [
         `data-mdcui-tag="${identity.tag}"`,

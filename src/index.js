@@ -3879,7 +3879,7 @@ class App {
 
     const text = event.raw;
     const seq = event.key;
-    const keyupBlock = isMdcuiEncoding(buf?.encoding)
+    const keydownBlock = isMdcuiEncoding(buf?.encoding) && buf?._mdcuiFenceEvents?.size > 0
       ? findTuiBlockAtLine(buf.lines, buf.cursor.y)
       : null;
     if (buf) buf.allowCursorOffscreen = false;
@@ -3892,9 +3892,8 @@ class App {
       return;
     }
 
-    const keydownEvent = await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keydown");
+    const keydownEvent = await this.dispatchMdcuiFenceEvent(buf, keydownBlock, event, "keydown");
     if (keydownEvent?.defaultPrevented && !["ctrl-q", "alt-q", "escape"].includes(seq)) {
-      await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keyup");
       this.render();
       return;
     }
@@ -4268,7 +4267,6 @@ class App {
         }
         break;
     }
-    await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keyup");
     this.render();
   }
 

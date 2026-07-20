@@ -282,13 +282,9 @@ cursor movement. The `.prevent` modifier applies this automatically:
 ```
 ````
 
-Use `@keyup` when the code should run after the text control has handled the
-key. It supports the same quoted statements and optional `.prevent` modifier:
-
-````md
-```text#search.field @keyup="updateSearch(event); refresh()"
-```
-````
+`@keydown` is the only keyboard event exposed by jsmdcui. Traditional terminal
+input does not report physical key releases reliably, so jsmdcui does not
+provide or emulate `@keyup` in either interface.
 
 In the terminal TUI, only content after the protected `│ ` or `| ` prefix can
 be edited. The frame prefix cannot be deleted, Enter cannot insert a newline,

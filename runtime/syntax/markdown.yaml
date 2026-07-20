@@ -52,6 +52,7 @@ rules:
 # keywords
 # javascript alert confirm prompt rpc 
 # front back 
+# export function keydown 
 # console log error JSON stringify parse
 # async await Promise 
 # textarea text password search 

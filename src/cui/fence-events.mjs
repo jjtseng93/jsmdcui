@@ -44,7 +44,8 @@ function parseEventAttributes(text) {
     }
     if (!closed) break;
     const [eventName, ...modifiers] = name.split(".");
-    if (eventName) events.set(eventName, { code, modifiers: [...new Set(modifiers.filter(Boolean))] });
+    if (eventName === "keydown")
+      events.set(eventName, { code, modifiers: [...new Set(modifiers.filter(Boolean))] });
   }
   return events;
 }

@@ -45,13 +45,13 @@ test("--check reports heading/fenced-block collisions with line details", async 
 
 test("--check keeps fenced IDs that are followed by inline event attributes", async () => {
   const result = await runCheck(
-    '## Write Status\n\n```text#write-status @keyup="refresh(); validate(event)"\nwaiting\n```\n',
+    '## Write Status\n\n```text#write-status @keydown="refresh(); validate(event)"\nwaiting\n```\n',
   );
   const output = Bun.stripANSI(result.stdout.toString());
   expect(result.exitCode).toBe(1);
   expect(output).toContain("ID #write-status");
   expect(output).toContain("Type: text fenced block");
-  expect(output).toContain('Source: ```text#write-status @keyup="refresh(); validate(event)"');
+  expect(output).toContain('Source: ```text#write-status @keydown="refresh(); validate(event)"');
 });
 
 test("--check reports duplicate fenced-block IDs", async () => {
