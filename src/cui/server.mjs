@@ -50,7 +50,7 @@ export function main()
 
 const basePath = "/" + crypto.randomUUID()
 const pathname = basePath + "/"
-const server = Bun.serve({
+const serverOptions = {
   port: Number(process.env.PORT || 3000),
   development: {
     hmr: true,
@@ -101,7 +101,18 @@ const server = Bun.serve({
   fetch() {
     return new Response("Not Found", { status: 404 });
   },
-});
+};
+
+let server;
+try {
+  server = Bun.serve(serverOptions);
+} catch (error) {
+  const addressInUse = error?.code === "EADDRINUSE"
+    || error?.cause?.code === "EADDRINUSE"
+    || /EADDRINUSE|address already in use/i.test(String(error?.message || error));
+  if (serverOptions.port !== 3000 || !addressInUse) throw error;
+  server = Bun.serve({ ...serverOptions, port: 0 });
+}
 
 console.error(mda("- Bun RPC server listening on"));
 console.log(`http://localhost:${server.port}${pathname}`);
