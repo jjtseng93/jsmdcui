@@ -126,7 +126,8 @@ export function handle(event) {
   if (row === GOAL.row && col === GOAL.col) {
     completed = true;
     $('#last-key').val('🎉🏆🌟 Escaped the maze! / 成功走出迷宮！🌟🏆🎉');
-    alert([
+    $('#character').val([
+      '',
       '🎆🎇🎉 恭 喜 過 關 ！ 🎉🎇🎆',
       '',
       '🥳 你成功逃出迷宮了！ 🥳',
@@ -135,6 +136,10 @@ export function handle(event) {
       '🎈 🎊 🎁 🪩 🎁 🎊 🎈',
       '',
       '🚀 ESCAPED THE MAZE! 🚀',
+      '',
+      'Press Ctrl-R to reset',
+      '按 Ctrl-R 重新開始',
+      ''
     ].join('\n'));
   } else {
     const label = event.key === ' ' ? 'Space' : event.key;
