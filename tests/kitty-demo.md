@@ -83,7 +83,7 @@ Content before the image, line 10.
 
 ## Image anchor
 
-![img](../demo.resized.jpg)
+![img](../maze.jpg)
 
 ## After image 01
 Content after the image, line 01.

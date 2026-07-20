@@ -1,4 +1,5 @@
 ![Demo](https://raw.githubusercontent.com/jjtseng93/jsmdcui/main/demo.jpg)
+![Maze Game](https://raw.githubusercontent.com/jjtseng93/jsmdcui/main/maze.jpg)
 
 # Demo App
 ## My app
