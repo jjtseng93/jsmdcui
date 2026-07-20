@@ -567,6 +567,23 @@ Each server start prints a new random path. The old URL stops working after the
 server is stopped or restarted. Keep the process running while using the page,
 and press `Ctrl-C` in its terminal to stop it.
 
+## Editing Markdown source
+
+From a cloned repository, use the `edit` launcher to open a Markdown file as
+ordinary editable UTF-8 source instead of rendering it as a Markdown UI:
+
+```sh
+bun ./edit app.md
+```
+
+This is equivalent to:
+
+```sh
+bun src/index.js --edit app.md
+```
+
+Additional file and cursor arguments are forwarded unchanged.
+
 ## Generated files
 
 Opening a local Markdown UI generates these files beside the source file:
