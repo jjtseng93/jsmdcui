@@ -20,6 +20,9 @@ prompts safe across every TUI frontend action path.
   when a mobile software keyboard reports `event.key` as `Unidentified`.
   Unidentified events are hidden from application handlers, while identified
   desktop keydowns are marked briefly to prevent duplicate calls.
+- Add native multiline editing to TUI `textarea` controls. Enter splits a body
+  row and expands the frame; Backspace at the start of a later row and Delete
+  at the end of a row join adjacent body rows without exposing frame borders.
 
 ### Changed
 
@@ -29,6 +32,8 @@ prompts safe across every TUI frontend action path.
 - Make `micro.alert()`, `micro.confirm()`, and `micro.prompt()` synchronous like
   their native counterparts, and update the bundled JS plugin examples so they
   do not `await` these calls.
+- Add TUI `.val(value)` replacements to Undo/Redo history, including multiline
+  layout, ANSI rendering metadata, image positions, and task-list anchors.
 
 ### Fixed
 

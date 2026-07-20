@@ -239,6 +239,14 @@ native `<textarea>` with the declared ID and classes. Long text wraps
 automatically, and the field height is recalculated when the user types, the
 window is resized, or frontend code calls `.val(value)`.
 
+In the TUI, `text` remains a single-line control while `textarea` supports
+native multiline editing. Enter splits the current body row and grows the
+frame, Backspace at the start of a later row joins it to the previous row, and
+Delete at the end of a row joins the following row. When the expanded control
+does not fit on screen, the document viewport scrolls to keep the cursor
+visible. The closing border and following Markdown content move with the
+resized control.
+
 A named `text` or `textarea` block can run inline front-end code before it
 handles a key by placing a quoted HTML-style `@keydown` attribute after its
 identity:
@@ -298,11 +306,14 @@ input does not report physical key releases reliably, so jsmdcui does not
 provide or emulate `@keyup` in either interface.
 
 In the terminal TUI, only content after the protected `│ ` or `| ` prefix can
-be edited. The frame prefix cannot be deleted, Enter cannot insert a newline,
-Delete at the end of a row cannot join the next row, and multiline paste is
-blocked. Activate the lower-left frame corner to add a row. Activate the
-upper-left frame corner to remove the trailing row only when it is empty;
-non-empty content is never removed.
+be edited, and the frame prefix cannot be deleted. Multiline paste remains
+blocked. For single-line `text` controls, activate the lower-left frame corner
+to add a row. Activate the upper-left frame corner to remove the trailing row
+only when it is empty; non-empty content is never removed.
+
+TUI text-control changes made through `.val(value)` participate in the same
+history as direct editing. `Ctrl-Z` undoes the replacement and `Ctrl-Y` redoes
+it, including multiline frame resizing and its associated rendered metadata.
 
 ### Heading task lists and selector API
 
@@ -442,7 +453,7 @@ The available selector methods are:
 | Method | TUI | WUI |
 | --- | --- | --- |
 | `.val()` | Read text blocks or heading task-list values. | Read textareas/controls or heading task-list values. |
-| `.val(value)` | Replace text-block contents and resize multiline values. | Set textarea/control values and resize textareas. |
+| `.val(value)` | Replace text-block contents, resize multiline values, and record Undo/Redo history. | Set textarea/control values and resize textareas. |
 | `.html()` | Return a selected heading's inner HTML. | Return any successfully selected DOM element's `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
 | `.push(...items)` | Append unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
