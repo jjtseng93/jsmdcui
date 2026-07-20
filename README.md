@@ -90,6 +90,11 @@ npx jsmdcui --demo-imgtool-zh
 ```
 
 ```sh
+# Maze game demo
+npx jsmdcui --demo-maze
+```
+
+```sh
 # WUI(Web User Interface) Demo
 npx jsmdcui --wui
 ```
