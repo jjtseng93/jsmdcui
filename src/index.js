@@ -1,8 +1,5 @@
 #!/usr/bin/env bun
 
-let mainPromise = globalThis.assetsLoaderPromise ||
-                  Promise.resolve();
-
 const jsStart = globalThis.Bun ? Bun.nanoseconds() : Date.now() * 1e6;
 const checkpoints = [
   { name: "Bun Engine Boot", time: 0 },
@@ -147,7 +144,12 @@ if(!globalThis.Bun)
     //console.log(process.argv)
 
     console.error('Ran by node, changed to run by bun')
-    process.execve(bunbinary,process.argv,process.env);
+    const launched = child_process.spawnSync(bunbinary, process.argv.slice(1), {
+      stdio: "inherit",
+      env: process.env,
+    });
+    if (launched.error) throw launched.error;
+    process.exit(launched.status ?? 1);
   }
   catch(e){
     console.log(`
@@ -8837,9 +8839,6 @@ async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAUL
 }
 
 
-mainPromise.then(r=>{
-
-
 main().catch((error) => {
   try {
     (_activeTtyStream ?? process.stdin).setRawMode?.(false);
@@ -8849,6 +8848,3 @@ main().catch((error) => {
     process.exit(1);
   }
 });
-
-
-})

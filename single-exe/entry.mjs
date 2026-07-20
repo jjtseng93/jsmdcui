@@ -3,7 +3,8 @@
 // 1. Injects assets to global.internalAssets
 //   as { "./path/in/tar":file.bytes() }
 // 2. Sets global.assetsLoaderPromise
-import "./assetsLoader.mjs"
+// 3. Starts the main program only after the assets are ready
+import "./assetsLoader.mjs";
 
-import "../src/index.js"
-
+await globalThis.assetsLoaderPromise;
+await import("../src/index.js");
