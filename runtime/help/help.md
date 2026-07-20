@@ -239,6 +239,49 @@ native `<textarea>` with the declared ID and classes. Long text wraps
 automatically, and the field height is recalculated when the user types, the
 window is resized, or frontend code calls `.val(value)`.
 
+A named `text` or `textarea` block can run inline front-end code before it
+handles a key by placing a quoted HTML-style `@keydown` attribute after its
+identity:
+
+````md
+```text#command.field @keydown.prevent="handleCommand(event)"
+Initial value
+```
+````
+
+The block must have a unique ID. In the WUI, jsmdcui writes the code directly
+to the generated textarea's native `onkeydown` attribute. Mobile browsers may
+report ordinary software-keyboard letters as `Unidentified`, so the WUI also
+generates an `onbeforeinput` fallback. The unidentified event is hidden from
+the handler; `beforeinput.data` becomes `event.key`, then the same keydown code
+runs once. A short zero-delay timer distinguishes that fallback from the
+`beforeinput` that normally follows an already identified keydown, preventing
+duplicate calls.
+
+In the TUI, the full source info string is kept in an event table before Bun
+renders it. The keydown statements run with a synthetic `event` before the
+text control handles the key. Both interfaces expose `event.key`, modifier
+flags, `event.target.id`, and `event.target.value`. Use `event`, the native
+inline-handler variable, rather than Vue's `$event` alias. Double quotes
+delimit the handler; use single-quoted JavaScript strings inside it or escape
+an embedded double quote as `\"`.
+
+A keydown handler can call `event.preventDefault()` to stop text insertion or
+cursor movement. The `.prevent` modifier applies this automatically:
+
+````md
+```text#command @keydown.prevent="handleCommand(event)"
+```
+````
+
+Use `@keyup` when the code should run after the text control has handled the
+key. It supports the same quoted statements and optional `.prevent` modifier:
+
+````md
+```text#search.field @keyup="updateSearch(event); refresh()"
+```
+````
+
 In the terminal TUI, only content after the protected `│ ` or `| ` prefix can
 be edited. The frame prefix cannot be deleted, Enter cannot insert a newline,
 Delete at the end of a row cannot join the next row, and multiline paste is

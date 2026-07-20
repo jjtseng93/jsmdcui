@@ -752,6 +752,20 @@ function _findBlock(lines, selector) {
   return null;
 }
 
+export function findTuiBlockAtLine(lines, lineIndex) {
+  for (let start = 0; start < lines.length; start++) {
+    const header = _blockHeader(lines[start]);
+    if (!header) continue;
+    const block = _findBlock(lines.slice(start), header);
+    if (!block) continue;
+    const end = start + block.end;
+    if (lineIndex > start && lineIndex < end) return { start, end, header };
+    if (start > lineIndex) break;
+    start = Math.max(start, end);
+  }
+  return null;
+}
+
 function _blockValue(lines, selector) {
   const block = _findBlock(lines, selector);
   if (!block) return undefined;
@@ -1229,7 +1243,12 @@ export function buildMicroGlobal(jsManager) {
     // ── Messaging ─────────────────────────────────────────────────
     Log:         (...args) => console.log(...args),
     TermMessage: (msg) => { const app = getApp(); if (app) { app.message = String(msg); if (app._started) app.render?.(); } },
-    alert: async (msg) => { const app = getApp(); if (app) await app.runAlert(msg); else console.log(String(msg)); },
+    alert: (msg) => { const app = getApp(); return app ? app.protectedAlert(msg) : console.log(String(msg)); },
+    confirm: (msg) => { const app = getApp(); return app ? app.protectedConfirm(msg) : false; },
+    prompt: (msg, defaultValue = "") => {
+      const app = getApp();
+      return app ? app.protectedPrompt(msg, defaultValue) : defaultValue;
+    },
 
     // ── Buffer line access (1-based line numbers; omit → cursor line) ─
 

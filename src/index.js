@@ -99,6 +99,7 @@ import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
 import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/task-checkbox.mjs";
+import { fenceEventMap, inlineFenceEventCode } from "./cui/fence-events.mjs";
 import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
 import { fitKittyImageToWidth, prepareKittyImages } from "./cui/kitty-images.mjs";
 import { logKittyPlacement } from "./cui/kitty-debug.mjs";
@@ -108,7 +109,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "./runtime/assets.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, findTuiBlockAtLine, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -970,6 +971,50 @@ function takeDisplay(text, maxWidth) {
   return out;
 }
 
+function tuiKeyEventForFront(event, target, type) {
+  const sequence = String(event?.key ?? "");
+  const parts = sequence.split("-");
+  const aliases = {
+    enter: "Enter",
+    escape: "Escape",
+    tab: "Tab",
+    backtab: "Tab",
+    backspace: "Backspace",
+    delete: "Delete",
+    left: "ArrowLeft",
+    right: "ArrowRight",
+    up: "ArrowUp",
+    down: "ArrowDown",
+    home: "Home",
+    end: "End",
+    pageup: "PageUp",
+    pagedown: "PageDown",
+    space: " ",
+  };
+  let base = parts.at(-1) || sequence;
+  if (sequence === "backtab") base = "tab";
+  const raw = String(event?.raw ?? "");
+  const key = aliases[base] ?? (sequence === raw && [...raw].length === 1 ? raw : base);
+  let defaultPrevented = false;
+  let propagationStopped = false;
+  return {
+    type,
+    key,
+    raw,
+    ctrlKey: parts.includes("ctrl"),
+    altKey: parts.includes("alt"),
+    shiftKey: sequence === "backtab" || parts.includes("shift"),
+    metaKey: parts.includes("meta"),
+    repeat: false,
+    target,
+    currentTarget: target,
+    get defaultPrevented() { return defaultPrevented; },
+    get propagationStopped() { return propagationStopped; },
+    preventDefault() { defaultPrevented = true; },
+    stopPropagation() { propagationStopped = true; },
+  };
+}
+
 function parseArgs(argv) {
   const flags = {
     version: false,
@@ -1207,6 +1252,7 @@ class BufferModel {
     this._mdcuiAnsiText = isMdcuiEncoding(this.encoding) ? String(ansiText ?? "") : null;
     this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(sourceText ?? text) : null;
     this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(tuiSourceText ?? sourceText ?? text) : null;
+    this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(sourceText ?? tuiSourceText ?? text) : new Map();
     this._mdcuiImages = isMdcuiEncoding(this.encoding) ? (mdcuiImages ?? []) : [];
     this._mdcuiRenderWidth = Math.trunc(Number(mdcuiRenderWidth) || 0);
     this.cursor = { x: 0, y: 0 };
@@ -1725,6 +1771,7 @@ class BufferModel {
       this._mdcuiAnsiText = isMdcuiEncoding(this.encoding) ? String(decoded.ansiText ?? "") : null;
       this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.sourceText ?? text) : null;
       this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.tuiSourceText ?? decoded.sourceText ?? text) : null;
+      this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(decoded.sourceText ?? decoded.tuiSourceText ?? text) : new Map();
       this._mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
       this._mdcuiImages = decoded.mdcuiImages ?? [];
       const readonly = isMdcuiEncoding(this.encoding);
@@ -1758,6 +1805,7 @@ class BufferModel {
     this._mdcuiAnsiText = isMdcuiEncoding(this.encoding) ? String(decoded.ansiText ?? "") : null;
     this._mdcuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.sourceText ?? text) : null;
     this._mdcuiTuiSourceText = isMdcuiEncoding(this.encoding) ? String(decoded.tuiSourceText ?? decoded.sourceText ?? text) : null;
+    this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(decoded.sourceText ?? decoded.tuiSourceText ?? text) : new Map();
     this._mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
     this._mdcuiImages = decoded.mdcuiImages ?? [];
     this.fileformat = detectFileFormat(text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
@@ -2504,6 +2552,7 @@ class App {
 
   async start() {
     this._started = true;
+    this.installProtectedPrompts();
     // When stdin was a pipe (content already consumed in loadBuffers), open the
     // controlling terminal directly so the event loop has a live handle and
     // keyboard input works.  Unix: /dev/tty  Windows: \\.\CON
@@ -2626,6 +2675,8 @@ class App {
         if (p.type === "term") p.terminal?.close();
     (this._ttyStream ?? process.stdin).setRawMode?.(false);
     this.screen.fini();
+    this._started = false;
+    this.restoreProtectedPrompts();
 
     if (this.context?.config?.getGlobalOption("savehistory") !== false) {
       try { await saveHistory(this.context.config.configDir); } catch {}
@@ -2642,6 +2693,80 @@ class App {
       for (const buf of this.buffers) removeBackup(buf, configDir);
     }
     process.exit(code);
+  }
+
+  installProtectedPrompts() {
+    if (this._protectedPrompts) return;
+    const saved = {
+      alert: {
+        had: Object.prototype.hasOwnProperty.call(globalThis, "alert"),
+        value: globalThis.alert,
+      },
+      confirm: {
+        had: Object.prototype.hasOwnProperty.call(globalThis, "confirm"),
+        value: globalThis.confirm,
+      },
+      prompt: {
+        had: Object.prototype.hasOwnProperty.call(globalThis, "prompt"),
+        value: globalThis.prompt,
+      },
+    };
+    this._protectedPrompts = saved;
+    this._protectedPromptGlobals = {
+      alert: this.protectedAlert.bind(this),
+      confirm: this.protectedConfirm.bind(this),
+      prompt: this.protectedPrompt.bind(this),
+    };
+    Object.assign(globalThis, this._protectedPromptGlobals);
+  }
+
+  runProtectedPrompt(name, fallback, args) {
+    const nativeFn = this._protectedPrompts?.[name]?.value;
+    if (!this._started || typeof nativeFn !== "function") {
+      this.message = String(args[0] ?? "");
+      return fallback;
+    }
+    const tty = this._ttyStream ?? process.stdin;
+    this._alertRunning = true;
+    tty.setRawMode?.(false);
+    this.screen.fini();
+    this.screen.previous = null;
+    try {
+      return nativeFn(...args);
+    } finally {
+      tty.setRawMode?.(true);
+      this.screen.previous = null;
+      this.screen.init();
+      this._alertRunning = false;
+      this.render();
+    }
+  }
+
+  protectedAlert(msg = "") {
+    return this.runProtectedPrompt("alert", undefined, [String(msg)]);
+  }
+
+  protectedConfirm(msg = "") {
+    return this.runProtectedPrompt("confirm", false, [String(msg)]);
+  }
+
+  protectedPrompt(msg = "", defaultValue = "") {
+    return this.runProtectedPrompt(
+      "prompt",
+      defaultValue,
+      [String(msg), String(defaultValue)],
+    );
+  }
+
+  restoreProtectedPrompts() {
+    const saved = this._protectedPrompts;
+    if (!saved) return;
+    for (const name of ["alert", "confirm", "prompt"]) {
+      if (saved[name].had) globalThis[name] = saved[name].value;
+      else delete globalThis[name];
+    }
+    this._protectedPrompts = null;
+    this._protectedPromptGlobals = null;
   }
 
   layoutEditorArea() {
@@ -3754,12 +3879,22 @@ class App {
 
     const text = event.raw;
     const seq = event.key;
+    const keyupBlock = isMdcuiEncoding(buf?.encoding)
+      ? findTuiBlockAtLine(buf.lines, buf.cursor.y)
+      : null;
     if (buf) buf.allowCursorOffscreen = false;
 
     if (this._rawMode) {
       const hex = Array.from(new TextEncoder().encode(text)).map(b => b.toString(16).padStart(2, "0")).join(" ");
       this.message = `key=${JSON.stringify(seq)}  raw=${hex}`;
       if (seq === "escape") this._rawMode = false;
+      this.render();
+      return;
+    }
+
+    const keydownEvent = await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keydown");
+    if (keydownEvent?.defaultPrevented && !["ctrl-q", "alt-q", "escape"].includes(seq)) {
+      await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keyup");
       this.render();
       return;
     }
@@ -4133,7 +4268,50 @@ class App {
         }
         break;
     }
+    await this.dispatchMdcuiFenceEvent(buf, keyupBlock, event, "keyup");
     this.render();
+  }
+
+  async dispatchMdcuiFenceEvent(buf, block, inputEvent, eventName) {
+    const id = block?.header?.id;
+    const declaration = id ? buf?._mdcuiFenceEvents?.get(id) : null;
+    const handler = declaration?.events?.get(eventName);
+    const code = inlineFenceEventCode(handler);
+    if (
+      !code
+      || declaration.tag !== block?.header?.tag
+      || !buf?.path
+      || isHttpUrl(buf.path)
+    ) return false;
+
+    const frontPath = `${buf.path}.front.js`;
+    if (!existsSync(frontPath)) return false;
+    try {
+      const selection = globalThis.$?.(`${declaration.tag}#${id}`);
+      const target = {
+        id,
+        tagName: declaration.tag.toUpperCase(),
+        className: declaration.classes.join(" "),
+      };
+      Object.defineProperty(target, "value", {
+        enumerable: true,
+        get: () => selection?.val?.() ?? "",
+        set: (value) => selection?.val?.(value),
+      });
+      const event = tuiKeyEventForFront(inputEvent, target, eventName);
+      const [{ evalFront }, frontMod] = await Promise.all([
+        import("./cui/rpc.mjs"),
+        import(localModuleUrl(frontPath)),
+      ]);
+      const result = await evalFront(frontMod, code, { event });
+      if (result && typeof result === "object" && result.ok === false) {
+        this.message = `mdcui ${eventName}: ${String(result.error ?? "Unknown error")}`;
+      }
+      return event;
+    } catch (error) {
+      this.message = `mdcui ${eventName}: ${String(error?.message || error)}`;
+      return null;
+    }
   }
 
   async handleMdcuiCellCallback(buf, y = buf?.cursor?.y ?? 0, x = buf?.cursor?.x ?? 0, trigger = "unknown") {
@@ -4162,50 +4340,11 @@ class App {
             import("./cui/rpc.mjs"),
             import(localModuleUrl(`${buf.path}.front.js`)),
           ]);
-          const hadAlert = Object.prototype.hasOwnProperty.call(globalThis, "alert");
-          const prevAlert = globalThis.alert;
-          const hadConfirm = Object.prototype.hasOwnProperty.call(globalThis, "confirm");
-          const prevConfirm = globalThis.confirm;
-          const hadPrompt = Object.prototype.hasOwnProperty.call(globalThis, "prompt");
-          const prevPrompt = globalThis.prompt;
-          const nativeAlert = typeof prevAlert === "function" ? prevAlert : null;
-          const withNativePrompt = (nativeFn, fallback, args) => {
-            if (!this._started || typeof nativeFn !== "function") {
-              this.message = String(args[0] ?? "");
-              return fallback;
-            }
-            const tty = this._ttyStream ?? process.stdin;
-            this._alertRunning = true;
-            tty.setRawMode?.(false);
-            this.screen.fini();
-            this.screen.previous = null;
-            try {
-              return nativeFn(...args);
-            } finally {
-              tty.setRawMode?.(true);
-              this.screen.previous = null;
-              this.screen.init();
-              this._alertRunning = false;
-              this.render();
-            }
-          };
-          globalThis.alert = (msg = "") => withNativePrompt(nativeAlert, undefined, [String(msg)]);
-          globalThis.confirm = (msg = "") => withNativePrompt(prevConfirm, false, [String(msg)]);
-          globalThis.prompt = (msg = "", defaultValue = "") => withNativePrompt(prevPrompt, defaultValue, [String(msg), String(defaultValue)]);
-          try {
-            const result = await evalFront(frontMod, payload.link);
-            if (result && typeof result === "object" && result.ok === false) {
-              globalThis.alert(String(result.error ?? "Unknown error"));
-            } else if (result != null) {
-              this.message = String(result);
-            }
-          } finally {
-            if (hadAlert) globalThis.alert = prevAlert;
-            else delete globalThis.alert;
-            if (hadConfirm) globalThis.confirm = prevConfirm;
-            else delete globalThis.confirm;
-            if (hadPrompt) globalThis.prompt = prevPrompt;
-            else delete globalThis.prompt;
+          const result = await evalFront(frontMod, payload.link);
+          if (result && typeof result === "object" && result.ok === false) {
+            this.protectedAlert(String(result.error ?? "Unknown error"));
+          } else if (result != null) {
+            this.message = String(result);
           }
           return true;
         } catch (error) {

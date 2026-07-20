@@ -1,3 +1,5 @@
+import { parseFenceDeclarations } from "./fence-events.mjs";
+
 function markdownHeadingDeclarations(markdown) {
   const lines = String(markdown).split(/\r?\n/);
   const declarations = [];
@@ -51,34 +53,14 @@ function markdownHeadingDeclarations(markdown) {
 }
 
 function fencedBlockDeclarations(markdown) {
-  const lines = String(markdown).split(/\r?\n/);
-  const declarations = [];
-  let fence = null;
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (!fence) {
-      const opening = line.match(/^ {0,3}(`{3,}|~{3,})\s*(\S+)?\s*$/);
-      if (!opening) continue;
-      fence = { marker: opening[1][0], length: opening[1].length };
-      const identity = String(opening[2] ?? "").match(/^([A-Za-z_][\w:-]*)(?:#([A-Za-z_][\w:-]*))?(?:\.[A-Za-z_][\w:-]*)*$/);
-      if (identity?.[2]) {
-        declarations.push({
-          id: identity[2],
-          kind: `${identity[1]} fenced block`,
-          line: index + 1,
-          source: line.trim(),
-        });
-      }
-      continue;
-    }
-
-    const closing = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
-    if (closing && closing[1][0] === fence.marker && closing[1].length >= fence.length)
-      fence = null;
-  }
-
-  return declarations;
+  return parseFenceDeclarations(markdown)
+    .filter((declaration) => declaration.id)
+    .map((declaration) => ({
+      id: declaration.id,
+      kind: `${declaration.tag} fenced block`,
+      line: declaration.line,
+      source: declaration.source,
+    }));
 }
 
 export function checkMarkdownIdCollisions(markdown) {

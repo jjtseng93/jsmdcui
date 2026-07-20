@@ -451,15 +451,18 @@ function safeFrontValue(value)
   };
 }
 
-export async function evalFront(mod, text) 
+export async function evalFront(mod, text, scope = {})
 {
 try{
 
     text = text.replace(/^javascript:/, "");
 
-    const entries = Object.entries(mod).filter(([name]) => name !== "$");
+    const entryMap = new Map(Object.entries(mod).filter(([name]) => name !== "$"));
     if (typeof globalThis.$ === "function")
-      entries.push(["$", globalThis.$]);
+      entryMap.set("$", globalThis.$);
+    for (const [name, value] of Object.entries(scope))
+      entryMap.set(name, value);
+    const entries = [...entryMap];
     const names = entries.map(([name]) => name);
     const values = entries.map(([, value]) => safeFrontValue(value));
 

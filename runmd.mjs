@@ -3,6 +3,7 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readInternalAssetText } from './src/runtime/assets.js'
+import { fenceEventMap, inlineFenceEventCode } from './src/cui/fence-events.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -220,7 +221,7 @@ function escapeHtmlAttribute(value)
     .replaceAll(">", "&gt;");
 }
 
-export function convertWuiTextareas(html)
+export function convertWuiTextareas(html, eventsById = new Map())
 {
   return String(html).replace(
     /<pre><code class="language-([^"]+)">([^]*?)<\/code><\/pre>/g,
@@ -230,10 +231,44 @@ export function convertWuiTextareas(html)
       const value = content.replace(/\n$/, "");
       const contentLines = value.split("\n");
       const cols = Math.max(1, ...contentLines.map(line => [...line].length));
+      const declaration = identity.id && eventsById.get(identity.id)?.tag === identity.tag
+        ? eventsById.get(identity.id)
+        : null;
+      const keydownHandler = declaration?.events.get("keydown");
+      const keydownCode = keydownHandler
+        ? [
+            "this.__mdcuiIdentifiedKeydown=!!event.key&&event.key!==\"Unidentified\";",
+            "clearTimeout(this.__mdcuiKeydownReset);",
+            "this.__mdcuiKeydownReset=setTimeout(()=>{this.__mdcuiIdentifiedKeydown=false},0);",
+            "if(event.key!==\"Unidentified\"){",
+            keydownHandler.modifiers.includes("prevent")
+              ? "event.preventDefault();"
+              : "",
+            keydownHandler.code,
+            "}",
+          ].join("")
+        : "";
+      const beforeInputCode = keydownHandler
+        ? [
+            "if(!this.__mdcuiIdentifiedKeydown&&event.data!=null&&event.data!==\"\"){",
+            "Object.defineProperty(event,\"key\",{configurable:true,value:String(event.data)});",
+            "this.onkeydown(event)",
+            "}",
+          ].join("")
+        : "";
+      const keyupHandler = declaration?.events.get("keyup");
+      const inlineEventAttrs = [
+        keydownCode ? `onkeydown="${escapeHtmlAttribute(keydownCode)}"` : "",
+        beforeInputCode ? `onbeforeinput="${escapeHtmlAttribute(beforeInputCode)}"` : "",
+        keyupHandler
+          ? `onkeyup="${escapeHtmlAttribute(inlineFenceEventCode(keyupHandler))}"`
+          : "",
+      ];
       const attrs = [
         `data-mdcui-tag="${identity.tag}"`,
         `data-mdcui-language="${escapeHtmlAttribute(info)}"`,
         identity.id ? `id="${escapeHtmlAttribute(identity.id)}"` : "",
+        ...inlineEventAttrs,
         `class="${escapeHtmlAttribute([
           `language-${info}`,
           ...identity.classes,
@@ -306,6 +341,7 @@ export function wrapWuiHeadingSections(html)
 
 export async function createWui(md,mdpath) // HTML
 {
+  const eventsById = fenceEventMap(md)
   
   const opts = {
     headings: { ids: true }
@@ -335,7 +371,7 @@ export async function createWui(md,mdpath) // HTML
     }
   )
 
-  md = convertWuiTextareas(md)
+  md = convertWuiTextareas(md, eventsById)
   md = wrapWuiHeadingSections(md)
   
   const mdb = path.basename(mdpath);

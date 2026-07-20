@@ -41,6 +41,10 @@ and checkbox styling consistent at every terminal width.
   retain the existing image-processor aliases.
 - Add `--demo-list` to list the root demo and every automatically discovered
   Markdown example from bundled assets or the source tree's `demos/` directory.
+- Add quoted `@keydown="..."` and `@keyup="..."` attributes to named `text`
+  and `textarea` fences. The TUI preserves source event metadata and evaluates
+  it before or after key handling; the WUI emits native inline event
+  attributes. Add `.prevent` to prepend `event.preventDefault();`.
 - Add `clean.sh` as a convenience helper for removing generated Markdown
   companion files from the project directory.
 
