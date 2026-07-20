@@ -695,6 +695,8 @@ function navigateTarget(state, target, url, emit, options = {}) {
 }
 
 function getSessionTarget(state, sessionId) {
+  if (!sessionId) return getImplicitTarget(state);
+
   const targetId = state.sessions.get(sessionId);
   const target = state.targets.get(targetId);
   if (!target) throw new Error(`No target for session: ${sessionId}`);

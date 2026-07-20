@@ -35,6 +35,8 @@ Flat buffer helpers (all 1-based line numbers, omit → cursor line):
   micro.getLine(n?)            micro.putLine(text, n?)     micro.delLine(n?)
   micro.getLines(from?, to?)   micro.getLinesCount()
   micro.getAllText()           — entire buffer as one string (lines joined by "\n")
+  micro.getAllAnsiText()       — rendered ANSI document, or plain text when unavailable
+  micro.clickBufferCell(x, y)  — activate a 1-based MDCUI cell, or goto in other buffers
   micro.putAllText(text)       — replace entire buffer content; pushes undo
   micro.getSelection()         micro.putSelection(text)
 

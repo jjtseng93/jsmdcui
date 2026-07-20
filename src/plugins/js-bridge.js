@@ -4,6 +4,7 @@ import { dirname, join, basename, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetBytes } from "../runtime/assets.js";
+import { isMdcuiEncoding } from "../runtime/encodings.js";
 import { newMessage, newMessageAtLine, MTError, MTWarning, MTInfo } from "../buffer/message.js";
 import { Loc } from "../buffer/loc.js";
 
@@ -1403,6 +1404,36 @@ export function buildMicroGlobal(jsManager) {
     getAllText() {
       const app = getApp();
       return app?.buffer?.lines.join("\n") ?? "";
+    },
+
+    // Returns the rendered ANSI document when available, otherwise plain text.
+    getAllAnsiText() {
+      const buffer = getApp()?.buffer;
+      return typeof buffer?._mdcuiAnsiText === "string"
+        ? buffer._mdcuiAnsiText
+        : buffer?.lines.join("\n") ?? "";
+    },
+
+    // Activates a 1-based rendered-buffer cell in MDCUI; otherwise falls back to goto.
+    async clickBufferCell(column = 1, line = 1) {
+      const app = getApp();
+      const buffer = app?.buffer;
+      if (!app || !buffer) return false;
+
+      const targetLine = Math.max(1, Math.trunc(Number(line)) || 1);
+      const targetColumn = Math.max(1, Math.trunc(Number(column)) || 1);
+      if (!isMdcuiEncoding(buffer.encoding ?? buffer.Settings?.encoding)) {
+        await app.handleCommand(`goto ${targetLine}:${targetColumn}`);
+        app.render?.();
+        return true;
+      }
+
+      const y = Math.min(targetLine - 1, Math.max(0, buffer.lines.length - 1));
+      const x = Math.min(targetColumn - 1, String(buffer.lines[y] ?? "").length);
+      buffer.cursor = { x, y };
+      const handled = await app.handleMdcuiCellCallback(buffer, y, x, "mouse");
+      app.render?.();
+      return handled;
     },
 
     // Replaces the entire buffer content with text (may contain newlines).
