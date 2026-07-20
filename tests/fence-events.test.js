@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fenceEventMap, inlineFenceEventCode, parseFenceDeclarations } from "../src/cui/fence-events.mjs";
 import { evalFront } from "../src/cui/rpc.mjs";
-import { findTuiBlockAtLine } from "../src/plugins/js-bridge.js";
+import { buildTuiBlockIndex, findTuiBlockAtLine, findTuiBlockInIndex } from "../src/plugins/js-bridge.js";
 import { convertWuiTextareas } from "../runmd.mjs";
 
 const tui = join(import.meta.dir, "..", "tui");
@@ -114,6 +114,28 @@ test("TUI finds the event target only while the cursor is inside the framed body
   expect(findTuiBlockAtLine(lines, 0)).toBeNull();
   expect(findTuiBlockAtLine(lines, 1)?.header).toMatchObject({ tag: "text", id: "myid" });
   expect(findTuiBlockAtLine(lines, 2)).toBeNull();
+});
+
+test("TUI keyboard lookup indexes event blocks once and uses binary lookup", () => {
+  const lines = [
+    "heading",
+    "┌─ text#plain",
+    "│ no event",
+    "└─",
+    ...Array.from({ length: 5_000 }, (_, index) => `line ${index}`),
+    "┌─ text#target",
+    "│ event body",
+    "└─",
+  ];
+  const declarations = new Map([
+    ["target", { tag: "text", events: new Map([["keydown", { code: "hit()" }]]) }],
+  ]);
+  const blocks = buildTuiBlockIndex(lines, declarations);
+
+  expect(blocks).toHaveLength(1);
+  expect(blocks[0].header).toMatchObject({ tag: "text", id: "target" });
+  expect(findTuiBlockInIndex(blocks, lines.length - 2)).toBe(blocks[0]);
+  expect(findTuiBlockInIndex(blocks, 2)).toBeNull();
 });
 
 test("front evaluation exposes the TUI event scope to inline statements", async () => {

@@ -36,6 +36,10 @@ prompts safe across every TUI frontend action path.
   for stdin by suspending raw mode and screen rendering around native prompts.
 - Restore the terminal's previous raw-mode and input-listener state after a
   protected prompt, including setup, prompt, and cleanup error paths.
+- Index fenced keyboard-event regions once and use binary lookup for each key,
+  instead of rescanning the rendered Markdown document on every keypress.
+- Open Windows controlling-terminal input through read-only `CONIN$` when stdin
+  is redirected, so piped Markdown retains keyboard and protected-prompt input.
 
 ## [0.7.0] - 2026-07-20
 

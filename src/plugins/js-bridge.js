@@ -753,15 +753,51 @@ function _findBlock(lines, selector) {
 }
 
 export function findTuiBlockAtLine(lines, lineIndex) {
+  return findTuiBlockInIndex(buildTuiBlockIndex(lines), lineIndex);
+}
+
+export function buildTuiBlockIndex(lines, declarations = null) {
+  const blocks = [];
   for (let start = 0; start < lines.length; start++) {
     const header = _blockHeader(lines[start]);
     if (!header) continue;
-    const block = _findBlock(lines.slice(start), header);
-    if (!block) continue;
-    const end = start + block.end;
-    if (lineIndex > start && lineIndex < end) return { start, end, header };
-    if (start > lineIndex) break;
+    let end = lines.length;
+    for (let y = start + 1; y < lines.length; y++) {
+      const line = String(lines[y] ?? "");
+      const rest = line.startsWith(header.indent)
+        ? line.slice(header.indent.length)
+        : line;
+      if (header.kind === "fenced") {
+        const closing = rest.match(/^(`{3,})\s*$/);
+        if (!closing || closing[1].length < header.fenceLength) continue;
+      } else if (!/^(?:└─|╰─|\+-)\s*$/.test(rest)) {
+        continue;
+      }
+      end = y;
+      break;
+    }
+    const declaration = header.id ? declarations?.get(header.id) : null;
+    if (
+      declarations == null
+      || (
+        declaration?.tag === header.tag
+        && declaration.events?.size > 0
+      )
+    ) blocks.push({ start, end, header });
     start = Math.max(start, end);
+  }
+  return blocks;
+}
+
+export function findTuiBlockInIndex(blocks, lineIndex) {
+  let low = 0;
+  let high = blocks.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const block = blocks[middle];
+    if (lineIndex <= block.start) high = middle - 1;
+    else if (lineIndex >= block.end) low = middle + 1;
+    else return block;
   }
   return null;
 }
@@ -1034,6 +1070,7 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
 
 function _spliceBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
+  buffer._mdcuiFenceBlockIndex = null;
   buffer.lines.splice(start, deleteCount, ...replacement);
 
   if (Array.isArray(buffer._ansiStyleLines)) {
@@ -1269,6 +1306,7 @@ export function buildMicroGlobal(jsManager) {
       const y = lineNumber != null ? Number(lineNumber) - 1 : buf.cursor.y;
       if (y < 0 || y >= buf.lines.length) return;
       buf.pushUndo?.();
+      buf._mdcuiFenceBlockIndex = null;
       const parts = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
       buf.lines.splice(y, 1, ...parts);
       buf.invalidateHighlightFrom?.(y, { force: parts.length > 1 });
@@ -1285,6 +1323,7 @@ export function buildMicroGlobal(jsManager) {
       const y = lineNumber != null ? Number(lineNumber) - 1 : buf.cursor.y;
       if (y < 0 || y >= buf.lines.length) return;
       buf.pushUndo?.();
+      buf._mdcuiFenceBlockIndex = null;
       if (buf.lines.length === 1) {
         buf.lines[0] = "";
       } else {
@@ -1325,6 +1364,7 @@ export function buildMicroGlobal(jsManager) {
       if (!app?.buffer) return;
       const buf = app.buffer;
       buf.pushUndo?.();
+      buf._mdcuiFenceBlockIndex = null;
       buf.lines = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
       if (buf.lines.length === 0) buf.lines = [""];
       buf.invalidateHighlightFrom?.(0, { force: true });

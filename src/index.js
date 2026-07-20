@@ -109,7 +109,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "./runtime/assets.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, findTuiBlockAtLine, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -118,6 +118,7 @@ import { Screen } from "./screen/screen.js";
 import { VT100 } from "./screen/vt100.js";
 import { ClipboardManager, probeOSC52, osc52Clipboard } from "./platform/clipboard.js";
 import { platformId, run as runCommand, runSync, fetchHttpBytes, detectHttpBackend } from "./platform/commands.js";
+import { controllingTerminalInputPath } from "./platform/terminal.js";
 import { shellSplit } from "./shell/shell.js";
 import { styleToAnsi } from "./display/ansi-style.js";
 import { encodeBinaryToBuffer, decodeBinaryBytes } from "./buffer/fixed3-codec.js";
@@ -1013,6 +1014,29 @@ function tuiKeyEventForFront(event, target, type) {
     preventDefault() { defaultPrevented = true; },
     stopPropagation() { propagationStopped = true; },
   };
+}
+
+function indexedMdcuiFenceBlockAtLine(buffer, lineIndex) {
+  const declarations = buffer?._mdcuiFenceEvents;
+  if (!isMdcuiEncoding(buffer?.encoding) || declarations?.size === 0) return null;
+  let cache = buffer._mdcuiFenceBlockIndex;
+  // Render/reopen replaces the lines array; structural selector edits explicitly
+  // clear this cache. Ordinary character edits leave block boundaries unchanged.
+  if (
+    !cache
+    || cache.lines !== buffer.lines
+    || cache.lineCount !== buffer.lines.length
+    || cache.declarations !== declarations
+  ) {
+    cache = {
+      lines: buffer.lines,
+      lineCount: buffer.lines.length,
+      declarations,
+      blocks: buildTuiBlockIndex(buffer.lines, declarations),
+    };
+    buffer._mdcuiFenceBlockIndex = cache;
+  }
+  return findTuiBlockInIndex(cache.blocks, lineIndex);
 }
 
 function parseArgs(argv) {
@@ -2554,13 +2578,11 @@ class App {
     this.installProtectedPrompts();
     // When stdin was a pipe (content already consumed in loadBuffers), open the
     // controlling terminal directly so the event loop has a live handle and
-    // keyboard input works.  Unix: /dev/tty  Windows: \\.\CON
+    // keyboard input works. Unix: /dev/tty; Windows: CONIN$.
     if (!process.stdin.isTTY) {
       try {
-        const { openSync } = await import("node:fs");
         const { ReadStream } = await import("node:tty");
-        const ttyPath = process.platform === "win32" ? "\\\\.\\CON" : "/dev/tty";
-        const fd = openSync(ttyPath, "r+");
+        const fd = openSync(controllingTerminalInputPath(), "r");
         this._ttyStream = new ReadStream(fd);
       } catch {
         this._ttyStream = process.stdin;
@@ -2750,11 +2772,15 @@ class App {
 
     try {
       this._alertRunning = true;
+      // Do not let the editor's flowing-mode data listener race the blocking
+      // prompt for bytes from the same terminal.
       if (listenerAttached) tty.removeListener("data", inputHandler);
       tty.pause?.();
       tty.setRawMode?.(false);
       this.screen.fini();
       this.screen.previous = null;
+      // Bun's native prompts always read fd 0. If Markdown itself came from a
+      // pipe, read synchronously from the controlling terminal instead.
       value = tty !== process.stdin
         ? this.runProtectedTtyPrompt(name, fallback, args)
         : Reflect.apply(nativeFn, globalThis, args);
@@ -2782,8 +2808,7 @@ class App {
   runProtectedTtyPrompt(name, fallback, args) {
     const message = String(args[0] ?? "");
     const defaultValue = String(args[1] ?? "");
-    const ttyPath = process.platform === "win32" ? "\\\\.\\CON" : "/dev/tty";
-    const fd = openSync(ttyPath, "r");
+    const fd = openSync(controllingTerminalInputPath(), "r");
     try {
       if (name === "alert") {
         process.stdout.write(`${message}\n\nPress ENTER to continue...`);
@@ -3953,9 +3978,7 @@ class App {
 
     const text = event.raw;
     const seq = event.key;
-    const keydownBlock = isMdcuiEncoding(buf?.encoding) && buf?._mdcuiFenceEvents?.size > 0
-      ? findTuiBlockAtLine(buf.lines, buf.cursor.y)
-      : null;
+    const keydownBlock = indexedMdcuiFenceBlockAtLine(buf, buf?.cursor.y);
     if (buf) buf.allowCursorOffscreen = false;
 
     if (this._rawMode) {
