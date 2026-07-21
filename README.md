@@ -563,6 +563,59 @@ supported HTTP(S) images with Kitty graphics, combine the options:
 bun src/index.js --kitty --allow-url https://example.com/app.md
 ```
 
+### CDP control for TUI automation
+
+The terminal UI can expose a Chrome DevTools Protocol (CDP) server, so another
+Bun process can inspect the terminal buffer, click buffer coordinates, and send
+real keyboard events to the running TUI.
+
+Start CDP from the command line when launching jsmdcui:
+
+```sh
+bun src/index.js --remote-debugging-port=9222 demos/maze.md
+bun src/index.js --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 demos/maze.md
+```
+
+Or start it from inside the TUI editor command prompt:
+
+```text
+Ctrl-E  cdp
+Ctrl-E  cdp 9000
+Ctrl-E  cdp --address=127.0.0.1
+Ctrl-E  cdp 9000 --public
+```
+
+The default bind address is `127.0.0.1` and the default port is `9222`.
+Use `--public` or `--address=0.0.0.0` only on a trusted network.
+
+Once CDP is running, control the TUI with `Bun.WebView`. For more info, enter
+jsmdcui and use `Ctrl-E` or `€` → `help cdp`.
+
+The included
+`cdp-maze.js` script was generated from the `llm-maze.txt` instructions. It
+focuses the maze controls, resets the game, reads the maze from the TUI, solves
+it with breadth-first search, and sends arrow-key input until the maze is
+escaped:
+
+```sh
+bun cdp-maze.js
+```
+
+If you are running from the source tree, start the maze TUI with CDP first. Then open
+the TUI command prompt with `Ctrl-E` or `€` and run:
+
+```text
+run bun cdp-maze.js
+```
+
+Useful automation methods used by `cdp-maze.js`:
+
+- `view.evaluate(js)`
+  - `view.evaluate("micro.getAllText()")`
+  - `view.evaluate("micro.getAllAnsiText()")`
+- `view.click(column, line)`
+- `view.press(key, options)`
+
 ## Browser interaction
 
 The WUI uses normal browser mouse and keyboard behavior. Clicking a
