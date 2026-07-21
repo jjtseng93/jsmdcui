@@ -2,6 +2,72 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.9.0] - 2026-07-21
+
+This update expands Chrome DevTools Protocol automation for the terminal UI,
+adds a complete maze-solving example, and makes the optional Bun single-file
+executable bootstrap easier to reuse and more reliable across platforms.
+
+### Added
+
+- Add CDP automation support for reading the rendered ANSI document, activating
+  a 1-based terminal-buffer cell, and sending keyboard input through the TUI's
+  normal input parser and event pipeline. Key presses support Alt, Ctrl, Meta,
+  Shift, navigation keys, editing keys, text, and auto-repeat without emitting
+  duplicate input for paired CDP `keyDown` and `char` events.
+- Add `micro.getAllAnsiText()` and `micro.clickBufferCell(x, y)` to the JS
+  plugin bridge. MDCUI cell clicks now activate the same callbacks as mouse
+  input, while clicks in ordinary buffers retain the previous `goto` behavior.
+- Add `cdp-maze.js` and `llm-maze.txt`, a documented Bun.WebView example that
+  reads the maze from the running TUI, solves it with breadth-first search, and
+  completes it by clicking controls and sending arrow-key events through CDP.
+- Add `--cdp-maze` to open the bundled maze, start a local CDP server on port
+  9222, and automatically import and run the maze solver after a three-second
+  delay. The completed result is returned to the main program and displayed in
+  the TUI status message.
+- Add `--export-cdp-maze` to write or overwrite `./cdp-maze.js` from the
+  bundled asset first, with a source-tree fallback, then exit. Include the
+  solver in the single-executable asset archive.
+- Add a dedicated CDP automation section to the README and bundled help,
+  covering command-line and command-prompt startup, bind-address safety,
+  connection methods, and the maze solver workflow.
+- Add a reusable single-file executable guide covering asset packing, embedded
+  and external resource fallbacks, build commands, cross-compilation, Node.js
+  compatibility, and adapting the bootstrap to another project.
+
+### Changed
+
+- Move responsibility for awaiting bundled assets into the Bun-only
+  `single-exe/entry.mjs` bootstrap, then dynamically import the regular main
+  module. This keeps the main module free of Bun-specific asset-loader state
+  and preserves its uncompiled Node.js execution path.
+- Detect Bun's compiled virtual paths on both POSIX (`/$bunfs/`) and Windows
+  (`B:/~BUN`) when resolving single-executable resources, and consolidate
+  compiled-runtime handling in `single-exe/compiled.js`.
+- When initially launched with Node.js, restart under Bun with inherited stdio
+  and propagate its exit status instead of replacing the current process with
+  `process.execve()`.
+- Display the maze completion message inside the game instead of opening a
+  blocking alert, and include reset instructions in the result.
+- Export the maze solver as a reusable `runCdpMaze()` function while retaining
+  direct `bun cdp-maze.js` execution. Suppress its console result while stdin
+  is in terminal raw mode so TUI rendering is not corrupted.
+- Replace the manual two-process maze automation instructions with the single
+  `--cdp-maze` workflow in the README and bundled help.
+- Update the homepage and Kitty test images to use the smaller current demo and
+  maze screenshots; exclude the maze screenshot from the npm package.
+- Document theme preview from the TUI command prompt and state Bun 1.3.12 as
+  the minimum required version.
+
+### Fixed
+
+- Make CDP `view.click()` activate MDCUI links and controls at the requested
+  buffer coordinate instead of only moving the cursor there.
+- Allow CDP input dispatch without an explicit session ID by selecting the
+  implicit target, matching other single-target CDP operations.
+- Wait until the embedded asset archive is ready before starting the compiled
+  application, preventing startup from racing bundled resource loading.
+
 ## [0.8.0] - 2026-07-20
 
 This update adds portable inline keydown handling to Markdown text controls,
