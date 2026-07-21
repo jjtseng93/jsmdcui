@@ -21,6 +21,7 @@ test("--help describes the non-overwriting demo behavior", () => {
   expect(output.match(/Open it in the TUI and write 5 generated files beside it/g)?.length).toBe(2);
   expect(output).toContain("--demo-imgtool");
   expect(output).toContain("--demo-imgtool-zh");
+  expect(output).toContain("--cdp-maze");
 });
 
 test("--demo-list lists root and automatically discovered demos", () => {
@@ -36,6 +37,27 @@ test("--demo-list lists root and automatically discovered demos", () => {
   expect(output).toMatch(/--demo-select\s+demos\/select\.md/);
   expect(output).toMatch(/--demo-todo-zh\s+demos\/todo-zh\.md/);
   expect(output).toContain("--demo-imgtool     --demo-image-processor");
+});
+
+test("--export-cdp-maze writes and overwrites the bundled solver", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-export-cdp-maze-"));
+  const outputPath = join(dir, "cdp-maze.js");
+  try {
+    await writeFile(outputPath, "old solver\n");
+    const result = Bun.spawnSync([bunBin, tui, "--export-cdp-maze"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toContain(`Wrote ${outputPath}`);
+    const exported = await readFile(outputPath, "utf8");
+    expect(exported).toContain("export async function runCdpMaze");
+    expect(exported).not.toContain("old solver");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("--demo writes bundled testapp.md to cwd before opening it", async () => {
@@ -89,6 +111,24 @@ test("--demo-<filename> automatically loads a matching demos file", async () => 
     expect(written).toContain("# Todo List");
     expect(written).toContain("javascript:addTodo()");
     expect(Bun.stripANSI(result.stdout.toString())).toContain("Show Completed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("--cdp-maze loads the maze demo", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-cdp-maze-"));
+  try {
+    const result = Bun.spawnSync([bunBin, tui, "--cdp-maze", "-cat", "-encoding", "utf8"], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(result.exitCode).toBe(0);
+    const written = await readFile(join(dir, "maze.md"), "utf8");
+    expect(written).toContain("Put the cursor here");
+    expect(Bun.stripANSI(result.stdout.toString())).toContain("Put the cursor here");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

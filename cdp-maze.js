@@ -6,15 +6,7 @@
 // Then run:
 //   bun cdp-maze.js
 
-const cdpUrl =
-  Bun.argv[2] ?? "ws://127.0.0.1:9222/devtools/browser/cdp-server";
-
-const view = new Bun.WebView({
-  backend: {
-    type: "chrome",
-    url: cdpUrl,
-  },
-});
+const DEFAULT_CDP_URL = "ws://127.0.0.1:9222/devtools/browser/cdp-server";
 
 const dirs = [
   [1, 0, "ArrowDown"],
@@ -95,8 +87,16 @@ function solveMaze(grid) {
   throw new Error("No path found");
 }
 
-try {
-  const control = await view.evaluate(`
+export async function runCdpMaze(cdpUrl = DEFAULT_CDP_URL) {
+  const view = new Bun.WebView({
+    backend: {
+      type: "chrome",
+      url: cdpUrl,
+    },
+  });
+
+  try {
+    const control = await view.evaluate(`
     (() => {
       const lines = micro.getAllText().split("\\n");
       const y = lines.findIndex(line =>
@@ -110,25 +110,32 @@ try {
     })()
   `);
 
-  await view.click(control.x, control.y);
-  await view.press("r", { modifiers: ["Control"] });
-  await Bun.sleep(100);
-
-  const mazeText = await view.evaluate(`$("#character").val()`);
-  const path = solveMaze(parseMaze(mazeText));
-
-  for (const key of path) {
-    await view.press(key);
+    await view.click(control.x, control.y);
+    await view.press("r", { modifiers: ["Control"] });
     await Bun.sleep(100);
 
-    const status = await view.evaluate(`$("#last-key").val()`);
-    if (status.includes("Escaped the maze")) break;
-    if (status.includes("Wall")) {
-      throw new Error(`Hit a wall after ${key}: ${status}`);
-    }
-  }
+    const mazeText = await view.evaluate(`$("#character").val()`);
+    const path = solveMaze(parseMaze(mazeText));
 
-  console.log(await view.evaluate(`$("#last-key").val()`));
-} finally {
-  view.close();
+    for (const key of path) {
+      await view.press(key);
+      await Bun.sleep(100);
+
+      const status = await view.evaluate(`$("#last-key").val()`);
+      if (status.includes("Escaped the maze")) break;
+      if (status.includes("Wall")) {
+        throw new Error(`Hit a wall after ${key}: ${status}`);
+      }
+    }
+
+    const result = await view.evaluate(`$("#last-key").val()`);
+    if (!process.stdin.isRaw) console.log(result);
+    return result;
+  } finally {
+    view.close();
+  }
+}
+
+if (import.meta.main) {
+  await runCdpMaze(Bun.argv[2] ?? DEFAULT_CDP_URL);
 }

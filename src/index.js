@@ -1094,6 +1094,7 @@ function parseArgs(argv) {
     cat: false,
     docs: false,
     exportReadme: false,
+    exportCdpMaze: false,
     changelog: false,
     testapp: false,
     demoList: false,
@@ -1105,6 +1106,7 @@ function parseArgs(argv) {
     debug: false,
     profile: false,
     plugin: "",
+    cdpMaze: false,
     cdpPort: 0,
     cdpAddress: "",
     kittyMode: "off",
@@ -1138,9 +1140,14 @@ function parseArgs(argv) {
     }
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
     else if (arg === "--export-readme") flags.exportReadme = true;
+    else if (arg === "--export-cdp-maze") flags.exportCdpMaze = true;
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo-list") flags.demoList = true;
+    else if (arg === "--cdp-maze") {
+      flags.cdpMaze = true;
+      flags.demo = { option: arg, filename: "maze.md", asset: "demos/maze.md" };
+    }
     else if (arg === "--demo") {
       flags.demo = { option: arg, filename: "testapp.md", asset: "testapp.md" };
     }
@@ -1179,6 +1186,8 @@ function parseArgs(argv) {
       files.push(arg);
     }
   }
+
+  if (flags.cdpMaze && !flags.cdpPort) flags.cdpPort = 9222;
 
   return { flags, files };
 }
@@ -1222,6 +1231,8 @@ Settings:
       List all setting names and defaults, then exit.
 
 CDP:
+  --cdp-maze
+      Open the maze demo, start CDP on localhost:9222, and solve it automatically
   --remote-debugging-port=PORT
       Start CDP (Chrome DevTools Protocol) server on PORT at launch
   --remote-debugging-address=ADDRESS
@@ -1236,6 +1247,8 @@ Information:
       Show ${pkg.name}'s README.md & exit
   --export-readme
       Write or overwrite ./README.md with the bundled README.md & exit
+  --export-cdp-maze
+      Write or overwrite ./cdp-maze.js with the bundled CDP maze solver & exit
   --changelog
       Show CHANGELOG.md & exit
   -profile, --profile
@@ -8005,6 +8018,12 @@ async function exportReadme() {
   console.log(`Wrote ${readmePath}`);
 }
 
+async function exportCdpMaze() {
+  const outputPath = resolve("cdp-maze.js");
+  await Bun.write(outputPath, await bundledMarkdownSource("cdp-maze.js"));
+  console.log(`Wrote ${outputPath}`);
+}
+
 async function printChangelogDocs() {
   const changelog = readInternalAssetText("CHANGELOG.md") ?? await Bun.file(join(REPO_ROOT, "CHANGELOG.md")).text();
   process.stdout.write(Bun.markdown.ansi(changelog, { hyperlinks: true }));
@@ -8124,6 +8143,10 @@ async function main() {
   }
   if (flags.exportReadme) {
     await exportReadme();
+    return;
+  }
+  if (flags.exportCdpMaze) {
+    await exportCdpMaze();
     return;
   }
   if (flags.changelog) {
@@ -8371,6 +8394,23 @@ async function main() {
     const cdpArgs = [flags.cdpPort];
     if (flags.cdpAddress) cdpArgs.push(`--address=${flags.cdpAddress}`);
     await app.handleCommand(`cdp ${cdpArgs.join(" ")}`);
+  }
+
+  if (flags.cdpMaze) {
+    const solverHost = !flags.cdpAddress || flags.cdpAddress === "0.0.0.0"
+      ? "127.0.0.1"
+      : flags.cdpAddress;
+    const solverUrl = `ws://${solverHost}:${flags.cdpPort}/devtools/browser/cdp-server`;
+    setTimeout(async () => {
+      try {
+        const { runCdpMaze } = await import("../cdp-maze.js");
+        app.message = await runCdpMaze(solverUrl);
+        app.render?.();
+      } catch (error) {
+        app.message = `CDP maze solver failed: ${error?.message || error}`;
+        app.render?.();
+      }
+    }, 3000);
   }
   
   if (flags.profile) {

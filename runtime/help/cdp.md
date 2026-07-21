@@ -24,15 +24,8 @@
 //
 // ── Maze demo from the source tree ─────────────────────────────────────────
 //
-//   Start the maze TUI first:
-//     bun src/index.js --remote-debugging-port=9222 demos/maze.md
-//
-//   Then run the generated CDP maze solver from another shell:
-//     bun cdp-maze.js
-//
-//   If you are already inside jsmdcui in the source tree, open the command
-//   prompt with Ctrl-E or € and run:
-//     run bun cdp-maze.js
+//   Start the maze, local CDP server, and automatic solver together:
+//     bun src/index.js --cdp-maze
 //
 // ── Connecting ─────────────────────────────────────────────────────────────
 //
