@@ -576,7 +576,7 @@ bun src/index.js --remote-debugging-port=9222 demos/maze.md
 bun src/index.js --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 demos/maze.md
 ```
 
-Or start it from inside the TUI editor command prompt:
+Or start it from inside the TUI editor command prompt(Ctrl-E or €):
 
 ```text
 Ctrl-E  cdp
