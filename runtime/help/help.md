@@ -1,4 +1,8 @@
 ![Demo](https://raw.githubusercontent.com/jjtseng93/jsmdcui/main/demo.jpg)
+
+- Maze Game
+  * The TUI can be controlled through the Chrome DevTools Protocol (CDP). Codex successfully solved this maze using it.
+
 ![Maze Game](https://raw.githubusercontent.com/jjtseng93/jsmdcui/main/maze.jpg)
 
 # Demo App
