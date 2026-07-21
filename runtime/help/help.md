@@ -41,7 +41,8 @@ npx jsmdcui@latest README.md
 
 ## Quick start
 
-jsmdcui requires [Bun](https://bun.com). On Android, install it in Termux:
+jsmdcui requires [Bun ≥ 1.3.12](https://bun.com).
+ On Android, install it in Termux:
 
 ```sh
 npm install -g bun
