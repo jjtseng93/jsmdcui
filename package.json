@@ -9,9 +9,10 @@
     "jsmdcui": "./src/index.js"
   },
   "scripts": {
-    "start": "bun ./src/index.js",
-    "tui": "bun ./src/index.js ./testapp.md",
-    "wui": "bun ./runmd.mjs",
+    "start": "bun ./src/index.js --demo",
+    "tui": "bun ./tui",
+    "wui": "bun ./wui",
+    "clean": "bun ./clean.sh",
     "check": "node --check ./src/index.js"
   }
 }
