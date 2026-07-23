@@ -8197,6 +8197,7 @@ async function main() {
   const config = await new Config({ configDir: flags.configDir }).init();
   config.applyCliSettings(flags.settings);
   const encodingExplicit = flags.settings.has("encoding") || Object.hasOwn(config.parsedSettings, "encoding");
+  const inputFiletype = flags.settings.has("filetype") ? String(flags.settings.get("filetype")) : null;
   syncEditorSettings(config);
 
   addCheckpoint("Runtime Registry Init");
@@ -8208,7 +8209,14 @@ async function main() {
   const syntaxDefinitions = await loadSyntaxDefinitions(runtime);
 
   if (flags.cat) {
-    await catFiles(rawFiles, colorscheme, syntaxDefinitions, config.getGlobalOption("encoding"), !encodingExplicit);
+    await catFiles(
+      rawFiles,
+      colorscheme,
+      syntaxDefinitions,
+      config.getGlobalOption("encoding"),
+      !encodingExplicit,
+      inputFiletype,
+    );
     return;
   }
 
@@ -8273,6 +8281,7 @@ async function main() {
     runtime,
     jsPlugins,
     encodingExplicit,
+    inputFiletype,
     allowUrl: flags.allowUrl,
     kittyMode: flags.kittyMode,
   };
@@ -8730,9 +8739,12 @@ function getSelectionText(buf, selection) {
 
 function attachSyntax(buffer, context, path, text) {
   buffer._syntaxContext = context;
-  const def = detectBufferSyntax(context.syntaxDefinitions, path, text);
+  const explicitFiletype = context.inputFiletype;
+  const def = explicitFiletype == null
+    ? detectBufferSyntax(context.syntaxDefinitions, path, text)
+    : context.syntaxDefinitions?.find((candidate) => candidate.filetype === explicitFiletype) ?? null;
   buffer.syntaxDefinition = def;
-  buffer.filetype = def?.filetype ?? "unknown";
+  buffer.filetype = explicitFiletype == null ? (def?.filetype ?? "unknown") : String(explicitFiletype);
   buffer.Settings.filetype = buffer.filetype;
   buffer.highlighter = def ? new Highlighter(def, context.syntaxDefinitions ?? []) : null;
   buffer._highlightCache = null;
@@ -8810,7 +8822,7 @@ function syncEditorSettings(config) {
   }
 }
 
-async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAULT_SETTINGS.encoding, inferMdcui = true) {
+async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAULT_SETTINGS.encoding, inferMdcui = true, filetype = null) {
   const targets = files.length > 0 ? files.map((f) => ({ path: f, stdin: false })) : [{ path: null, stdin: true }];
   for (const { path: filePath, stdin } of targets) {
     let content;
@@ -8841,7 +8853,7 @@ async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAUL
       process.stdout.write(ansiContent ?? content);
       if (!(ansiContent ?? content).endsWith("\n")) process.stdout.write("\n");
       continue;
-    } else if (effectivePath && /\.md$/i.test(effectivePath)) {
+    } else if (filetype == null && effectivePath && /\.md$/i.test(effectivePath)) {
       process.stdout.write(
         Bun.markdown.ansi(content,{
           hyperlinks:true
@@ -8850,11 +8862,13 @@ async function catFiles(files, colorscheme, syntaxDefinitions, encoding = DEFAUL
       continue;
     }
     const lines = normalizeBufferText(content).split("\n");
-    const def = detectSyntax(syntaxDefinitions, {
-      path: effectivePath ?? "",
-      firstLine: lines[0] ?? "",
-      lines: lines.slice(0, 50),
-    });
+    const def = filetype == null
+      ? detectSyntax(syntaxDefinitions, {
+          path: effectivePath ?? "",
+          firstLine: lines[0] ?? "",
+          lines: lines.slice(0, 50),
+        })
+      : syntaxDefinitions.find((candidate) => candidate.filetype === filetype) ?? null;
     const highlighter = def ? new Highlighter(def, syntaxDefinitions) : null;
     if (!highlighter) {
       process.stdout.write(content);

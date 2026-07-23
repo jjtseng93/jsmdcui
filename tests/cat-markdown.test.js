@@ -103,3 +103,30 @@ test("--mdcui is equivalent to -encoding mdcui", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("-filetype forces syntax highlighting independently of the filename", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-cat-filetype-"));
+  const textPath = join(dir, "sample.txt");
+  await writeFile(textPath, "const answer = 42;\n");
+
+  try {
+    const automatic = Bun.spawnSync([bunBin, tui, "-cat", textPath], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const javascript = Bun.spawnSync([bunBin, tui, "-cat", "-filetype", "javascript", textPath], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(automatic.exitCode).toBe(0);
+    expect(javascript.exitCode).toBe(0);
+    expect(automatic.stdout.toString()).not.toContain("\x1b[");
+    expect(javascript.stdout.toString()).toContain("\x1b[");
+    expect(Bun.stripANSI(javascript.stdout.toString()).trimEnd()).toBe("const answer = 42;");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
