@@ -742,6 +742,14 @@ or serve Markdown UI files that you trust.
   calls, but it does not protect the backend module from trusted local code and
   is not a substitute for authentication.
 
+### Shipping with text editing as the default
+
+Distributions intended primarily as text editors can include an empty
+`src/DEFAULT_EDIT` file. When this marker exists, opening a `.md` file uses the
+normal editable UTF-8 view instead of automatically entering `mdcui` mode.
+Markdown UI support remains available explicitly with `--mdcui`, which is
+equivalent to `-encoding mdcui`.
+
 ## Development
 
 ```sh

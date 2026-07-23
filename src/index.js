@@ -1093,6 +1093,7 @@ function parseArgs(argv) {
     clean: false,
     check: false,
     cat: false,
+    wui: false,
     docs: false,
     exportReadme: false,
     exportCdpMaze: false,
@@ -1123,6 +1124,7 @@ function parseArgs(argv) {
     else if (arg === "-clean") flags.clean = true;
     else if (arg === "--check") flags.check = true;
     else if (arg === "--cat" || arg === "-cat" || arg === "--ccat" || arg === "-ccat" || arg === "--bat" || arg === "-bat" || arg === "--glow" || arg === "-glow") flags.cat = true;
+    else if (arg === "--wui") flags.wui = true;
     else if (arg === "--xxd" || arg === "--hexdump") {
       flags.cat = true;
       flags.settings.set("encoding", "hex3");
@@ -8078,13 +8080,6 @@ function printDemoList() {
 }
 
 async function main() {
-  if (process.argv[2] === "--wui") {
-    process.argv.splice(2, 1);
-    const runmd = await import("../runmd.mjs");
-    await runmd.main();
-    return;
-  }
-
   addCheckpoint("Argument Parsing");
   
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
@@ -8121,6 +8116,11 @@ async function main() {
     const externalName = clipboard.methodName();
     const backends = osc52Available ? `${externalName}, OSC 52` : externalName;
     console.log("Clipboard:", backends);
+    return;
+  }
+  if (flags.wui) {
+    const runmd = await import("../runmd.mjs");
+    await runmd.main();
     return;
   }
   if (flags.check) {
