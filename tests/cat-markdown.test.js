@@ -78,3 +78,28 @@ test("--edit overrides the .md mdcui default with utf8", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("--mdcui is equivalent to -encoding mdcui", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-cat-mdcui-"));
+  const markdownPath = join(dir, "sample.md");
+  await writeFile(markdownPath, "# Heading\n\n- one\n- two\n");
+
+  try {
+    const flag = Bun.spawnSync([bunBin, tui, "-cat", "--mdcui", markdownPath], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const encoding = Bun.spawnSync([bunBin, tui, "-cat", "-encoding", "mdcui", markdownPath], {
+      cwd: dir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(flag.exitCode).toBe(0);
+    expect(encoding.exitCode).toBe(0);
+    expect(flag.stdout.toString()).toBe(encoding.stdout.toString());
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

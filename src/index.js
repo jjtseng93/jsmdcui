@@ -181,6 +181,7 @@ const VERSION = pkg.version;
 const SINGLE_EXE_DIR = resolve(REPO_ROOT, "single-exe");
 const SINGLE_EXE_ENTRY = resolve(SINGLE_EXE_DIR, "entry.mjs");
 const DEFAULT_BUILD_OUTFILE = "mdcui";
+let defaultEdit = false;
 const decoder = new TextDecoder();
 let _activeTtyStream = null; // set in App.start() for use by the global error handler
 
@@ -340,7 +341,7 @@ function normalizeEncodingLabel(encoding = "utf-8") {
 
 function encodingForPath(pathOrUrl, encoding = DEFAULT_SETTINGS.encoding, inferMdcui = true) {
   const normalized = normalizeEncodingLabel(encoding);
-  if (normalized !== "utf-8" || !inferMdcui) return normalized;
+  if (normalized !== "utf-8" || !inferMdcui || defaultEdit) return normalized;
   let pathname = String(pathOrUrl ?? "").replace(/[?#].*$/, "");
   try {
     if (isHttpUrl(pathname)) pathname = new URL(pathname).pathname;
@@ -1138,6 +1139,9 @@ function parseArgs(argv) {
     else if (arg === "--edit") {
       flags.settings.set("encoding", "utf-8");
     }
+    else if (arg === "--mdcui") {
+      flags.settings.set("encoding", "mdcui");
+    }
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
     else if (arg === "--export-readme") flags.exportReadme = true;
     else if (arg === "--export-cdp-maze") flags.exportCdpMaze = true;
@@ -1216,7 +1220,7 @@ Modes:
       hex3 shows raw bytes; gz/zst variants compress the same hex3 view
   --edit
       Open files as editable UTF-8 text, overriding .md mdcui detection
-  -encoding mdcui
+  --mdcui, -encoding mdcui
       Render Markdown through runmd.mjs#createTui; .md files use this automatically
       Writes .front.js, .back.js, .html, -rpc.js, and -server.js beside the .md file
   --kitty
@@ -8084,6 +8088,7 @@ async function main() {
   addCheckpoint("Argument Parsing");
   
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
+  defaultEdit = await Bun.file(join(REPO_ROOT, "src", "DEFAULT_EDIT")).exists();
   
   const { flags, files: rawFiles } = parseArgs(process.argv.slice(2));
   kittyImageMode = flags.kittyMode;
