@@ -2,6 +2,61 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.10.0] - 2026-07-24
+
+This update adds distribution-oriented defaults for shipping jsmdcui as a text
+editor, terminal application, or browser application; makes WUI startup and
+demo replacement explicit; and improves command-line control over rendering,
+syntax highlighting, and single-executable builds.
+
+### Added
+
+- Add `--mdcui` and `--tui` as aliases for `-encoding mdcui`, allowing an
+  explicit terminal Markdown UI request to override an editor-oriented
+  distribution default.
+- Add `--overwrite-demo` as a modifier for `--demo` and the automatically
+  discovered `--demo-*` commands. It replaces an existing local demo with the
+  bundled copy before opening it.
+- Add `--print-ui` for WUI launches. The generated TUI preview, raw ANSI, and
+  HTML are printed only when this flag is present.
+- Add the `src/MDCUI_DEFAULT_EDIT` distribution marker. When present, Markdown
+  files open as editable UTF-8 text by default while `--mdcui` remains
+  available explicitly.
+- Add presence-based single-executable build constants:
+  `MDCUI_DEFAULT_EDIT`, `MDCUI_DEFAULT_DEMO`, and
+  `MDCUI_DEFAULT_DEMO_WUI` select an editor, no-argument TUI demo, or
+  no-argument WUI demo default. `MDCUI_OVERWRITE_DEMO` optionally makes a
+  bundled demo replace its local copy.
+- Add distribution documentation for shipping a customized root
+  `testapp.md` as a standalone terminal or browser application.
+- Add regression coverage for the `--mdcui` alias, forced CLI filetypes,
+  non-overwriting and overwriting demos, and WUI demo replacement.
+
+### Changed
+
+- Parse `--wui` through the normal command-line argument flow, so it can appear
+  before or after the Markdown filename.
+- Make WUI startup quieter by default. It continues to report file generation
+  and the server URL, while full generated UI output is opt-in through
+  `--print-ui`.
+- Make direct `runmd.mjs` launches recognize `--overwrite-demo` and
+  `--print-ui`. Demo replacement is limited to the implicit `testapp.md`;
+  explicitly named Markdown files are protected from replacement.
+- Forward every extra argument after `--build-exe`, or after the target passed
+  to `--build-for`, to the underlying `bun build` command.
+- Align the `start`, `tui`, and `wui` package scripts with the repository
+  launchers, and add a `clean` package script.
+- Recommend choosing only one of the three `MDCUI_DEFAULT_*` distribution
+  modes per build, with `MDCUI_OVERWRITE_DEMO` treated as an optional modifier.
+- Show effective `MDCUI_*` distribution settings in `--version` output,
+  including `MDCUI_DEFAULT_EDIT` enabled through either its build constant or
+  the `src/MDCUI_DEFAULT_EDIT` marker.
+
+### Fixed
+
+- Make `-filetype <name>` actually override automatic syntax detection in
+  editor buffers and `--cat`, including input read from stdin.
+
 ## [0.9.0] - 2026-07-21
 
 This update expands Chrome DevTools Protocol automation for the terminal UI,
