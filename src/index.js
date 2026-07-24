@@ -1148,7 +1148,7 @@ function parseArgs(argv) {
     else if (arg === "--edit") {
       flags.settings.set("encoding", "utf-8");
     }
-    else if (arg === "--mdcui") {
+    else if (arg === "--mdcui" || arg === "--tui") {
       flags.settings.set("encoding", "mdcui");
     }
     else if (arg === "--docs" || arg === "--readme") flags.docs = true;
@@ -1209,19 +1209,55 @@ function parseArgs(argv) {
 function usage() {
   return [
     `Usage:
-  ${pkg.name} [OPTIONS] [FILE.md]
+  ${pkg.name} [OPTIONS] [FILE]
+    
+Execute .md:
+  ${pkg.name} [FILE.md]
   ${pkg.name} --wui [FILE.md]
+Develop .md:
+  ${pkg.name} --edit [FILE.md]
+  ${pkg.name} --check <FILE.md>
 
 Modes:
-  --check FILE.md
-      Check heading and fenced-block IDs for collisions, print details, and exit
-      Exits 0 when IDs are unique, 1 on collisions, and 2 on usage/read errors
+  --tui, --mdcui, -encoding mdcui
+    .md files use this by default
+    Execute a Markdown App
+      Create a Terminal UI
+    Generate & overwrite
+      .front.js, .back.js, 
+      .html, -rpc.js, -server.js
+      beside the .md file
+      
   --wui [FILE.md]
-      Generate or overwrite Markdown UI files beside FILE.md and start the server
-      Without FILE.md, use the existing ./testapp.md without overwriting it
+    Execute a Markdown App
+      Create a Web UI
+      Start a web server
+    Generate & overwrite 
+      .front.js, .back.js, 
+      .html, -rpc.js, -server.js
+      beside the .md file
+      
+    Without FILE.md, 
+    default to ./testapp.md
       If ./testapp.md is missing, write the bundled demo there first
+      
   --print-ui
-      With --wui, print the generated TUI, raw ANSI, and HTML before starting the server
+    Must be combined with --wui
+    Print the generated TUI, raw ANSI, and HTML before starting the server
+    
+  --kitty
+    Display Markdown images with Kitty graphics and the jsgotty MIME extension
+  --kitty-compat
+    Display Markdown images with Kitty graphics without the non-standard MIME U field
+      
+  --edit
+    Open files as editable UTF-8 text
+    Override .md mdcui detection
+    
+  --check <FILE.md>
+    Check heading and fenced-block IDs for collisions, print details, and exit
+    Exits 0 when IDs are unique, 1 on collisions, and 2 on usage/read errors
+      
   --cat, --ccat, --bat, --glow
       Render file(s) and write to stdout, then exit (.md uses mdcui/createTui)
       A local .md file also writes or overwrites five generated files beside it
@@ -1230,15 +1266,6 @@ Modes:
   --hex3, --hex3gz, --hex3zst
       Set -encoding hex3, hex3gz, or hex3zst for this session
       hex3 shows raw bytes; gz/zst variants compress the same hex3 view
-  --edit
-      Open files as editable UTF-8 text, overriding .md mdcui detection
-  --mdcui, -encoding mdcui
-      Render Markdown through runmd.mjs#createTui; .md files use this automatically
-      Writes .front.js, .back.js, .html, -rpc.js, and -server.js beside the .md file
-  --kitty
-      Display Markdown images with Kitty graphics and the jsgotty MIME extension
-  --kitty-compat
-      Display Markdown images with Kitty graphics without the non-standard MIME U field
 
 Settings:
   -SETTING VALUE
@@ -1246,57 +1273,73 @@ Settings:
   -options
       List all setting names and defaults, then exit.
 
-CDP:
+CDP(Chrome DevTools Protocol):
   --cdp-maze
       Open the maze demo, start CDP on localhost:9222, and solve it automatically
+  --export-cdp-maze
+      Write or overwrite ./cdp-maze.js with the bundled CDP maze solver & exit
+      
   --remote-debugging-port=PORT
       Start CDP (Chrome DevTools Protocol) server on PORT at launch
   --remote-debugging-address=ADDRESS
       Bind CDP server to ADDRESS (default: 127.0.0.1); use 0.0.0.0 for all interfaces
 
 Information:
-  -help, -h, --help
+  --help, -h, -help
       Show this help & exit
-  -version, -V, --version
+  --version, -V, -version
       Show version+backend info & exit
-  --docs, --readme
+      
+  --readme, --docs
       Show ${pkg.name}'s README.md & exit
   --export-readme
       Write or overwrite ./README.md with the bundled README.md & exit
-  --export-cdp-maze
-      Write or overwrite ./cdp-maze.js with the bundled CDP maze solver & exit
+      
   --changelog
       Show CHANGELOG.md & exit
-  -profile, --profile
+  --profile, -profile
       Print startup performance profile and exit
 
 Demo:
   --testapp.md
-      Write the bundled testapp.md to stdout & exit
+      Print the bundled testapp.md to stdout & exit
   --demo-list
-      List the bundled demos and their command-line options, then exit
+      List the bundled demos & exit
+      
   --demo
-      Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
+      Execute an existing ./testapp.md
+      Or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
-  --overwrite-demo
-      Overwrite an existing local demo with the bundled copy; combine with any --demo option
+      
   --demo-<filename>
-      Load demos/<filename>.md, preserving an existing ./<filename>.md or writing the bundled copy
+      Execute an existing <filename>.md
+      Or write the bundled demos/<filename>.md if missing
       Open it in the TUI and write 5 generated files beside it
       For example: --demo-select, --demo-todo, or --demo-todo-zh
+      
   --demo-imgtool
       Alias for --demo-image-processor
   --demo-imgtool-zh
       Alias for --demo-image-processor.zh-TW
 
+  --overwrite-demo
+      Overwrite an existing local demo with the bundled copy; combine with any --demo option
+      
 Remote Markdown:
   --allow-url
       Download HTTP(S) Markdown and, with Kitty mode, its HTTP(S) images; allow its code to run
 
-Experimental:
-  --build-exe [BUN_ARGS...]     Build a Bun single-file executable and exit
+Experimental single-exe:
+  --build-exe [BUN_ARGS...]
+      Build a Bun single-file executable & exit
   --build-for <target> [BUN_ARGS...]
-                                Build a Bun single-file executable for target`
+      Build a Bun single-file executable for target & exit
+  
+  [BUN_ARGS...]
+      --define MDCUI_XXX=true
+        More info in --readme
+      https://bun.com/docs/bundler/executables
+`
   ].join("\n");
 }
 
@@ -8115,7 +8158,7 @@ async function main() {
   if (flags.version) {
     const ttsCmd = detectTtsCmd();
     console.log(pkg.name+":",pkg.description)
-    console.log("  Rewritten by: Dr. John (醫者小智)")
+    console.log("  Made by: Dr. John (醫者小智)")
     console.log("")
     console.log("Version:", VERSION);
     console.log("Runtime:", `Bun ${Bun.version}`);
@@ -8123,6 +8166,11 @@ async function main() {
     console.log("Http client:",detectHttpBackend());
     console.log("TTS:", ttsCmd ? ttsCmd.cmd[0] : "not found");
     console.log({SUPPORTED_ENCODING_LABELS})
+    console.log("Distribution settings:");
+    console.log("  MDCUI_DEFAULT_EDIT:", (MDCUI_DEFAULT_EDIT_ENABLED || defaultEdit) ? "enabled" : "disabled");
+    console.log("  MDCUI_DEFAULT_DEMO:", MDCUI_DEFAULT_DEMO_ENABLED ? "enabled" : "disabled");
+    console.log("  MDCUI_DEFAULT_DEMO_WUI:", MDCUI_DEFAULT_DEMO_WUI_ENABLED ? "enabled" : "disabled");
+    console.log("  MDCUI_OVERWRITE_DEMO:", MDCUI_OVERWRITE_DEMO_ENABLED ? "enabled" : "disabled");
     const clipboard = new ClipboardManager();
     let osc52Available = false;
     if (process.stdin.isTTY && process.stdout.isTTY) {
