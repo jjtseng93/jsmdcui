@@ -12,7 +12,8 @@
     "start": "bun ./src/index.js --demo",
     "tui": "bun ./tui",
     "wui": "bun ./wui",
-    "clean": "bun ./clean.sh",
-    "check": "node --check ./src/index.js"
+    "edit": "bun ./edit",
+    "check": "bun ./src/index.js --check",
+    "clean": "bun ./clean.sh"
   }
 }
