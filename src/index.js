@@ -181,6 +181,9 @@ const VERSION = pkg.version;
 const SINGLE_EXE_DIR = resolve(REPO_ROOT, "single-exe");
 const SINGLE_EXE_ENTRY = resolve(SINGLE_EXE_DIR, "entry.mjs");
 const DEFAULT_BUILD_OUTFILE = "mdcui";
+const MDCUI_DEFAULT_DEMO_ENABLED = typeof MDCUI_DEFAULT_DEMO !== "undefined";
+const MDCUI_DEFAULT_DEMO_WUI_ENABLED = typeof MDCUI_DEFAULT_DEMO_WUI !== "undefined";
+const MDCUI_OVERWRITE_DEMO_ENABLED = typeof MDCUI_OVERWRITE_DEMO !== "undefined";
 let defaultEdit = false;
 const decoder = new TextDecoder();
 let _activeTtyStream = null; // set in App.start() for use by the global error handler
@@ -1094,6 +1097,7 @@ function parseArgs(argv) {
     check: false,
     cat: false,
     wui: false,
+    printUi: false,
     docs: false,
     exportReadme: false,
     exportCdpMaze: false,
@@ -1101,6 +1105,7 @@ function parseArgs(argv) {
     testapp: false,
     demoList: false,
     demo: null,
+    overwriteDemo: false,
     allowUrl: false,
     buildExe: false,
     buildFor: "",
@@ -1125,6 +1130,7 @@ function parseArgs(argv) {
     else if (arg === "--check") flags.check = true;
     else if (arg === "--cat" || arg === "-cat" || arg === "--ccat" || arg === "-ccat" || arg === "--bat" || arg === "-bat" || arg === "--glow" || arg === "-glow") flags.cat = true;
     else if (arg === "--wui") flags.wui = true;
+    else if (arg === "--print-ui") flags.printUi = true;
     else if (arg === "--xxd" || arg === "--hexdump") {
       flags.cat = true;
       flags.settings.set("encoding", "hex3");
@@ -1150,6 +1156,7 @@ function parseArgs(argv) {
     else if (arg === "--changelog") flags.changelog = true;
     else if (arg === "--testapp.md") flags.testapp = true;
     else if (arg === "--demo-list") flags.demoList = true;
+    else if (arg === "--overwrite-demo") flags.overwriteDemo = true;
     else if (arg === "--cdp-maze") {
       flags.cdpMaze = true;
       flags.demo = { option: arg, filename: "maze.md", asset: "demos/maze.md" };
@@ -1212,6 +1219,8 @@ Modes:
       Generate or overwrite Markdown UI files beside FILE.md and start the server
       Without FILE.md, use the existing ./testapp.md without overwriting it
       If ./testapp.md is missing, write the bundled demo there first
+  --print-ui
+      With --wui, print the generated TUI, raw ANSI, and HTML before starting the server
   --cat, --ccat, --bat, --glow
       Render file(s) and write to stdout, then exit (.md uses mdcui/createTui)
       A local .md file also writes or overwrites five generated files beside it
@@ -1268,6 +1277,8 @@ Demo:
   --demo
       Use the existing ./testapp.md without overwriting it, or write the bundled demo if missing
       Open it in the TUI and write 5 generated files beside it
+  --overwrite-demo
+      Overwrite an existing local demo with the bundled copy; combine with any --demo option
   --demo-<filename>
       Load demos/<filename>.md, preserving an existing ./<filename>.md or writing the bundled copy
       Open it in the TUI and write 5 generated files beside it
@@ -1282,8 +1293,9 @@ Remote Markdown:
       Download HTTP(S) Markdown and, with Kitty mode, its HTTP(S) images; allow its code to run
 
 Experimental:
-  --build-exe                   Build a Bun single-file executable and exit
-  --build-for <target>          Build a Bun single-file executable for target`
+  --build-exe [BUN_ARGS...]     Build a Bun single-file executable and exit
+  --build-for <target> [BUN_ARGS...]
+                                Build a Bun single-file executable for target`
   ].join("\n");
 }
 
@@ -8085,7 +8097,12 @@ async function main() {
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
   defaultEdit = await Bun.file(join(REPO_ROOT, "src", "DEFAULT_EDIT")).exists();
   
-  const { flags, files: rawFiles } = parseArgs(process.argv.slice(2));
+  const runtimeArgs = process.argv.slice(2);
+  const noRuntimeArgs = runtimeArgs.length === 0;
+  if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_ENABLED) runtimeArgs.push("--demo");
+  if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_WUI_ENABLED) runtimeArgs.push("--wui");
+  if (MDCUI_OVERWRITE_DEMO_ENABLED) runtimeArgs.push("--overwrite-demo");
+  const { flags, files: rawFiles } = parseArgs(runtimeArgs);
   kittyImageMode = flags.kittyMode;
   allowRemoteKittyImages = flags.allowUrl;
 
@@ -8120,7 +8137,10 @@ async function main() {
   }
   if (flags.wui) {
     const runmd = await import("../runmd.mjs");
-    await runmd.main();
+    await runmd.main(30, {
+      overwriteDemo: flags.overwriteDemo && rawFiles.length === 0,
+      printUi: flags.printUi,
+    });
     return;
   }
   if (flags.check) {
@@ -8181,7 +8201,7 @@ async function main() {
       return;
     }
     const demoPath = resolve(flags.demo.filename);
-    if (!(await Bun.file(demoPath).exists())) {
+    if (flags.overwriteDemo || !(await Bun.file(demoPath).exists())) {
       await Bun.write(demoPath, demoSource);
     }
     rawFiles.splice(0, rawFiles.length, demoPath);
