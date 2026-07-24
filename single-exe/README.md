@@ -31,6 +31,51 @@ executable to the current directory. To pass a Bun compilation target, use:
 bun ./src/index.js --build-for <target>
 ```
 
+Any additional arguments after `--build-exe`, or after the target passed to
+`--build-for`, are forwarded to the `bun build` command:
+
+```shell
+bun ./src/index.js --build-exe --sourcemap
+bun ./src/index.js --build-for <target> --sourcemap
+```
+
+The following presence-based build constants select distribution defaults:
+
+- `MDCUI_DEFAULT_EDIT`: open files as editable text by default.
+- `MDCUI_DEFAULT_DEMO`: add `--demo` when launched without arguments.
+- `MDCUI_DEFAULT_DEMO_WUI`: add `--wui` when launched without arguments.
+
+Choose only one of these three default-mode constants for each build.
+`MDCUI_OVERWRITE_DEMO` is an optional modifier for a demo or WUI build.
+
+For example, build a default text editor with:
+
+```shell
+bun ./src/index.js --build-exe \
+  --define MDCUI_DEFAULT_EDIT=true
+```
+
+To build a bundled terminal demo that replaces its local copy:
+
+```shell
+bun ./src/index.js --build-exe \
+  --define MDCUI_DEFAULT_DEMO=true \
+  --define MDCUI_OVERWRITE_DEMO=true
+```
+
+`MDCUI_DEFAULT_DEMO=true` makes an executable launched without arguments behave
+as if `--demo` was passed. `MDCUI_OVERWRITE_DEMO=true` makes every selected demo
+replace an existing local copy; it does not select a demo by itself.
+
+For a browser UI that automatically adds `--wui` when launched without
+arguments, use `MDCUI_DEFAULT_DEMO_WUI` instead:
+
+```shell
+bun ./src/index.js --build-exe \
+  --define MDCUI_DEFAULT_DEMO_WUI=true \
+  --define MDCUI_OVERWRITE_DEMO=true
+```
+
 To perform the same steps manually, run these commands from `single-exe/`:
 
 ```shell

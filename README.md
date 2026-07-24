@@ -163,6 +163,7 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --export-cdp-maze` | Write or overwrite `./cdp-maze.js` with the bundled CDP maze solver and exit. |
 | `bun src/index.js --demo-list` | List `testapp.md` and every bundled `demos/*.md` example with its command-line option, then exit. |
 | `bun src/index.js --demo` | Use local `testapp.md` when present, otherwise write the bundled demo; open it in the terminal UI and write five generated files beside it. |
+| `bun src/index.js --overwrite-demo --demo` | Replace an existing local `testapp.md` with the bundled copy before opening it. `--overwrite-demo` can modify any `--demo-*` option. |
 | `bun src/index.js --demo-<filename>` | Load `demos/<filename>.md`; preserve an existing local copy or write the bundled copy, then open it and generate its five companion files. New files added under `demos/` work automatically. |
 | `bun src/index.js --demo-imgtool` | Compatibility alias for `--demo-image-processor`. |
 | `bun src/index.js --demo-imgtool-zh` | Compatibility alias for `--demo-image-processor.zh-TW`. |
@@ -170,6 +171,7 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory and, with Kitty mode enabled, download its HTTP(S) images; write 5 generated files and allow embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |
+| `bun src/index.js --wui --print-ui app.md` | Also print the generated TUI, raw ANSI, and HTML before starting the WUI server. |
 | `PORT=8080 bun src/index.js --wui app.md` | Start the browser UI on another port. |
 | `bun src/index.js` | Open the normal terminal editor with an empty buffer. |
 
@@ -742,13 +744,66 @@ or serve Markdown UI files that you trust.
   calls, but it does not protect the backend module from trusted local code and
   is not a substitute for authentication.
 
-### Shipping with text editing as the default
+## Distribution
+
+### Text editor distribution
 
 Distributions intended primarily as text editors can include an empty
-`src/DEFAULT_EDIT` file. When this marker exists, opening a `.md` file uses the
+`src/MDCUI_DEFAULT_EDIT` file. When this marker exists, opening a `.md` file uses the
 normal editable UTF-8 view instead of automatically entering `mdcui` mode.
 Markdown UI support remains available explicitly with `--mdcui`, which is
 equivalent to `-encoding mdcui`.
+
+### Build-time distribution constants
+
+Single-file distributions can define one of these default modes:
+
+- `MDCUI_DEFAULT_EDIT`: open files as editable text by default.
+- `MDCUI_DEFAULT_DEMO`: add `--demo` when launched without arguments.
+- `MDCUI_DEFAULT_DEMO_WUI`: add `--wui` when launched without arguments.
+
+Choose only one of the three default-mode constants for a distribution.
+`MDCUI_OVERWRITE_DEMO` is an optional modifier for the demo or WUI mode.
+These are presence-based constants, so their build values do not require
+shell-quoted strings:
+
+```sh
+bun src/index.js --build-exe --define MDCUI_DEFAULT_EDIT=true
+```
+
+### Ship `testapp.md` as a standalone application
+
+To turn your finished Markdown UI into a standalone executable, save it as the
+repository-root `testapp.md`, then build with both demo constants:
+
+```sh
+bun src/index.js --build-exe \
+  --define MDCUI_DEFAULT_DEMO=true \
+  --define MDCUI_OVERWRITE_DEMO=true
+```
+
+The build first packs `testapp.md` into the executable and writes the resulting
+`mdcui` binary in the current directory. In that binary,
+`MDCUI_DEFAULT_DEMO` adds `--demo` when the user launches it without arguments,
+and `MDCUI_OVERWRITE_DEMO` adds `--overwrite-demo`. Consequently, running
+`./mdcui` writes the bundled application to `./testapp.md`, replacing an older
+copy, and starts it as the terminal UI.
+
+To make a no-argument launch start the browser UI instead, build with
+`MDCUI_DEFAULT_DEMO_WUI`:
+
+```sh
+bun src/index.js --build-exe \
+  --define MDCUI_DEFAULT_DEMO_WUI=true \
+  --define MDCUI_OVERWRITE_DEMO=true
+```
+
+This adds `--wui` when the executable is launched without arguments.
+
+You can rename and distribute the resulting binary. It contains the Bun
+runtime, jsmdcui, the packed runtime assets, and your `testapp.md`; the target
+directory must remain writable because launching the application creates
+`testapp.md` and its generated companion files there.
 
 ## Development
 

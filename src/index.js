@@ -181,6 +181,7 @@ const VERSION = pkg.version;
 const SINGLE_EXE_DIR = resolve(REPO_ROOT, "single-exe");
 const SINGLE_EXE_ENTRY = resolve(SINGLE_EXE_DIR, "entry.mjs");
 const DEFAULT_BUILD_OUTFILE = "mdcui";
+const MDCUI_DEFAULT_EDIT_ENABLED = typeof MDCUI_DEFAULT_EDIT !== "undefined";
 const MDCUI_DEFAULT_DEMO_ENABLED = typeof MDCUI_DEFAULT_DEMO !== "undefined";
 const MDCUI_DEFAULT_DEMO_WUI_ENABLED = typeof MDCUI_DEFAULT_DEMO_WUI !== "undefined";
 const MDCUI_OVERWRITE_DEMO_ENABLED = typeof MDCUI_OVERWRITE_DEMO !== "undefined";
@@ -8095,10 +8096,11 @@ async function main() {
   addCheckpoint("Argument Parsing");
   
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
-  defaultEdit = await Bun.file(join(REPO_ROOT, "src", "DEFAULT_EDIT")).exists();
+  defaultEdit = await Bun.file(join(REPO_ROOT, "src", "MDCUI_DEFAULT_EDIT")).exists();
   
   const runtimeArgs = process.argv.slice(2);
   const noRuntimeArgs = runtimeArgs.length === 0;
+  if (MDCUI_DEFAULT_EDIT_ENABLED) runtimeArgs.unshift("--edit");
   if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_ENABLED) runtimeArgs.push("--demo");
   if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_WUI_ENABLED) runtimeArgs.push("--wui");
   if (MDCUI_OVERWRITE_DEMO_ENABLED) runtimeArgs.push("--overwrite-demo");
