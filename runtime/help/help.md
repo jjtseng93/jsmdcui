@@ -751,8 +751,8 @@ or serve Markdown UI files that you trust.
 Distributions intended primarily as text editors can include an empty
 `src/MDCUI_DEFAULT_EDIT` file. When this marker exists, opening a `.md` file uses the
 normal editable UTF-8 view instead of automatically entering `mdcui` mode.
-Markdown UI support remains available explicitly with `--mdcui`, which is
-equivalent to `-encoding mdcui`.
+Markdown UI support remains available explicitly with `--mdcui` or `--tui`;
+both are equivalent to `-encoding mdcui`.
 
 ### Build-time distribution constants
 
