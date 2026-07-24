@@ -1240,6 +1240,7 @@ Modes:
     Without FILE.md, 
     default to ./testapp.md
       If ./testapp.md is missing, write the bundled demo there first
+    Combine with any --demo option to start that demo as a Web UI
       
   --print-ui
     Must be combined with --wui
@@ -8135,6 +8136,29 @@ function printDemoList() {
   console.log("  --demo-imgtool-zh  --demo-image-processor.zh-TW");
 }
 
+async function prepareDemo(flags, rawFiles) {
+  if (!flags.demo) return true;
+  if (flags.demo.error) {
+    console.error(`Invalid demo option ${flags.demo.option}: ${flags.demo.error}`);
+    process.exitCode = 2;
+    return false;
+  }
+  let demoSource;
+  try {
+    demoSource = await bundledMarkdownSource(flags.demo.asset);
+  } catch {
+    console.error(`Unknown demo ${flags.demo.option}: ${flags.demo.asset} was not found`);
+    process.exitCode = 2;
+    return false;
+  }
+  const demoPath = resolve(flags.demo.filename);
+  if (flags.overwriteDemo || !(await Bun.file(demoPath).exists())) {
+    await Bun.write(demoPath, demoSource);
+  }
+  rawFiles.splice(0, rawFiles.length, demoPath);
+  return true;
+}
+
 async function main() {
   addCheckpoint("Argument Parsing");
   
@@ -8186,8 +8210,10 @@ async function main() {
     return;
   }
   if (flags.wui) {
+    if (!(await prepareDemo(flags, rawFiles))) return;
     const runmd = await import("../runmd.mjs");
     await runmd.main(30, {
+      mdpath: rawFiles[0] ?? null,
       overwriteDemo: flags.overwriteDemo && rawFiles.length === 0,
       printUi: flags.printUi,
     });
@@ -8237,24 +8263,7 @@ async function main() {
     return;
   }
   if (flags.demo) {
-    if (flags.demo.error) {
-      console.error(`Invalid demo option ${flags.demo.option}: ${flags.demo.error}`);
-      process.exitCode = 2;
-      return;
-    }
-    let demoSource;
-    try {
-      demoSource = await bundledMarkdownSource(flags.demo.asset);
-    } catch {
-      console.error(`Unknown demo ${flags.demo.option}: ${flags.demo.asset} was not found`);
-      process.exitCode = 2;
-      return;
-    }
-    const demoPath = resolve(flags.demo.filename);
-    if (flags.overwriteDemo || !(await Bun.file(demoPath).exists())) {
-      await Bun.write(demoPath, demoSource);
-    }
-    rawFiles.splice(0, rawFiles.length, demoPath);
+    if (!(await prepareDemo(flags, rawFiles))) return;
   }
   if (flags.options) {
     for (const [key, value] of Object.entries(defaultAllSettings()).sort(([a], [b]) => a.localeCompare(b))) {

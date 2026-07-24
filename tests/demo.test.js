@@ -15,8 +15,8 @@ test("--help describes the non-overwriting demo behavior", () => {
 
   expect(result.exitCode).toBe(0);
   const output = result.stdout.toString();
-  expect(output).toContain("use the existing ./testapp.md without overwriting it");
-  expect(output).toContain("If ./testapp.md is missing, write the bundled demo there first");
+  expect(output).toContain("Execute an existing ./testapp.md");
+  expect(output).toContain("Or write the bundled demo if missing");
   expect(output).toContain("--demo-<filename>");
   expect(output).toContain("demos/<filename>.md");
   expect(output.match(/Open it in the TUI and write 5 generated files beside it/g)?.length).toBe(2);

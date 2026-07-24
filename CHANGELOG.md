@@ -2,6 +2,14 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.10.1] - 2026-07-25
+
+### Fixed
+
+- Resolve and prepare `--demo` and `--demo-*` selections before entering WUI
+  mode, so combinations such as `--wui --demo-todo` serve the selected demo
+  instead of falling back to `testapp.md`.
+
 ## [0.10.0] - 2026-07-24
 
 This update adds distribution-oriented defaults for shipping jsmdcui as a text

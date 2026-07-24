@@ -171,6 +171,7 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory and, with Kitty mode enabled, download its HTTP(S) images; write 5 generated files and allow embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
 | `bun src/index.js --wui app.md` | Write five generated files beside `app.md`, then print and serve a random URL. |
+| `bun src/index.js --wui --demo-<filename>` | Load the selected bundled demo and serve it as a Web UI. |
 | `bun src/index.js --wui --print-ui app.md` | Also print the generated TUI, raw ANSI, and HTML before starting the WUI server. |
 | `PORT=8080 bun src/index.js --wui app.md` | Start the browser UI on another port. |
 | `bun src/index.js` | Open the normal terminal editor with an empty buffer. |

@@ -51,17 +51,18 @@ export async function readMarkdownInput(mdpath, overwriteDemo = false)
 
 
 export async function main(tuiWidth=30, {
+  mdpath: requestedMdpath = null,
   overwriteDemo = process.argv.includes("--overwrite-demo"),
   printUi = process.argv.includes("--print-ui"),
 } = {})
 {
     const explicitMdpath = process.argv.find(i=>i.endsWith('.md'))
-    const mdpath = explicitMdpath || 'testapp.md'
+    const mdpath = requestedMdpath || explicitMdpath || 'testapp.md'
 
 
 	// 1. Read markdown file
 	console.error('Reading:',mdpath)
-	let md = await readMarkdownInput(mdpath, overwriteDemo && !explicitMdpath)
+	let md = await readMarkdownInput(mdpath, overwriteDemo && !requestedMdpath && !explicitMdpath)
 
     // 2. Extract js files
     md = await extractJs(md,mdpath);
