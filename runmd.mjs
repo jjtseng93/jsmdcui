@@ -29,10 +29,10 @@ async function readTemplate(pathname)
          await Bun.file(path.join(REPO_ROOT, pathname)).text()
 }
 
-export async function readMarkdownInput(mdpath)
+export async function readMarkdownInput(mdpath, overwriteDemo = false)
 {
   const file = Bun.file(mdpath);
-  if (await file.exists()) return await file.text();
+  if (!overwriteDemo && await file.exists()) return await file.text();
   const assetName = path.basename(mdpath);
   const internalText = readInternalAssetText(assetName);
   if (internalText != null) {
@@ -50,30 +50,38 @@ export async function readMarkdownInput(mdpath)
 }
 
 
-export async function main(tuiWidth=30)
+export async function main(tuiWidth=30, {
+  overwriteDemo = process.argv.includes("--overwrite-demo"),
+  printUi = process.argv.includes("--print-ui"),
+} = {})
 {
-    const mdpath = process.argv.filter(i=>i.endsWith('.md'))[0] || 'testapp.md'
+    const explicitMdpath = process.argv.find(i=>i.endsWith('.md'))
+    const mdpath = explicitMdpath || 'testapp.md'
 
 
 	// 1. Read markdown file
 	console.error('Reading:',mdpath)
-	let md = await readMarkdownInput(mdpath)
+	let md = await readMarkdownInput(mdpath, overwriteDemo && !explicitMdpath)
 
     // 2. Extract js files
     md = await extractJs(md,mdpath);
 
 	// 3. Create Terminal UI
 	let tui = createTui(md,tuiWidth)
-	cse(mda("\n# TUI"))
-	cse(tui)
-	cse(mda('## TUI raw'))
-	cse(jss(tui))
+	if (printUi) {
+	  cse(mda("\n# TUI"))
+	  cse(tui)
+	  cse(mda('## TUI raw'))
+	  cse(jss(tui))
+	}
 
 
 	// 4. Create Web UI
 	let wui = await createWui(md,mdpath)
-	cse(mda('\n# HTML'))
-	cse(wui)
+	if (printUi) {
+	  cse(mda('\n# HTML'))
+	  cse(wui)
+	}
 
 
     /*
