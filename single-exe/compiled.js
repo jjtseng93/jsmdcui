@@ -38,10 +38,11 @@ export function getDirnameFromUrl(importMetaUrl) {
   return dirname(fileURLToPath(importMetaUrl));
 }
 
-export async function buildExecutable(target = "",build_outfile="single.exe") {
+export async function buildExecutable(target = "",build_outfile="single.exe", bunArgs = []) {
  
   const outfile = resolve(process.cwd(), build_outfile);
   const normalizedTarget = String(target || "").trim();
+  const extraBunArgs = Array.from(bunArgs ?? [], String);
   if(!globalThis.Bun || IS_COMPILED)
   {
     console.log("Build exe can only be run by Bun in the source tree");
@@ -71,6 +72,7 @@ export async function buildExecutable(target = "",build_outfile="single.exe") {
         `--outfile=${outfile}`,
         `--metafile-md=${outfile}.meta.md`,
         ...(normalizedTarget ? [`--target=${normalizedTarget}`] : []),
+        ...extraBunArgs,
       ],
     },
   ];
@@ -145,8 +147,8 @@ export async function buildEarlyExit(argv,build_outfile) {
       console.error("Missing target value for --build-for");
       process.exit(2);
     }
-    process.exit(await buildExe(target,build_outfile));
+    process.exit(await buildExe(target, build_outfile, argv.slice(buildForIndex + 2)));
   }
 
-  process.exit(await buildExe(null,build_outfile));
+  process.exit(await buildExe(null, build_outfile, argv.slice(buildExeIndex + 1)));
 }

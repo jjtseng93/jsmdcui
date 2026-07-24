@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readMarkdownInput } from "../runmd.mjs";
 
 const tui = join(import.meta.dir, "..", "tui");
 const bunBin = Bun.which("bun") || process.argv0;
@@ -92,6 +93,44 @@ test("--demo preserves an existing testapp.md", async () => {
     expect(result.exitCode).toBe(0);
     expect(await readFile(join(dir, "testapp.md"), "utf8")).toBe(existing);
     expect(Bun.stripANSI(result.stdout.toString())).toContain("Keep my demo");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("--overwrite-demo replaces an existing demo with the bundled copy", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-demo-overwrite-"));
+  const existing = "# Replace my demo\n";
+  try {
+    await writeFile(join(dir, "testapp.md"), existing);
+    const result = Bun.spawnSync(
+      [bunBin, tui, "--overwrite-demo", "--demo", "-cat", "-encoding", "utf8"],
+      {
+        cwd: dir,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    const written = await readFile(join(dir, "testapp.md"), "utf8");
+    expect(written).toContain("計算機");
+    expect(written).not.toBe(existing);
+    expect(Bun.stripANSI(result.stdout.toString())).toContain("計算機");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WUI demo loading can overwrite an existing testapp.md", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-wui-demo-overwrite-"));
+  const demoPath = join(dir, "testapp.md");
+  try {
+    await writeFile(demoPath, "# Replace my WUI demo\n");
+    const source = await readMarkdownInput(demoPath, true);
+
+    expect(source).toContain("計算機");
+    expect(await readFile(demoPath, "utf8")).toBe(source);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
