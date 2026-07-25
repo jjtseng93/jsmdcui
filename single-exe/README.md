@@ -39,42 +39,53 @@ bun ./src/index.js --build-exe --sourcemap
 bun ./src/index.js --build-for <target> --sourcemap
 ```
 
-The following presence-based build constants select distribution defaults:
+The switch defines below are presence-based: `=0` and `=false` still enable
+them. Omit a switch define to disable it; examples consistently use `=1`.
 
-- `MDCUI_DEFAULT_EDIT`: open files as editable text by default.
-- `MDCUI_DEFAULT_DEMO`: add `--demo` when launched without arguments.
-- `MDCUI_DEFAULT_DEMO_WUI`: add `--wui` when launched without arguments.
+- `MDCUI_DEFAULT_EDIT=1`: editable-text default.
+- `MDCUI_DEFAULT_DEMO=1`: no-argument `testapp.md` TUI.
+- `MDCUI_DEFAULT_DEMO_WUI=1`: no-argument `testapp.md` WUI.
+- `MDCUI_OVERWRITE_DEMO=1`: overwrite modifier; it does not select a demo.
+- `global.MDCUI_MAIN="<path>.md"`: embed a custom Markdown app and its generated
+  front, RPC, back, HTML, and server modules.
+- `global.MDCUI_MAIN_BASE`: generated internally from `MDCUI_MAIN`; do not pass
+  it manually.
 
-Choose only one of these three default-mode constants for each build.
-`MDCUI_OVERWRITE_DEMO` is an optional modifier for a demo or WUI build.
+Put defines after `--build-exe` (or after the `--build-for` target), and choose
+at most one `MDCUI_DEFAULT_*` mode.
 
-For example, build a default text editor with:
+| Build defines | No-argument launch | Switch UI |
+| --- | --- | --- |
+| `MDCUI_DEFAULT_EDIT=1` | text editor | `./mdcui --tui app.md` |
+| `MDCUI_DEFAULT_DEMO=1` | `testapp.md` TUI | `./mdcui --wui --demo` |
+| `MDCUI_DEFAULT_DEMO_WUI=1` | `testapp.md` WUI | `./mdcui --tui --demo` |
+| `global.MDCUI_MAIN="../中文工具.md"` | custom TUI | `./mdcui --wui --demo-中文工具` |
+| MAIN plus `MDCUI_DEFAULT_DEMO_WUI=1` | custom WUI | `./mdcui --tui --demo-中文工具` |
 
-```shell
-bun ./src/index.js --build-exe \
-  --define MDCUI_DEFAULT_EDIT=true
-```
-
-To build a bundled terminal demo that replaces its local copy:
-
-```shell
-bun ./src/index.js --build-exe \
-  --define MDCUI_DEFAULT_DEMO=true \
-  --define MDCUI_OVERWRITE_DEMO=true
-```
-
-`MDCUI_DEFAULT_DEMO=true` makes an executable launched without arguments behave
-as if `--demo` was passed. `MDCUI_OVERWRITE_DEMO=true` makes every selected demo
-replace an existing local copy; it does not select a demo by itself.
-
-For a browser UI that automatically adds `--wui` when launched without
-arguments, use `MDCUI_DEFAULT_DEMO_WUI` instead:
+For a custom TUI-default executable:
 
 ```shell
 bun ./src/index.js --build-exe \
-  --define MDCUI_DEFAULT_DEMO_WUI=true \
-  --define MDCUI_OVERWRITE_DEMO=true
+  --define 'global.MDCUI_MAIN="../中文工具.md"'
 ```
+
+For a custom WUI-default executable:
+
+```shell
+bun ./src/index.js --build-exe \
+  --define 'global.MDCUI_MAIN="../中文工具.md"' \
+  --define MDCUI_DEFAULT_DEMO_WUI=1
+```
+
+Explicit runtime arguments suppress automatic demo/WUI selection, so switching
+UI must repeat `--demo` or `--demo-中文工具`. The main basename must end in
+lowercase `.md`; its demo name allows Unicode letters/numbers (including
+Chinese), dots, underscores, and hyphens, but no whitespace.
+
+The custom demo uses embedded TUI front/RPC or the embedded WUI server when its
+local Markdown byte length matches the embedded asset. Missing or overwritten
+demos use embedded modules after the asset is written. A differing byte length
+warns and selects filesystem companion modules.
 
 To perform the same steps manually, run these commands from `single-exe/`:
 

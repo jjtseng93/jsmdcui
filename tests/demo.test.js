@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readMarkdownInput } from "../runmd.mjs";
 
 const tui = join(import.meta.dir, "..", "tui");
+const indexEntry = join(import.meta.dir, "..", "src", "index.js");
+const demosDirectory = join(import.meta.dir, "..", "demos");
 const bunBin = Bun.which("bun") || process.argv0;
 
 test("--help describes the non-overwriting demo behavior", () => {
@@ -38,6 +40,139 @@ test("--demo-list lists root and automatically discovered demos", () => {
   expect(output).toMatch(/--demo-select\s+demos\/select\.md/);
   expect(output).toMatch(/--demo-todo-zh\s+demos\/todo-zh\.md/);
   expect(output).toContain("--demo-imgtool     --demo-image-processor");
+});
+
+test("--version lists every MDCUI build define", () => {
+  const result = Bun.spawnSync([bunBin, tui, "--version"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  expect(result.exitCode).toBe(0);
+  const output = result.stdout.toString();
+  expect(output).toContain("MDCUI_DEFAULT_EDIT:");
+  expect(output).toContain("MDCUI_DEFAULT_DEMO:");
+  expect(output).toContain("MDCUI_DEFAULT_DEMO_WUI:");
+  expect(output).toContain("MDCUI_OVERWRITE_DEMO:");
+  expect(output).toContain("global.MDCUI_MAIN:");
+  expect(output).toContain("global.MDCUI_MAIN_BASE:");
+
+  const presenceResult = Bun.spawnSync(
+    [
+      bunBin,
+      "--define",
+      "MDCUI_DEFAULT_DEMO_WUI=0",
+      indexEntry,
+      "--version",
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  expect(presenceResult.exitCode).toBe(0);
+  expect(presenceResult.stdout.toString()).toContain(
+    "MDCUI_DEFAULT_DEMO_WUI: enabled",
+  );
+});
+
+test("--demo names allow Chinese but reject whitespace", () => {
+  const unicodeResult = Bun.spawnSync(
+    [bunBin, tui, "--demo-不存在的程式", "-cat", "-encoding", "utf8"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  expect(unicodeResult.exitCode).toBe(2);
+  expect(unicodeResult.stderr.toString()).toContain(
+    "Unknown demo --demo-不存在的程式",
+  );
+  expect(unicodeResult.stderr.toString()).not.toContain("Invalid demo option");
+
+  const whitespaceResult = Bun.spawnSync(
+    [bunBin, tui, "--demo-中文 程式", "-cat", "-encoding", "utf8"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  expect(whitespaceResult.exitCode).toBe(2);
+  expect(whitespaceResult.stderr.toString()).toContain("Invalid demo option");
+  expect(whitespaceResult.stderr.toString()).toContain(
+    "whitespace is not allowed",
+  );
+});
+
+test("Unicode MDCUI_MAIN overwrite starts the embedded WUI server", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "jsmdcui-main-unicode-"));
+  const sourceDirectory = join(directory, "source");
+  const workDirectory = join(directory, "work");
+  const demoName = `中文工具-${crypto.randomUUID()}`;
+  const markdownName = `${demoName}.md`;
+  const sourcePath = join(sourceDirectory, markdownName);
+  const workPath = join(workDirectory, markdownName);
+  const bundledDemoPath = join(demosDirectory, markdownName);
+  const preloadPath = join(directory, "mock-serve.mjs");
+  const markdown = `# 中文工具
+
+\`\`\`js front
+export async function run() {
+  return await rpc.answer();
+}
+\`\`\`
+
+\`\`\`js back
+import { helper } from "./helper.js";
+export function answer() {
+  return helper();
+}
+\`\`\`
+`;
+
+  try {
+    await mkdir(sourceDirectory);
+    await mkdir(workDirectory);
+    await writeFile(sourcePath, markdown);
+    await writeFile(
+      join(sourceDirectory, "helper.js"),
+      'export function helper() { return "ok"; }\n',
+    );
+    await writeFile(workPath, "# stale file with a different byte length\n");
+    await writeFile(
+      preloadPath,
+      `Bun.serve = () => ({ port: 34567, stop() {} });\n`,
+    );
+
+    const result = Bun.spawnSync(
+      [
+        bunBin,
+        "--preload",
+        preloadPath,
+        "--define",
+        `global.MDCUI_MAIN=${JSON.stringify(sourcePath)}`,
+        indexEntry,
+        "--wui",
+        `--demo-${demoName}`,
+        "--overwrite-demo",
+      ],
+      {
+        cwd: workDirectory,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(await readFile(workPath, "utf8")).toBe(markdown);
+    const stderr = Bun.stripANSI(result.stderr.toString());
+    expect(stderr).toContain("[mdcui] Starting embedded WUI server:");
+    expect(stderr).toContain(sourcePath);
+    expect(stderr).not.toContain("Cannot find module");
+  } finally {
+    await rm(bundledDemoPath, { force: true });
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("--export-cdp-maze writes and overwrites the bundled solver", async () => {

@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readMarkdownInput, writeRuntimeFiles } from "../runmd.mjs";
 
+const indexEntry = join(import.meta.dir, "..", "src", "index.js");
+const bunBin = Bun.which("bun") || process.argv0;
+
 test("WUI writes the bundled testapp.md when it is missing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-wui-"));
   const mdpath = join(dir, "testapp.md");
@@ -39,6 +42,34 @@ test("generated WUI server falls back to a system port when 3000 is occupied", a
     expect(source).toContain('serverOptions.port !== 3000 || !addressInUse');
     expect(source).toContain('Bun.serve({ ...serverOptions, port: 0 })');
     expect(source).toContain('localhost:${server.port}');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("WUI reports an external server before starting it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-wui-source-report-"));
+  const mdpath = join(dir, "external.md");
+  const preloadPath = join(dir, "mock-serve.mjs");
+  try {
+    await writeFile(mdpath, "# External WUI\n");
+    await writeFile(
+      preloadPath,
+      `Bun.serve = () => ({ port: 34567, stop() {} });\n`,
+    );
+    const result = Bun.spawnSync(
+      [bunBin, "--preload", preloadPath, indexEntry, "--wui", mdpath],
+      {
+        cwd: dir,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    const stderr = Bun.stripANSI(result.stderr.toString());
+    expect(stderr).toContain("[mdcui] Starting external WUI server:");
+    expect(stderr).toContain(`${mdpath}-server.js`);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

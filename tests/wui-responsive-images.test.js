@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWui } from "../runmd.mjs";
+import { createWui, extractJs } from "../runmd.mjs";
 
 const temporaryDirectories = [];
 
@@ -32,4 +32,23 @@ test("createWui injects the image rule into an existing document head", async ()
 
   expect(html.indexOf("max-width: 100%")).toBeLessThan(html.indexOf("</head>"));
   expect(html.match(/document\.md\.front\.js/g)).toHaveLength(1);
+});
+
+test("bundling mode creates a browser-only front entry", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "jsmdcui-wui-bundling-"));
+  temporaryDirectories.push(directory);
+  const markdownPath = join(directory, "bundle.md");
+  const source = "```js front\nexport function pav() { return rpc }\n```";
+  const markdown = await extractJs(source, markdownPath, { bundling: true });
+  const html = await createWui(markdown, markdownPath, { bundling: true });
+  const frontSource = readFileSync(`${markdownPath}.tmpfs.js`, "utf8");
+  const installerSource = readFileSync(`${markdownPath}.tmpfi.js`, "utf8");
+
+  expect(frontSource).toContain("const rpc = wuiRpcClient");
+  expect(frontSource).not.toContain("globalThis.process");
+  expect(frontSource).not.toContain('import("./bundle.md.front.js")');
+  expect(installerSource).toContain('import * as frontMod from "./bundle.md.tmpfs.js"');
+  expect(installerSource).toContain("Object.assign(window, frontMod)");
+  expect(html).toContain('src="./bundle.md.tmpfi.js"');
+  expect(html).not.toContain("bundle.md.front.js");
 });

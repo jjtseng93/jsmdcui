@@ -757,54 +757,92 @@ both are equivalent to `-encoding mdcui`.
 
 ### Build-time distribution constants
 
-Single-file distributions can define one of these default modes:
+The following switch defines are presence-based: the program checks whether
+they were passed, not whether their values are true. Consequently, `=0` and
+`=false` still enable a switch. Omit a define entirely to disable it. Examples
+use `=1` to make this explicit.
 
-- `MDCUI_DEFAULT_EDIT`: open files as editable text by default.
-- `MDCUI_DEFAULT_DEMO`: add `--demo` when launched without arguments.
-- `MDCUI_DEFAULT_DEMO_WUI`: add `--wui` when launched without arguments.
+- `MDCUI_DEFAULT_EDIT=1`: open files as editable text by default.
+- `MDCUI_DEFAULT_DEMO=1`: add `--demo` when launched without arguments.
+- `MDCUI_DEFAULT_DEMO_WUI=1`: add `--wui` when launched without arguments.
+- `MDCUI_OVERWRITE_DEMO=1`: add `--overwrite-demo`; this modifies a selected
+  demo but does not select one by itself.
+- `global.MDCUI_MAIN='"<path>.md"'`: embed a custom Markdown application and its
+  generated front, RPC, back, HTML, and server modules. This value is a
+  JavaScript string and therefore needs the inner double quotes shown below. The single quotes are eaten by shell so the real argv remains with double quotes only.
+- `global.MDCUI_MAIN_BASE`: internal define generated automatically from
+  `global.MDCUI_MAIN`; do not pass it manually.
 
-Choose only one of the three default-mode constants for a distribution.
-`MDCUI_OVERWRITE_DEMO` is an optional modifier for the demo or WUI mode.
-These are presence-based constants, so their build values do not require
-shell-quoted strings:
+Place every build define after `--build-exe`, or after the target argument of
+`--build-for`. Choose at most one of `MDCUI_DEFAULT_EDIT`,
+`MDCUI_DEFAULT_DEMO`, and `MDCUI_DEFAULT_DEMO_WUI`.
 
-```sh
-bun src/index.js --build-exe --define MDCUI_DEFAULT_EDIT=true
-```
+| Build defines | No-argument launch | Open the same app in the other UI |
+| --- | --- | --- |
+| none | normal CLI/TUI | `./mdcui --wui app.md` |
+| `MDCUI_DEFAULT_EDIT=1` | text editor | `./mdcui --tui app.md` |
+| `MDCUI_DEFAULT_DEMO=1` | `testapp.md` TUI | `./mdcui --wui --demo` |
+| `MDCUI_DEFAULT_DEMO_WUI=1` | `testapp.md` WUI | `./mdcui --tui --demo` |
+| `global.MDCUI_MAIN='"../中文工具.md"'` | embedded custom TUI | `./mdcui --wui --demo-中文工具` |
+| MAIN plus `MDCUI_DEFAULT_DEMO_WUI=1` | embedded custom WUI | `./mdcui --tui --demo-中文工具` |
 
-### Ship `testapp.md` as a standalone application
+Any explicit runtime argument suppresses the no-argument demo/WUI injection.
+That is why the commands in the last column repeat `--demo` or
+`--demo-中文工具`; `./mdcui --wui` by itself does not implicitly select a custom
+main application.
 
-To turn your finished Markdown UI into a standalone executable, save it as the
-repository-root `testapp.md`, then build with both demo constants:
+To package `../中文工具.md` as a TUI by default:
 
 ```sh
 bun src/index.js --build-exe \
-  --define MDCUI_DEFAULT_DEMO=true \
-  --define MDCUI_OVERWRITE_DEMO=true
+  --define 'global.MDCUI_MAIN="../中文工具.md"'
+
+./mdcui
+./mdcui --wui --demo-中文工具
 ```
 
-The build first packs `testapp.md` into the executable and writes the resulting
-`mdcui` binary in the current directory. In that binary,
-`MDCUI_DEFAULT_DEMO` adds `--demo` when the user launches it without arguments,
-and `MDCUI_OVERWRITE_DEMO` adds `--overwrite-demo`. Consequently, running
-`./mdcui` writes the bundled application to `./testapp.md`, replacing an older
-copy, and starts it as the terminal UI.
-
-To make a no-argument launch start the browser UI instead, build with
-`MDCUI_DEFAULT_DEMO_WUI`:
+To package the same application as a WUI by default and explicitly switch back
+to its TUI:
 
 ```sh
 bun src/index.js --build-exe \
-  --define MDCUI_DEFAULT_DEMO_WUI=true \
-  --define MDCUI_OVERWRITE_DEMO=true
+  --define 'global.MDCUI_MAIN="../中文工具.md"' \
+  --define MDCUI_DEFAULT_DEMO_WUI=1
+
+./mdcui
+./mdcui --tui --demo-中文工具
 ```
 
-This adds `--wui` when the executable is launched without arguments.
+The `MDCUI_MAIN` basename must end with lowercase `.md`. Its demo-name portion
+must start with a Unicode letter or number and may contain Unicode
+letters/numbers (including Chinese), combining marks, dots, underscores, and
+hyphens. Whitespace and path separators are not allowed.
+
+When the configured custom demo is selected and its local Markdown byte length
+matches the embedded copy, TUI uses the embedded front/RPC modules and WUI uses
+the embedded server. A missing demo, or one selected with
+`MDCUI_OVERWRITE_DEMO=1`, is first written from the embedded copy and then uses
+embedded modules. A different byte length prints a warning and uses filesystem
+companion modules. Directly opening `./mdcui app.md` or
+`./mdcui --wui app.md` has no demo provenance and therefore uses filesystem
+modules even if the basename matches `MDCUI_MAIN`.
+
+To retain the older repository-root `testapp.md` distribution instead, build a
+TUI with:
+
+```sh
+bun src/index.js --build-exe \
+  --define MDCUI_DEFAULT_DEMO=1 \
+  --define MDCUI_OVERWRITE_DEMO=1
+```
+
+For a default WUI, replace `MDCUI_DEFAULT_DEMO` with
+`MDCUI_DEFAULT_DEMO_WUI`.
 
 You can rename and distribute the resulting binary. It contains the Bun
-runtime, jsmdcui, the packed runtime assets, and your `testapp.md`; the target
-directory must remain writable because launching the application creates
-`testapp.md` and its generated companion files there.
+runtime, jsmdcui, the packed runtime assets, and the configured demo or custom
+main application. The target directory must remain writable because launching
+an application creates its Markdown file and generated companion files there.
 
 ## Development
 
