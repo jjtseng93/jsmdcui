@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>README.md</title>
+  <style>
+img {
+  max-width: 100%;
+  height: auto;
+}
+</style>
+</head>
+<body>
+<section>
+<h1 id="bun-single-file-executable-bootstrap">Bun Single-File Executable Bootstrap</h1>
+<p>Build a Bun application and its runtime assets into one executable while
+keeping the regular main module free of Bun-specific asset imports.</p>
+<p>You can copy and adapt this build setup for your own project by changing its
+main-module path and asset list as described below.</p>
+<ul>
+<li>Bundle an asset tree alongside the application code in one executable.</li>
+<li>Keep the regular main module available to the Node.js ESM execution path.</li>
+<li>Read embedded resources first with an optional external-file fallback.</li>
+<li>List, extract, or bypass embedded assets with built-in CLI flags.</li>
+<li>Build for the current platform or pass a Bun cross-compilation target.</li>
+</ul>
+<blockquote>
+<p>This workflow is optional; the standard methods in the root README remain
+available. Bun's Android build is currently not supported.</p>
+</blockquote>
+<section>
+<h2 id="quick-start-for-jsmdcui">Quick start for jsmdcui</h2>
+<p>From the repository root, build for the current platform:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-exe
+./mdcui --version
+</code></pre>
+<p><code>--build-exe</code> runs <code>packAssets.sh</code> automatically and writes the <code>mdcui</code>
+executable to the current directory. To pass a Bun compilation target, use:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-for &lt;target&gt;
+</code></pre>
+<p>Any additional arguments after <code>--build-exe</code>, or after the target passed to
+<code>--build-for</code>, are forwarded to the <code>bun build</code> command:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-exe --sourcemap
+bun ./src/index.js --build-for &lt;target&gt; --sourcemap
+</code></pre>
+<p>Bun expects <code>--define</code> values to be JSON-style literals, so strings normally
+need quotes. <code>stringifyNonPrimitiveDefineValues()</code> converts a bare value with
+<code>JSON.stringify()</code> before it reaches Bun. jsmdcui uses it for
+<code>global.MDCUI_MAIN</code>.</p>
+<p>The switch defines below are presence-based: <code>=0</code> and <code>=false</code> still enable
+them. Omit a switch define to disable it; examples consistently use <code>=1</code>.</p>
+<ul>
+<li><code>MDCUI_DEFAULT_EDIT=1</code>: editable-text default.</li>
+<li><code>MDCUI_DEFAULT_DEMO=1</code>: no-argument <code>testapp.md</code> TUI.</li>
+<li><code>MDCUI_DEFAULT_DEMO_WUI=1</code>: no-argument <code>testapp.md</code> WUI.</li>
+<li><code>MDCUI_OVERWRITE_DEMO=1</code>: overwrite modifier; it does not select a demo.</li>
+<li><code>global.MDCUI_MAIN=&lt;path&gt;.md</code>: embed a custom Markdown app and its generated
+front, RPC, back, HTML, and server modules.</li>
+<li><code>global.MDCUI_MAIN_BASE</code>: generated internally from <code>MDCUI_MAIN</code>; do not pass
+it manually.</li>
+</ul>
+<p>Put defines after <code>--build-exe</code> (or after the <code>--build-for</code> target), and choose
+at most one <code>MDCUI_DEFAULT_*</code> mode.</p>
+<table>
+<thead>
+<tr><th>Build defines</th><th>No-argument launch</th><th>Switch UI</th></tr>
+</thead>
+<tbody>
+<tr><td><code>MDCUI_DEFAULT_EDIT=1</code></td><td>text editor</td><td><code>./mdcui --tui app.md</code></td></tr>
+<tr><td><code>MDCUI_DEFAULT_DEMO=1</code></td><td><code>testapp.md</code> TUI</td><td><code>./mdcui --wui --demo</code></td></tr>
+<tr><td><code>MDCUI_DEFAULT_DEMO_WUI=1</code></td><td><code>testapp.md</code> WUI</td><td><code>./mdcui --tui --demo</code></td></tr>
+<tr><td><code>global.MDCUI_MAIN=../中文工具.md</code></td><td>custom TUI</td><td><code>./mdcui --wui --demo-中文工具</code></td></tr>
+<tr><td>MAIN plus <code>MDCUI_DEFAULT_DEMO_WUI=1</code></td><td>custom WUI</td><td><code>./mdcui --tui --demo-中文工具</code></td></tr>
+</tbody>
+</table>
+<p>For a custom TUI-default executable:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-exe \
+  --define global.MDCUI_MAIN=../中文工具.md
+</code></pre>
+<p>For a custom WUI-default executable:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-exe \
+  --define global.MDCUI_MAIN=../中文工具.md \
+  --define MDCUI_DEFAULT_DEMO_WUI=1
+</code></pre>
+<p>Explicit runtime arguments suppress automatic demo/WUI selection, so switching
+UI must repeat <code>--demo</code> or <code>--demo-中文工具</code>. The main basename must end in
+lowercase <code>.md</code>; its demo name allows Unicode letters/numbers (including
+Chinese), dots, underscores, and hyphens, but no whitespace.</p>
+<p>The custom demo uses embedded TUI front/RPC or the embedded WUI server when its
+local Markdown byte length matches the embedded asset. Missing or overwritten
+demos use embedded modules after the asset is written. A differing byte length
+warns and selects filesystem companion modules.</p>
+<p>To perform the same steps manually, run these commands from <code>single-exe/</code>:</p>
+<pre><code class="language-shell">bun ./packAssets.sh
+bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=mdcui
+</code></pre>
+</section>
+<section>
+<h2 id="adapting-this-folder-to-another-project">Adapting this folder to another project</h2>
+<p>This folder is a reusable starting point, not a drop-in package. The current
+<code>entry.mjs</code> and <code>packAssets.sh</code> contain jsmdcui paths, so another project must
+complete the following integration steps.</p>
+<p>The adopting project needs Bun for packing and compiling, a <code>tar</code> command for
+<code>packAssets.sh</code>, and an ES-module setup. Keep <code>&quot;type&quot;: &quot;module&quot;</code> in
+<code>package.json</code>, or rename the copied <code>.js</code> modules to <code>.mjs</code> and update their
+imports. The supported uncompiled Node path requires Node.js 20.11 or newer
+because <code>compiled.js</code> uses <code>import.meta.dirname</code>.</p>
+<p><code>assetsHelper.js</code> and <code>compiled.js</code> are Node-compatible under those conditions.
+<code>assetsLoader.mjs</code> and <code>entry.mjs</code> are Bun-only and must not be imported by the
+regular Node entry path.</p>
+<section>
+<h3 id="1-copy-the-bootstrap-directory">1. Copy the bootstrap directory</h3>
+<p>Copy the entire <code>single-exe/</code> directory to the root of the other project and
+keep its name and relative position unless you also update the paths in
+<code>compiled.js</code> and <code>packAssets.sh</code>. A typical layout is:</p>
+<textarea data-mdcui-tag="text" data-mdcui-language="text" class="language-text" rows="9" cols="24" wrap="soft" style="box-sizing:border-box;max-width:100%;width:100%;resize:vertical;overflow-y:hidden">my-project/
+├── single-exe/
+│   ├── assetsHelper.js
+│   ├── assetsLoader.mjs
+│   ├── compiled.js
+│   ├── entry.mjs
+│   └── packAssets.sh
+└── src/
+    └── index.js</textarea>
+<p><code>assets.tar</code> is generated by <code>packAssets.sh</code>; it does not need to exist before
+the first packing step.</p>
+</section>
+<section>
+<h3 id="2-point-entrymjs-at-the-main-program">2. Point <code>entry.mjs</code> at the main program</h3>
+<p>Keep the asset loader as the first import and change the path passed to the
+final <code>await import()</code> so it points to the other project's real entry module:</p>
+<pre><code class="language-js">#!/usr/bin/env bun
+
+import &quot;./assetsLoader.mjs&quot;;
+await globalThis.assetsLoaderPromise;
+await import(&quot;../src/index.js&quot;);
+</code></pre>
+<blockquote>
+<p><strong>Important:</strong> Keep the final import dynamic. Do not replace it with a static
+<code>import &quot;../src/index.js&quot;</code>, because static dependencies are evaluated before
+the asset Promise is awaited.</p>
+</blockquote>
+<p>Only the Bun single-file executable build should use this bootstrap entry.
+Continue to run the regular main module directly when using Node:</p>
+<pre><code class="language-shell">node ./src/index.js
+</code></pre>
+</section>
+<section>
+<h3 id="3-choose-which-files-to-embed">3. Choose which files to embed</h3>
+<p>Edit the resource list in <code>packAssets.sh</code>; the script runs <code>tar</code> for you. It
+changes to the project root, writes <code>single-exe/assets.tar</code>, and packs every
+listed runtime resource required by the compiled program. Paths stored in the
+archive become the lookup keys used by <code>assetsHelper.js</code>; use keys such as
+<code>public/app.css</code>, without a leading <code>./</code>. The normal <code>--build-exe</code> and
+<code>--build-for</code> flows invoke this script automatically, so you do not need to run
+<code>tar</code> yourself.</p>
+<p>For example:</p>
+<pre><code class="language-sh">#!/bin/sh
+
+script_dir=$(dirname &quot;$0&quot;)
+cd &quot;$script_dir/..&quot; || exit 1
+
+tar -cvf single-exe/assets.tar public templates README.md
+</code></pre>
+<p>Do not retain jsmdcui's <code>demos</code>, <code>runtime</code>, <code>src/cui</code>, or <code>testapp.md</code> entries
+unless the adopting project actually contains and needs them.</p>
+</section>
+<section>
+<h3 id="4-read-embedded-assets-with-an-external-fallback">4. Read embedded assets with an external fallback</h3>
+<p>Import the Node-compatible helpers from <code>assetsHelper.js</code>. They return <code>null</code>
+when the embedded store is unavailable or a path is not present:</p>
+<pre><code class="language-js">import { readFile } from &quot;node:fs/promises&quot;;
+import { resolve } from &quot;node:path&quot;;
+import { readInternalAssetText } from &quot;../single-exe/assetsHelper.js&quot;;
+import { REPO_ROOT } from &quot;../single-exe/compiled.js&quot;;
+
+async function readResourceText(path) {
+  return readInternalAssetText(path) ??
+    await readFile(resolve(REPO_ROOT, path), &quot;utf8&quot;);
+}
+</code></pre>
+<p>In the source tree, <code>REPO_ROOT</code> is the project root. In a compiled executable,
+it is the executable's directory, which is also where <code>--assets-extract</code>
+places the external resource tree. Apply the same embedded-first fallback to
+every file that must work in both modes. Use <code>readInternalAssetBytes()</code> when
+a resource should be returned as bytes instead of decoded text.
+Use <code>listInternalAssetPaths()</code> to list embedded asset paths and
+<code>listInternalAssetDirs()</code> to list embedded directories.</p>
+</section>
+<section>
+<h3 id="5-add-the-optional-build-commands-to-the-regular-cli">5. Add the optional build commands to the regular CLI</h3>
+<p>Before normal argument parsing, call <code>buildEarlyExit</code> from the regular main
+module:</p>
+<pre><code class="language-js">const compiledHelper = await import(&quot;../single-exe/compiled.js&quot;).catch(() =&gt; null);
+await compiledHelper?.buildEarlyExit?.(process.argv, &quot;my-bin&quot;);
+</code></pre>
+<p>The second argument is the output filename; it defaults to <code>single.exe</code> when
+omitted. This enables:</p>
+<pre><code class="language-shell">bun ./src/index.js --build-exe
+bun ./src/index.js --build-for &lt;target&gt;
+</code></pre>
+<p>Both commands run <code>packAssets.sh</code> before <code>bun build</code>. The second form passes
+<code>&lt;target&gt;</code> through as Bun's <code>--target=&lt;target&gt;</code> value.</p>
+<p><code>buildEarlyExit()</code> forwards build arguments to Bun, whose define parser expects
+strings to be quoted literals. To accept a bare value such as a path, call the
+helper before <code>buildEarlyExit()</code>:</p>
+<pre><code class="language-js">const compiledHelper = await import(&quot;../single-exe/compiled.js&quot;).catch(() =&gt; null);
+compiledHelper?.stringifyNonPrimitiveDefineValues?.(
+  process.argv,
+  &quot;MY_STRING_DEFINE&quot;,
+);
+await compiledHelper?.buildEarlyExit?.(process.argv, &quot;my-bin&quot;);
+</code></pre>
+<pre><code class="language-shell"># Wrong: Bun parses the define before the helper runs.
+bun --define MY_STRING_DEFINE=../app.md ./src/index.js --build-exe
+
+# Correct
+bun ./src/index.js --build-exe --define MY_STRING_DEFINE=../app.md
+</code></pre>
+<p>Before normalization:</p>
+<pre><code class="language-js">[&quot;--define&quot;, &quot;MY_STRING_DEFINE=../app.md&quot;]
+</code></pre>
+<p>After normalization:</p>
+<pre><code class="language-js">[&quot;--define&quot;, 'MY_STRING_DEFINE=&quot;../app.md&quot;']
+</code></pre>
+<p>The inline form works too:
+<code>--define=MY_STRING_DEFINE=../app.md</code> becomes
+<code>--define=MY_STRING_DEFINE=&quot;../app.md&quot;</code>.</p>
+<p>Alternatively, build manually from inside <code>single-exe/</code>:</p>
+<pre><code class="language-shell">bun ./packAssets.sh
+bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=my-bin
+</code></pre>
+</section>
+<section>
+<h3 id="6-verify-both-execution-paths">6. Verify both execution paths</h3>
+<p>Verify the compiled asset archive and then run the program normally:</p>
+<pre><code class="language-shell">./my-bin --assets-list
+./my-bin
+</code></pre>
+<p>Also run the uncompiled main module with Node.js 20.11 or newer to verify that
+all required files have a working external fallback:</p>
+<pre><code class="language-shell">node ./src/index.js
+</code></pre>
+<p>Use <code>./my-bin --assets-extract</code> to write the packed tree beside the executable.
+After extraction, <code>./my-bin --assets-external</code> skips the embedded store and is
+useful for testing the external-resource path.</p>
+</section>
+<section>
+<h3 id="why-assetsloaderpromise-is-used">Why <code>assetsLoaderPromise</code> is used</h3>
+<p>A more tightly coupled ESM design could export the assets with top-level
+<code>await</code>, then make the main module import <code>assetsLoader.mjs</code> directly. This
+project deliberately does not do that because <code>assetsLoader.mjs</code> contains
+Bun's compiled-file import:</p>
+<pre><code class="language-js">import assets from &quot;./assets.tar&quot; with { type: &quot;file&quot; };
+</code></pre>
+<p>If the regular main module imported <code>assetsLoader.mjs</code>, that Bun-specific
+<code>type: &quot;file&quot;</code> dependency would enter the main module graph. Node would then be
+unable to load the program before it could select an external-file fallback.</p>
+<p>Instead, only Bun's <code>entry.mjs</code> imports the Bun-specific loader, awaits its
+Promise, and then dynamically imports the regular main module. The main module
+does not import the loader, inspect the Promise, or contain Bun bootstrap code.
+Under the supported Node.js 20.11+ ESM path, Node runs that clean main module
+directly with external files. The Promise is therefore an intentional
+Node-compatibility boundary inside the Bun-only bootstrap, not a failure to use
+a more modern dependency or top-level-<code>await</code> design.</p>
+</section>
+</section>
+<section>
+<h2 id="entry-flow">Entry Flow</h2>
+<ul>
+<li><code>entry.mjs</code> imports <code>assetsLoader.mjs</code> first</li>
+<li><code>assetsLoader.mjs</code> loads <code>assets.tar</code> with <code>Bun.Archive</code> and mounts it as <code>globalThis.internalAssets</code></li>
+<li><code>assetsLoaderPromise</code> is exposed on <code>globalThis</code></li>
+<li><code>entry.mjs</code> awaits <code>assetsLoaderPromise</code></li>
+<li><code>entry.mjs</code> dynamically imports the main program after the assets are ready</li>
+</ul>
+<p>That keeps the main program bootable even if asset loading reports errors.</p>
+</section>
+<section>
+<h2 id="assets-loading">Assets Loading</h2>
+<ul>
+<li>Bundled assets are loaded sequentially with <code>await file.bytes()</code></li>
+<li>Load failures are collected and printed to <code>stderr</code></li>
+<li>Asset loading never rejects the bootstrap promise</li>
+<li>When loading succeeds, the archive is available through <code>globalThis.internalAssets</code></li>
+</ul>
+<p>This loader is not zero-copy: it materializes every bundled file in memory and
+keeps the resulting bytes in <code>globalThis.internalAssets</code>. Large asset archives
+can therefore increase startup and ongoing RAM usage. For workloads where that
+matters, I also wrote an experimental Linux-only zero-copy hack:
+<a href="https://github.com/jjtseng93/bun-assets-zerocopy">bun-assets-zerocopy</a>.</p>
+</section>
+<section>
+<h2 id="cli-flags">CLI Flags</h2>
+<ul>
+<li>
+<p><code>--assets-list</code></p>
+<ul>
+<li>Lists all entries inside bundled <code>assets.tar</code></li>
+<li>Exits early before the main program starts</li>
+</ul>
+</li>
+<li>
+<p><code>--assets-extract</code></p>
+<ul>
+<li>Extracts bundled assets to the same directory as the executable</li>
+<li>Exits early before the main program starts</li>
+</ul>
+</li>
+<li>
+<p><code>--assets-external</code></p>
+<ul>
+<li>Skips loading bundled assets into <code>globalThis.internalAssets</code></li>
+<li>Forces the main program and runtime helpers to use the external file tree</li>
+<li>Keeps the bootstrap alive while leaving <code>internalAssets</code> falsy</li>
+</ul>
+</li>
+</ul>
+</section>
+</section>
+
+<script type="module" src="./README.md.front.js"></script>
+</body>
+</html>

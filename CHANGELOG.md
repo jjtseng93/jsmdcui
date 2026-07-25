@@ -2,6 +2,13 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.11.1] - 2026-07-26
+
+### Changed
+
+- Accept a bare `global.MDCUI_MAIN` path in forwarded build arguments by
+  automatically encoding non-primitive define values as JavaScript strings.
+
 ## [0.11.0] - 2026-07-26
 
 This release adds custom Markdown-app embedding for Bun single-file

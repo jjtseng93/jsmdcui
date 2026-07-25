@@ -38,6 +38,58 @@ export function getDirnameFromUrl(importMetaUrl) {
   return dirname(fileURLToPath(importMetaUrl));
 }
 
+export function stringifyNonPrimitiveDefineValues(argv, name) {
+  const definePrefix = `${name}=`;
+  const numberLiteral = /^[+-]?(?:(?:0[xX][\dA-Fa-f](?:_?[\dA-Fa-f])*)|(?:0[bB][01](?:_?[01])*)|(?:0[oO][0-7](?:_?[0-7])*)|(?:(?:\d(?:_?\d)*)(?:\.(?:\d(?:_?\d)*)?)?|\.(?:\d(?:_?\d)*))(?:[eE][+-]?\d(?:_?\d)*)?)$/;
+
+  // Parse scalar literals as data. Never evaluate a user-provided expression.
+  const normalize = (definition) => {
+    if (!definition.startsWith(definePrefix)) return definition;
+    const source = definition.slice(definePrefix.length);
+    const trimmed = source.trim();
+    let value;
+    let parsed = false;
+
+    try {
+      value = JSON.parse(source);
+      parsed = true;
+    } catch {
+      try {
+        if (globalThis.Bun?.JSON5) {
+          value = globalThis.Bun.JSON5.parse(source);
+          parsed = true;
+        }
+      } catch {}
+    }
+
+    if (parsed && typeof value === "string") {
+      return definePrefix + JSON.stringify(value);
+    }
+    if (
+      (parsed && (
+        value === null
+        || typeof value === "number"
+        || typeof value === "boolean"
+      ))
+      || trimmed === "undefined"
+      || numberLiteral.test(trimmed)
+    ) {
+      return definition;
+    }
+    return definePrefix + JSON.stringify(source);
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--define" && typeof argv[i + 1] === "string") {
+      argv[i + 1] = normalize(argv[i + 1]);
+    } else if (argv[i]?.startsWith?.("--define=")) {
+      argv[i] = "--define="
+        + normalize(argv[i].slice("--define=".length));
+    }
+  }
+  return argv;
+}
+
 export async function buildExecutable(target = "",build_outfile="single.exe", bunArgs = []) {
  
   const outfile = resolve(process.cwd(), build_outfile);

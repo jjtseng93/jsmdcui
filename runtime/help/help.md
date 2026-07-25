@@ -767,9 +767,11 @@ use `=1` to make this explicit.
 - `MDCUI_DEFAULT_DEMO_WUI=1`: add `--wui` when launched without arguments.
 - `MDCUI_OVERWRITE_DEMO=1`: add `--overwrite-demo`; this modifies a selected
   demo but does not select one by itself.
-- `global.MDCUI_MAIN='"<path>.md"'`: embed a custom Markdown application and its
-  generated front, RPC, back, HTML, and server modules. This value is a
-  JavaScript string and therefore needs the inner double quotes shown below. The single quotes are eaten by shell so the real argv remains with double quotes only.
+- `global.MDCUI_MAIN=<path>.md`: embed a custom Markdown application and its
+  generated front, RPC, back, HTML, and server modules. When this define is
+  forwarded after `--build-exe` or `--build-for`, a non-primitive value such as
+  a bare path is automatically encoded as a JavaScript string. An explicitly
+  quoted string remains supported.
 - `global.MDCUI_MAIN_BASE`: internal define generated automatically from
   `global.MDCUI_MAIN`; do not pass it manually.
 
@@ -783,7 +785,7 @@ Place every build define after `--build-exe`, or after the target argument of
 | `MDCUI_DEFAULT_EDIT=1` | text editor | `./mdcui --tui app.md` |
 | `MDCUI_DEFAULT_DEMO=1` | `testapp.md` TUI | `./mdcui --wui --demo` |
 | `MDCUI_DEFAULT_DEMO_WUI=1` | `testapp.md` WUI | `./mdcui --tui --demo` |
-| `global.MDCUI_MAIN='"../中文工具.md"'` | embedded custom TUI | `./mdcui --wui --demo-中文工具` |
+| `global.MDCUI_MAIN=../中文工具.md` | embedded custom TUI | `./mdcui --wui --demo-中文工具` |
 | MAIN plus `MDCUI_DEFAULT_DEMO_WUI=1` | embedded custom WUI | `./mdcui --tui --demo-中文工具` |
 
 Any explicit runtime argument suppresses the no-argument demo/WUI injection.
@@ -795,7 +797,7 @@ To package `../中文工具.md` as a TUI by default:
 
 ```sh
 bun src/index.js --build-exe \
-  --define 'global.MDCUI_MAIN="../中文工具.md"'
+  --define global.MDCUI_MAIN=../中文工具.md
 
 ./mdcui
 ./mdcui --wui --demo-中文工具
@@ -806,7 +808,7 @@ to its TUI:
 
 ```sh
 bun src/index.js --build-exe \
-  --define 'global.MDCUI_MAIN="../中文工具.md"' \
+  --define global.MDCUI_MAIN=../中文工具.md \
   --define MDCUI_DEFAULT_DEMO_WUI=1
 
 ./mdcui

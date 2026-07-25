@@ -39,6 +39,11 @@ bun ./src/index.js --build-exe --sourcemap
 bun ./src/index.js --build-for <target> --sourcemap
 ```
 
+Bun expects `--define` values to be JSON-style literals, so strings normally
+need quotes. `stringifyNonPrimitiveDefineValues()` converts a bare value with
+`JSON.stringify()` before it reaches Bun. jsmdcui uses it for
+`global.MDCUI_MAIN`.
+
 The switch defines below are presence-based: `=0` and `=false` still enable
 them. Omit a switch define to disable it; examples consistently use `=1`.
 
@@ -46,7 +51,7 @@ them. Omit a switch define to disable it; examples consistently use `=1`.
 - `MDCUI_DEFAULT_DEMO=1`: no-argument `testapp.md` TUI.
 - `MDCUI_DEFAULT_DEMO_WUI=1`: no-argument `testapp.md` WUI.
 - `MDCUI_OVERWRITE_DEMO=1`: overwrite modifier; it does not select a demo.
-- `global.MDCUI_MAIN="<path>.md"`: embed a custom Markdown app and its generated
+- `global.MDCUI_MAIN=<path>.md`: embed a custom Markdown app and its generated
   front, RPC, back, HTML, and server modules.
 - `global.MDCUI_MAIN_BASE`: generated internally from `MDCUI_MAIN`; do not pass
   it manually.
@@ -59,21 +64,21 @@ at most one `MDCUI_DEFAULT_*` mode.
 | `MDCUI_DEFAULT_EDIT=1` | text editor | `./mdcui --tui app.md` |
 | `MDCUI_DEFAULT_DEMO=1` | `testapp.md` TUI | `./mdcui --wui --demo` |
 | `MDCUI_DEFAULT_DEMO_WUI=1` | `testapp.md` WUI | `./mdcui --tui --demo` |
-| `global.MDCUI_MAIN="../中文工具.md"` | custom TUI | `./mdcui --wui --demo-中文工具` |
+| `global.MDCUI_MAIN=../中文工具.md` | custom TUI | `./mdcui --wui --demo-中文工具` |
 | MAIN plus `MDCUI_DEFAULT_DEMO_WUI=1` | custom WUI | `./mdcui --tui --demo-中文工具` |
 
 For a custom TUI-default executable:
 
 ```shell
 bun ./src/index.js --build-exe \
-  --define 'global.MDCUI_MAIN="../中文工具.md"'
+  --define global.MDCUI_MAIN=../中文工具.md
 ```
 
 For a custom WUI-default executable:
 
 ```shell
 bun ./src/index.js --build-exe \
-  --define 'global.MDCUI_MAIN="../中文工具.md"' \
+  --define global.MDCUI_MAIN=../中文工具.md \
   --define MDCUI_DEFAULT_DEMO_WUI=1
 ```
 
@@ -231,6 +236,47 @@ Alternatively, build manually from inside `single-exe/`:
 bun ./packAssets.sh
 bun build --format=esm --compile --minify --bytecode ./entry.mjs --outfile=my-bin
 ```
+
+#### Passing --define to bun build
+
+`buildEarlyExit()` forwards build arguments to Bun, whose define parser expects
+strings to be quoted literals. To accept a bare value such as a path, call the below
+helper to normalize it before `buildEarlyExit()`:
+
+```js
+import {
+  buildEarlyExit,
+  stringifyNonPrimitiveDefineValues,
+} from "../single-exe/compiled.js";
+
+stringifyNonPrimitiveDefineValues(process.argv, "MY_STRING_DEFINE");
+await buildEarlyExit(process.argv, "my-bin");
+```
+
+```shell
+# Wrong: Bun parses the define before the helper runs.
+bun --define MY_STRING_DEFINE=../app.md ./src/index.js --build-exe
+
+# Correct
+bun ./src/index.js --build-exe --define MY_STRING_DEFINE=../app.md
+```
+
+Before normalization:
+
+```js
+["--define", "MY_STRING_DEFINE=../app.md"]
+```
+
+After normalization:
+
+```js
+["--define", 'MY_STRING_DEFINE="../app.md"']
+```
+
+The inline form works too:
+`--define=MY_STRING_DEFINE=../app.md` becomes
+`--define=MY_STRING_DEFINE="../app.md"`.
+
 
 ### 6. Verify both execution paths
 

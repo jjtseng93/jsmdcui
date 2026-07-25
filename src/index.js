@@ -128,7 +128,7 @@ import { isHex3Encoding, isMdcuiEncoding } from "./runtime/encodings.js";
 import { createInterface } from "node:readline/promises";
 
 import pkg from "../package.json" with { type: "json" };
-import { REPO_ROOT,IS_COMPILED, buildExecutable,buildEarlyExit } from "../single-exe/compiled.js";
+import { REPO_ROOT,IS_COMPILED, buildExecutable,buildEarlyExit,stringifyNonPrimitiveDefineValues } from "../single-exe/compiled.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8257,6 +8257,7 @@ function stringDefineFromArgv(argv, name) {
 async function main() {
   addCheckpoint("Argument Parsing");
 
+  stringifyNonPrimitiveDefineValues(process.argv, "global.MDCUI_MAIN");
   const argvMdcuiMain = stringDefineFromArgv(
     process.argv,
     "global.MDCUI_MAIN",
