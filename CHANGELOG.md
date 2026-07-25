@@ -2,6 +2,55 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.11.0] - 2026-07-26
+
+This release adds custom Markdown-app embedding for Bun single-file
+executables, with explicit per-buffer selection between embedded and
+filesystem modules in both TUI and WUI.
+
+### Added
+
+- Add the build-time `global.MDCUI_MAIN` string define for embedding a custom
+  Markdown app together with its generated front, RPC, back, HTML, and server
+  modules. Build preparation resolves and validates the source, copies it into
+  the bundled demos, derives `global.MDCUI_MAIN_BASE`, and selects the app on a
+  no-argument launch.
+- Add a bundling mode to `extractJs()` and `createWui()`. It emits a
+  browser-only `.tmpfs.js` front module and a `.tmpfi.js` installer that exposes
+  the front exports on `window`, then makes the bundled HTML load that entry.
+- Add embedded WUI server startup and report whether WUI is starting an
+  embedded or external server before launch.
+- Add `micro.CurPane().Buf.MdcuiModuleSource`, returning `embedded` or
+  `external`, and show the value in the bundled `showpath` example.
+- Allow Unicode letters and numbers, including Chinese, in custom demo names
+  while continuing to reject whitespace and path separators.
+- Show `global.MDCUI_MAIN` and the generated `global.MDCUI_MAIN_BASE` in
+  `--version` distribution settings.
+
+### Changed
+
+- Track embedded-module selection per buffer. The configured demo uses
+  embedded TUI front/RPC and WUI server modules when its local byte length
+  matches the bundled Markdown. Missing or overwritten copies are written
+  first and then use embedded modules; other files and changed-size demos use
+  filesystem companions.
+- Document presence-based `MDCUI_*` defines with `=1`, supported build-flag
+  combinations, and commands for switching a TUI-default build to WUI or a
+  WUI-default build to TUI.
+
+### Fixed
+
+- Bundle and load the configured app's front, RPC, back, server, and dependency
+  graph so custom apps with companion imports can run from a single
+  executable.
+- Keep unrelated Markdown buffers on external modules instead of reusing the
+  embedded main app's front and RPC modules.
+- Use the bundled file's byte length after `MDCUI_OVERWRITE_DEMO` replaces a
+  stale local demo, ensuring that the overwritten app selects embedded
+  modules.
+- Install WUI front exports on `window` without relying on the generated front
+  module's process-dependent or self-import path.
+
 ## [0.10.1] - 2026-07-25
 
 ### Fixed
