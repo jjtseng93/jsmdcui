@@ -186,6 +186,7 @@ const MDCUI_DEFAULT_DEMO_ENABLED = typeof MDCUI_DEFAULT_DEMO !== "undefined";
 const MDCUI_DEFAULT_DEMO_WUI_ENABLED = typeof MDCUI_DEFAULT_DEMO_WUI !== "undefined";
 const MDCUI_OVERWRITE_DEMO_ENABLED = typeof MDCUI_OVERWRITE_DEMO !== "undefined";
 let defaultEdit = false;
+let noRuntimeArgs = false;
 const decoder = new TextDecoder();
 let _activeTtyStream = null; // set in App.start() for use by the global error handler
 
@@ -1173,9 +1174,15 @@ function parseArgs(argv) {
     }
     else if (arg.startsWith("--demo-")) {
       const name = arg.slice("--demo-".length);
-      flags.demo = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)
+      flags.demo = isValidDemoName(name)
         ? { option: arg, filename: `${name}.md`, asset: `demos/${name}.md` }
-        : { option: arg, error: "demo filename must contain only letters, numbers, dots, underscores, and hyphens" };
+        : {
+            option: arg,
+            error:
+              "demo filename must start with a Unicode letter or number "
+              + "and contain only Unicode letters, numbers, dots, underscores, "
+              + "or hyphens; whitespace is not allowed",
+          };
     }
     else if (arg === "--allow-url") flags.allowUrl = true;
     else if (arg === "--kitty") flags.kittyMode = "extended";
@@ -1204,6 +1211,17 @@ function parseArgs(argv) {
   if (flags.cdpMaze && !flags.cdpPort) flags.cdpPort = 9222;
 
   return { flags, files };
+}
+
+function isValidDemoName(name) {
+  return /^[\p{L}\p{N}][\p{L}\p{N}\p{M}._-]*$/u.test(String(name));
+}
+
+function demoNameFromMarkdownBasename(filename) {
+  const value = String(filename);
+  if (!value.endsWith(".md")) return "";
+  const name = value.slice(0, -".md".length);
+  return isValidDemoName(name) ? name : "";
 }
 
 function usage() {
@@ -1337,7 +1355,7 @@ Experimental single-exe:
       Build a Bun single-file executable for target & exit
   
   [BUN_ARGS...]
-      --define MDCUI_XXX=true
+      --define MDCUI_XXX=1
         More info in --readme
       https://bun.com/docs/bundler/executables
 `
@@ -1400,6 +1418,7 @@ class BufferModel {
     this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(sourceText ?? tuiSourceText ?? text) : new Map();
     this._mdcuiImages = isMdcuiEncoding(this.encoding) ? (mdcuiImages ?? []) : [];
     this._mdcuiRenderWidth = Math.trunc(Number(mdcuiRenderWidth) || 0);
+    this._useBundledMdcuiModules = false;
     this.cursor = { x: 0, y: 0 };
     this.scroll = { x: 0, y: 0, row: 0 };
     this._modified = false;
@@ -4540,7 +4559,10 @@ class App {
     ) return false;
 
     const frontPath = `${buf.path}.front.js`;
-    if (!existsSync(frontPath)) return false;
+    const useBundledMdcuiModules = Boolean(
+      global.MDCUI_MAIN && buf._useBundledMdcuiModules,
+    );
+    if (!useBundledMdcuiModules && !existsSync(frontPath)) return false;
     try {
       const selection = globalThis.$?.(`${declaration.tag}#${id}`);
       const target = {
@@ -4555,8 +4577,12 @@ class App {
       });
       const event = tuiKeyEventForFront(inputEvent, target, eventName);
       const [{ evalFront }, frontMod] = await Promise.all([
-        import("./cui/rpc.mjs"),
-        import(localModuleUrl(frontPath)),
+        useBundledMdcuiModules
+          ? import(global.MDCUI_MAIN + "-rpc.js")
+          : import("./cui/rpc.mjs"),
+        useBundledMdcuiModules
+          ? import(global.MDCUI_MAIN + ".front.js")
+          : import(localModuleUrl(frontPath)),
       ]);
       const result = await evalFront(frontMod, code, { event });
       if (result && typeof result === "object" && result.ok === false) {
@@ -4591,9 +4617,16 @@ class App {
     { // defaultCallback
       if (payload.link && /^javascript:/i.test(payload.link) && buf?.path && !isHttpUrl(buf.path)) {
         try {
+          const useBundledMdcuiModules = Boolean(
+            global.MDCUI_MAIN && buf._useBundledMdcuiModules,
+          );
           const [{ evalFront }, frontMod] = await Promise.all([
-            import("./cui/rpc.mjs"),
-            import(localModuleUrl(`${buf.path}.front.js`)),
+            useBundledMdcuiModules
+              ? import(global.MDCUI_MAIN + "-rpc.js")
+              : import("./cui/rpc.mjs"),
+            useBundledMdcuiModules
+              ? import(global.MDCUI_MAIN + ".front.js")
+              : import(localModuleUrl(`${buf.path}.front.js`)),
           ]);
           const result = await evalFront(frontMod, payload.link);
           if (result && typeof result === "object" && result.ok === false) {
@@ -5481,10 +5514,18 @@ class App {
     const frontPath = buffer.path && !isHttpUrl(buffer.path)
       ? `${buffer.path}.front.js`
       : "";
-    if (!frontPath || !existsSync(frontPath)) return;
+    const useBundledMdcuiModules = Boolean(
+      global.MDCUI_MAIN && buffer._useBundledMdcuiModules,
+    );
+    if (
+      !useBundledMdcuiModules
+      && (!frontPath || !existsSync(frontPath))
+    ) return;
 
     try {
-      const frontMod = await import(localModuleUrl(frontPath));
+      const frontMod = useBundledMdcuiModules
+        ? await import(global.MDCUI_MAIN + ".front.js")
+        : await import(localModuleUrl(frontPath));
       if (typeof frontMod.onMdcuiExit !== "function") return;
       await frontMod.onMdcuiExit({
         reason,
@@ -8137,11 +8178,11 @@ function printDemoList() {
 }
 
 async function prepareDemo(flags, rawFiles) {
-  if (!flags.demo) return true;
+  if (!flags.demo) return { ok: true };
   if (flags.demo.error) {
     console.error(`Invalid demo option ${flags.demo.option}: ${flags.demo.error}`);
     process.exitCode = 2;
-    return false;
+    return { ok: false };
   }
   let demoSource;
   try {
@@ -8149,29 +8190,168 @@ async function prepareDemo(flags, rawFiles) {
   } catch {
     console.error(`Unknown demo ${flags.demo.option}: ${flags.demo.asset} was not found`);
     process.exitCode = 2;
-    return false;
+    return { ok: false };
   }
+
   const demoPath = resolve(flags.demo.filename);
-  if (flags.overwriteDemo || !(await Bun.file(demoPath).exists())) {
+  const demoFile = Bun.file(demoPath);
+  const demoExists = await demoFile.exists();
+  const writeBundledContent = flags.overwriteDemo || !demoExists;
+  const bundledByteLength = Buffer.byteLength(demoSource);
+  const demoByteLength = writeBundledContent
+    ? bundledByteLength
+    : demoFile.size;
+  const configuredMainBase = String(
+    global.MDCUI_MAIN_BASE
+      || (global.MDCUI_MAIN ? basename(String(global.MDCUI_MAIN)) : ""),
+  );
+  const isConfiguredMainDemo = Boolean(
+    global.MDCUI_MAIN
+    && configuredMainBase
+    && basename(demoPath) === configuredMainBase,
+  );
+
+  if (writeBundledContent) {
     await Bun.write(demoPath, demoSource);
+  } else if (isConfiguredMainDemo && demoByteLength !== bundledByteLength) {
+    console.error(
+      `[mdcui] ${demoPath} differs from the bundled demo `
+      + `(${demoByteLength} bytes vs ${bundledByteLength} bytes). `
+      + "The edited demo may not work correctly if it imports companion modules "
+      + "instead of keeping all application code in the Markdown file.",
+    );
   }
+
   rawFiles.splice(0, rawFiles.length, demoPath);
-  return true;
+  return {
+    ok: true,
+    path: demoPath,
+    useBundledModules: isConfiguredMainDemo
+      && demoByteLength === bundledByteLength,
+  };
+}
+
+function stringDefineFromArgv(argv, name) {
+  const prefix = `${name}=`;
+  for (let i = 0; i < argv.length; i++) {
+    let definition = "";
+    if (argv[i] === "--define") definition = argv[i + 1] ?? "";
+    else if (argv[i].startsWith("--define="))
+      definition = argv[i].slice("--define=".length);
+    if (!definition.startsWith(prefix)) continue;
+    try {
+      const value = JSON.parse(definition.slice(prefix.length));
+      return typeof value === "string" ? value : "";
+    } catch {
+      return "";
+    }
+  }
+  return "";
 }
 
 async function main() {
   addCheckpoint("Argument Parsing");
-  
+
+  const argvMdcuiMain = stringDefineFromArgv(
+    process.argv,
+    "global.MDCUI_MAIN",
+  );
+  let sourceMdcuiMain = "";
+  if (IS_COMPILED) {
+    sourceMdcuiMain = "";
+  } else {
+    sourceMdcuiMain = String(argvMdcuiMain || global.MDCUI_MAIN || "");
+  }
+
+  if (sourceMdcuiMain) {
+    const mdcuiMain = resolve(sourceMdcuiMain);
+    const mdcuiMainBase = basename(mdcuiMain);
+    const mdcuiMainDemoName = demoNameFromMarkdownBasename(mdcuiMainBase);
+    if (!mdcuiMainDemoName) {
+      throw new Error(
+        "MDCUI_MAIN basename must end with lowercase .md, start with a "
+        + "Unicode letter or number, and contain no whitespace; only Unicode "
+        + "letters, numbers, dots, underscores, and hyphens are allowed",
+      );
+    }
+    const runmd = await import("../runmd.mjs");
+    const mdcuiMainFile = Bun.file(mdcuiMain);
+    if (!(await mdcuiMainFile.exists())) {
+      throw new Error(`MDCUI_MAIN file not found: ${mdcuiMain}`);
+    }
+    let markdown = await mdcuiMainFile.text();
+    const demoPath = join(REPO_ROOT, "demos", mdcuiMainBase);
+    if (resolve(mdcuiMain) !== resolve(demoPath)) {
+      await Bun.write(demoPath, markdown);
+    }
+    markdown = await runmd.extractJs(markdown, mdcuiMain, {
+      bundling: true,
+    });
+    await runmd.createWui(markdown, mdcuiMain, {
+      bundling: true,
+    });
+
+    if (
+      process.argv.includes("--build-for")
+      || process.argv.includes("--build-exe")
+    ) {
+      if (argvMdcuiMain) {
+        const normalizedDefine =
+          `global.MDCUI_MAIN=${JSON.stringify(mdcuiMain)}`;
+        for (let i = 0; i < process.argv.length; i++) {
+          if (
+            process.argv[i] === "--define"
+            && process.argv[i + 1]?.startsWith("global.MDCUI_MAIN=")
+          ) {
+            process.argv[i + 1] = normalizedDefine;
+          } else if (
+            process.argv[i].startsWith("--define=global.MDCUI_MAIN=")
+          ) {
+            process.argv[i] = `--define=${normalizedDefine}`;
+          }
+        }
+      } else {
+        process.argv.push(
+          "--define",
+          `global.MDCUI_MAIN=${JSON.stringify(mdcuiMain)}`,
+        );
+      }
+      process.argv.push(
+        "--define",
+        `global.MDCUI_MAIN_BASE=${JSON.stringify(mdcuiMainBase)}`,
+      );
+    }
+  }
+
   await buildEarlyExit(null,DEFAULT_BUILD_OUTFILE)
   defaultEdit = await Bun.file(join(REPO_ROOT, "src", "MDCUI_DEFAULT_EDIT")).exists();
   
   const runtimeArgs = process.argv.slice(2);
-  const noRuntimeArgs = runtimeArgs.length === 0;
+  noRuntimeArgs = runtimeArgs.length === 0;
   if (MDCUI_DEFAULT_EDIT_ENABLED) runtimeArgs.unshift("--edit");
   if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_ENABLED) runtimeArgs.push("--demo");
   if (noRuntimeArgs && MDCUI_DEFAULT_DEMO_WUI_ENABLED) runtimeArgs.push("--wui");
+  if (
+    noRuntimeArgs
+    && (global.MDCUI_MAIN || global.MDCUI_MAIN_BASE)
+  ) {
+    const mdcuiMainBase = String(
+      global.MDCUI_MAIN_BASE || basename(String(global.MDCUI_MAIN)),
+    );
+    const demoName = demoNameFromMarkdownBasename(mdcuiMainBase);
+    if (!demoName) {
+      console.error(
+        "Invalid MDCUI_MAIN_BASE: expected a lowercase .md basename with "
+        + "Unicode letters or numbers and no whitespace",
+      );
+      process.exitCode = 2;
+      return;
+    }
+    runtimeArgs.push(`--demo-${demoName}`);
+  }
   if (MDCUI_OVERWRITE_DEMO_ENABLED) runtimeArgs.push("--overwrite-demo");
   const { flags, files: rawFiles } = parseArgs(runtimeArgs);
+  let demoPreparation = null;
   kittyImageMode = flags.kittyMode;
   allowRemoteKittyImages = flags.allowUrl;
 
@@ -8195,6 +8375,14 @@ async function main() {
     console.log("  MDCUI_DEFAULT_DEMO:", MDCUI_DEFAULT_DEMO_ENABLED ? "enabled" : "disabled");
     console.log("  MDCUI_DEFAULT_DEMO_WUI:", MDCUI_DEFAULT_DEMO_WUI_ENABLED ? "enabled" : "disabled");
     console.log("  MDCUI_OVERWRITE_DEMO:", MDCUI_OVERWRITE_DEMO_ENABLED ? "enabled" : "disabled");
+    console.log(
+      "  global.MDCUI_MAIN:",
+      String(global.MDCUI_MAIN || "") || "not set",
+    );
+    console.log(
+      "  global.MDCUI_MAIN_BASE:",
+      String(global.MDCUI_MAIN_BASE || "") || "not set",
+    );
     const clipboard = new ClipboardManager();
     let osc52Available = false;
     if (process.stdin.isTTY && process.stdout.isTTY) {
@@ -8210,12 +8398,14 @@ async function main() {
     return;
   }
   if (flags.wui) {
-    if (!(await prepareDemo(flags, rawFiles))) return;
+    demoPreparation = await prepareDemo(flags, rawFiles);
+    if (!demoPreparation.ok) return;
     const runmd = await import("../runmd.mjs");
     await runmd.main(30, {
       mdpath: rawFiles[0] ?? null,
       overwriteDemo: flags.overwriteDemo && rawFiles.length === 0,
       printUi: flags.printUi,
+      useBundledMdcuiServer: demoPreparation.useBundledModules,
     });
     return;
   }
@@ -8263,7 +8453,8 @@ async function main() {
     return;
   }
   if (flags.demo) {
-    if (!(await prepareDemo(flags, rawFiles))) return;
+    demoPreparation = await prepareDemo(flags, rawFiles);
+    if (!demoPreparation.ok) return;
   }
   if (flags.options) {
     for (const [key, value] of Object.entries(defaultAllSettings()).sort(([a], [b]) => a.localeCompare(b))) {
@@ -8411,6 +8602,16 @@ async function main() {
     const buffers = await loadBuffers(files.map((file) =>
       isHttpUrl(file) ? file : resolve(file)
     ), command);
+    if (demoPreparation?.useBundledModules) {
+      const bundledDemoBuffer = buffers.find((buffer) =>
+        buffer.path
+        && !isHttpUrl(buffer.path)
+        && resolve(buffer.path) === demoPreparation.path
+      );
+      if (bundledDemoBuffer) {
+        bundledDemoBuffer._useBundledMdcuiModules = true;
+      }
+    }
 
     let historyPromise = Promise.resolve();
     if (config.getGlobalOption("savehistory") !== false) {
