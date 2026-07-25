@@ -54,6 +54,7 @@ export async function main(tuiWidth=30, {
   mdpath: requestedMdpath = null,
   overwriteDemo = process.argv.includes("--overwrite-demo"),
   printUi = process.argv.includes("--print-ui"),
+  useBundledMdcuiServer = false,
 } = {})
 {
     const explicitMdpath = process.argv.find(i=>i.endsWith('.md'))
@@ -99,7 +100,20 @@ export async function main(tuiWidth=30, {
 
 
     const serverPath = mdpath + "-server.js"
-    const svmod = await import(pathToFileURL(path.resolve(serverPath)).href)
+    const useEmbeddedMdcuiServer = Boolean(
+      global.MDCUI_MAIN && useBundledMdcuiServer
+    )
+    cse(
+      `[mdcui] Starting ${useEmbeddedMdcuiServer ? "embedded" : "external"} `
+      + `WUI server: ${
+        useEmbeddedMdcuiServer
+          ? String(global.MDCUI_MAIN)
+          : path.resolve(serverPath)
+      }`
+    )
+    const svmod = useEmbeddedMdcuiServer
+      ? await import(global.MDCUI_MAIN + "-server.js")
+      : await import(pathToFileURL(path.resolve(serverPath)).href)
 
     cse("\n\n"+mda('# Server'))
     svmod.main();
@@ -109,7 +123,7 @@ export async function main(tuiWidth=30, {
 //  Exports
 
 
-export async function extractJs(md,mdpath)
+export async function extractJs(md,mdpath,{ bundling = false } = {})
 {
   const mdb = path.basename(mdpath)
 
@@ -128,16 +142,23 @@ export async function extractJs(md,mdpath)
     }
   )
   
+  const frontSource = sctags
   sctags = "#!/usr/bin/env bun" + `
   
     import { rpc as wuiRpcClient } from "./${mdb}-rpc.js";
-    let rpc = "${mdb}"
+    let rpc = null
     if(globalThis.process)
-      rpc = await import("./"+rpc+".back.js") ;
+    {
+      rpc = await import(
+        "./" +
+        (global.MDCUI_MAIN_BASE||"${mdb}") +
+        ".back.js"
+      ) ;
+    }
     else
       rpc = wuiRpcClient ;
     
-  ` + sctags + `
+  ` + frontSource + `
   
     if (typeof window !== "undefined") 
     {
@@ -152,6 +173,28 @@ export async function extractJs(md,mdpath)
   
   await Bun.write(sctagsp,sctags);
   logWroteFile("front", sctagsp)
+
+  if (bundling) {
+    const bundledFrontSource = "#!/usr/bin/env bun" + `
+
+      import { rpc as wuiRpcClient } from "./${mdb}-rpc.js";
+      const rpc = wuiRpcClient;
+
+    ` + frontSource
+    const bundledFrontPath = mdpath + ".tmpfs.js"
+    await Bun.write(bundledFrontPath, bundledFrontSource)
+    logWroteFile("bundling front", bundledFrontPath)
+
+    const bundledImportPath = mdpath + ".tmpfi.js"
+    await Bun.write(
+      bundledImportPath,
+      `import * as frontMod from "./${mdb}.tmpfs.js";
+
+Object.assign(window, frontMod);
+`,
+    )
+    logWroteFile("bundling import", bundledImportPath)
+  }
   
   sctagsp = mdpath + ".back.js"
   sctags = "#!/usr/bin/env bun\n\n"
@@ -354,7 +397,7 @@ export function wrapWuiHeadingSections(html)
   return output;
 }
 
-export async function createWui(md,mdpath) // HTML
+export async function createWui(md,mdpath,{ bundling = false } = {}) // HTML
 {
   const eventsById = fenceEventMap(md)
   
@@ -397,7 +440,8 @@ img {
   height: auto;
 }
 </style>`;
-  const moduleScript = `<scr`+`ipt type="module" src="./${mdb}.front.js"></scr`+`ipt>`;
+  const moduleEntry = bundling ? `${mdb}.tmpfi.js` : `${mdb}.front.js`;
+  const moduleScript = `<scr`+`ipt type="module" src="./${moduleEntry}"></scr`+`ipt>`;
   const isFullHtmlDocument = /^\s*<!doctype html>/i.test(md);
   if (!isFullHtmlDocument) {
     md = `<!doctype html>
