@@ -69,8 +69,10 @@ micro.on("init", () => {
 
     //micro.alert(micro.getLine())
     const path = bp?.Buf?.Path || "(no path)";
+    const moduleSource =
+      micro.CurPane()?.Buf?.MdcuiModuleSource || "external";
     const loc = bp?.CursorLocation?.() || "+1.0:1";
-    micro.alert(`${path}\n${loc}`)
+    micro.alert(`${path}\nMdcuiModuleSource: ${moduleSource}\n${loc}`)
     
   });
   

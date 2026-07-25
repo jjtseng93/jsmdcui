@@ -1622,6 +1622,11 @@ function _makeBufAPI(buffer) {
     get Type()     { return buffer.Type; },
     get Settings() { return buffer.Settings; },
     get Modified() { return buffer.modified; },
+    get MdcuiModuleSource() {
+      return global.MDCUI_MAIN && buffer._useBundledMdcuiModules
+        ? "embedded"
+        : "external";
+    },
 
     Line:      (n) => buffer.Line(n),
     LinesNum:  ()  => buffer.LinesNum(),

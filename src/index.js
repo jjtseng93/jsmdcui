@@ -7062,6 +7062,11 @@ function makeBufferAdapter(buffer) {
     get Name()     { return buffer.Name ?? buffer.name ?? ""; },
     get Modified() { return buffer.modified ?? false; },
     get Settings() { return buffer.Settings; },
+    get MdcuiModuleSource() {
+      return global.MDCUI_MAIN && buffer._useBundledMdcuiModules
+        ? "embedded"
+        : "external";
+    },
     Line: (...args) => buffer.Line(Number(lastArg(args))),
     Insert: (...args) => insertAtLoc(buffer, decodeLoc(args.at(-2)), String(args.at(-1))),
     Replace: (...args) => replaceAtLocs(buffer, decodeLoc(args.at(-3)), decodeLoc(args.at(-2)), String(args.at(-1))),
