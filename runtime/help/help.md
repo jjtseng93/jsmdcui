@@ -775,6 +775,25 @@ use `=1` to make this explicit.
 - `global.MDCUI_MAIN_BASE`: internal define generated automatically from
   `global.MDCUI_MAIN`; do not pass it manually.
 
+For the current platform, build an executable embedding `myapp.md` with:
+
+```shell
+npx jsmdcui --build-md-exe myapp.md
+```
+
+This is a convenience alias for
+`--build-exe --define global.MDCUI_MAIN=myapp.md`.
+
+For cross-compilation, specify the Bun target before the Markdown file:
+
+```shell
+npx jsmdcui --build-md-for bun-linux-x64-v1.3.14 myapp.md
+```
+
+This similarly expands to
+`--build-for bun-linux-x64 --define global.MDCUI_MAIN=myapp.md`. Both aliases
+are expanded before any generated application files are written.
+
 Place every build define after `--build-exe`, or after the target argument of
 `--build-for`. Choose at most one of `MDCUI_DEFAULT_EDIT`,
 `MDCUI_DEFAULT_DEMO`, and `MDCUI_DEFAULT_DEMO_WUI`.

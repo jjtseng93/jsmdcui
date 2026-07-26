@@ -2,6 +2,23 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.11.2] - 2026-07-26
+
+### Added
+
+- Add `--build-md-exe <file.md>` as a convenience alias for building a
+  current-platform executable with `global.MDCUI_MAIN` set to the specified
+  Markdown app.
+- Add `--build-md-for <platform> <file.md>` for the equivalent
+  cross-compilation workflow. Both aliases expand into the existing build
+  arguments before generated application files are written.
+
+### Fixed
+
+- Fix the final executable existence check for Windows builds by checking the
+  `.exe` output path for Windows targets, or for native Windows builds when no
+  target is specified.
+
 ## [0.11.1] - 2026-07-26
 
 ### Changed
