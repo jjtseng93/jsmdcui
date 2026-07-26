@@ -99,12 +99,13 @@ import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/ta
 import { fenceEventMap, inlineFenceEventCode } from "./cui/fence-events.mjs";
 import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
 import { fitKittyImageToWidth, prepareKittyImages } from "./cui/kitty-images.mjs";
+import { kittyModeFromEnvironment } from "./cui/kitty-mode.mjs";
 import { logKittyPlacement } from "./cui/kitty-debug.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
-import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
+import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
 import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
@@ -124,6 +125,7 @@ import { writeBackup, removeBackup, applyBackup } from "./buffer/backup.js";
 let kittyImageMode = "off";
 let allowRemoteKittyImages = false;
 const remoteMarkdownSources = new Map();
+let bundledImageMapPromise = null;
 import { isHex3Encoding, isMdcuiEncoding } from "./runtime/encodings.js";
 import { createInterface } from "node:readline/promises";
 
@@ -134,6 +136,13 @@ import { expandBuildMdAliases } from "./build-args.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+function getBundledImageMap() {
+  if (!IS_COMPILED || !global.MDCUI_MAIN) return null;
+  bundledImageMapPromise ??= import(global.MDCUI_MAIN + "-server.js")
+    .then((module) => buildHtmlBundleImageMap(module.homepage));
+  return bundledImageMapPromise;
+}
 
 
 if(!globalThis.Bun)
@@ -380,6 +389,7 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     : await prepareKittyImages(tui, resolvedImageBasePath, width, {
       allowUrl: allowRemoteKittyImages,
       kittyMode: kittyImageMode,
+      getBundledImageMap,
     });
   return {
     rendered: prepared.rendered,
@@ -1119,7 +1129,7 @@ function parseArgs(argv) {
     cdpMaze: false,
     cdpPort: 0,
     cdpAddress: "",
-    kittyMode: "off",
+    kittyMode: kittyModeFromEnvironment(process.env.JSMDCUI_KITTY_MODE),
     settings: new Map(),
   };
   const files = [];
@@ -1269,6 +1279,9 @@ Modes:
     Display Markdown images with Kitty graphics and the jsgotty MIME extension
   --kitty-compat
     Display Markdown images with Kitty graphics without the non-standard MIME U field
+
+  JSMDCUI_KITTY_MODE=off|compat|extended
+    Set the Kitty image mode without command-line flags; explicit Kitty flags override it
       
   --edit
     Open files as editable UTF-8 text

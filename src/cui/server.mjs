@@ -9,6 +9,7 @@ const mda = Bun.markdown.ansi
 import homepage from "./testapp.md.html"
 import * as backmod from "./testapp.md.back.js";
 
+export { homepage };
 
 /*
 // Wait until Bun fixes dynamic html import bundle

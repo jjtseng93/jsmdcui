@@ -19,6 +19,7 @@ test("createWui constrains images to their content width", async () => {
   const html = await createWui("![wide](wide.png)", markdownPath);
 
   expect(html).toContain("img {\n  max-width: 100%;\n  height: auto;\n}");
+  expect(html).toContain('src="wide.png" alt="wide" data-mdcui-src="wide.png"');
   expect(html.match(/max-width: 100%/g)).toHaveLength(1);
   expect(html.match(/image\.md\.front\.js/g)).toHaveLength(1);
 });
@@ -31,6 +32,7 @@ test("createWui injects the image rule into an existing document head", async ()
   const html = await createWui(source, markdownPath);
 
   expect(html.indexOf("max-width: 100%")).toBeLessThan(html.indexOf("</head>"));
+  expect(html).toContain('src="wide.png" data-mdcui-src="wide.png"');
   expect(html.match(/document\.md\.front\.js/g)).toHaveLength(1);
 });
 

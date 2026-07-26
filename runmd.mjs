@@ -470,12 +470,24 @@ ${moduleScript}
       md += `\n${moduleScript}\n`;
     }
   }
-  
+
+  md = annotateWuiImageSources(md)
   
   await Bun.write(mdpath+".html",md)
   logWroteFile("html", mdpath+".html")
 
   return md;
+}
+
+function annotateWuiImageSources(html)
+{
+  return String(html).replace(/<img\b[^>]*>/gi, tag => {
+    if (/\bdata-mdcui-src\s*=/i.test(tag)) return tag
+    const src = tag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)
+    if (!src) return tag
+    const attribute = ` data-mdcui-src=${src[1]}${src[2]}${src[1]}`
+    return tag.replace(/\s*\/?>$/, ending => `${attribute}${ending}`)
+  })
 }
 
 export function charFromPoint(tui,row,col)

@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
 
@@ -10,6 +12,84 @@ export function assetPath(...parts) {
     .flatMap((part) => String(part).split(/[\\/]+/))
     .filter(Boolean)
     .join("/");
+}
+
+export function decodeHtmlAttribute(value) {
+  return String(value ?? "").replace(
+    /&(?:amp|quot|apos|lt|gt|#39|#x27|#\d+|#x[\da-f]+);/gi,
+    (entity) => {
+      const named = {
+        "&amp;": "&",
+        "&quot;": "\"",
+        "&apos;": "'",
+        "&lt;": "<",
+        "&gt;": ">",
+        "&#39;": "'",
+        "&#x27;": "'",
+      }[entity.toLowerCase()];
+      if (named != null) return named;
+      const hex = /^&#x([\da-f]+);$/i.exec(entity);
+      const decimal = /^&#(\d+);$/.exec(entity);
+      const codePoint = Number.parseInt(hex?.[1] ?? decimal?.[1] ?? "", hex ? 16 : 10);
+      try {
+        return Number.isInteger(codePoint) ? String.fromCodePoint(codePoint) : entity;
+      } catch {
+        return entity;
+      }
+    },
+  );
+}
+
+export function canonicalHtmlBundleImageHref(input, { htmlAttribute = false } = {}) {
+  let value = String(input ?? "");
+  if (htmlAttribute) value = decodeHtmlAttribute(value);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function findHtmlBundleAsset(homepage, publicPath, {
+  contentTypePrefix = "",
+} = {}) {
+  if (!Array.isArray(homepage?.files)) return null;
+  const name = posix.basename(String(publicPath ?? "").replace(/[?#].*$/, ""));
+  for (const file of homepage.files) {
+    if (file?.loader !== "file") continue;
+    const contentType = String(file.headers?.["content-type"] ?? "");
+    if (contentTypePrefix && !contentType.startsWith(contentTypePrefix)) continue;
+    if (posix.basename(String(file.path ?? "")) === name) return file;
+  }
+  return null;
+}
+
+export function findHtmlBundleImageAsset(homepage, publicPath) {
+  return findHtmlBundleAsset(homepage, publicPath, {
+    contentTypePrefix: "image/",
+  });
+}
+
+export function htmlBundleImageAssetPath(homepage, publicPath) {
+  return findHtmlBundleImageAsset(homepage, publicPath)?.path ?? null;
+}
+
+export async function buildHtmlBundleImageMap(homepage) {
+  const images = new Map();
+  if (!homepage?.index || !Array.isArray(homepage.files)) return images;
+  const html = await Bun.file(homepage.index).text();
+  for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
+    const rawHref = htmlTagAttribute(tag, "data-mdcui-src");
+    const publicPath = htmlTagAttribute(tag, "src");
+    if (rawHref == null || publicPath == null) continue;
+    const bundledPath = htmlBundleImageAssetPath(homepage, decodeHtmlAttribute(publicPath));
+    if (!bundledPath) continue;
+    images.set(
+      canonicalHtmlBundleImageHref(rawHref, { htmlAttribute: true }),
+      bundledPath,
+    );
+  }
+  return images;
 }
 
 export function listInternalAssetPaths(prefix = "") {
@@ -87,4 +167,10 @@ function getAssetStore() {
 function iterateAssetKeys(store) {
   if (store instanceof Map) return [...store.keys()].map(String);
   return Object.keys(store);
+}
+
+function htmlTagAttribute(tag, name) {
+  const escapedName = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(tag).match(new RegExp(`\\b${escapedName}\\s*=\\s*([\"'])(.*?)\\1`, "i"));
+  return match?.[2] ?? null;
 }

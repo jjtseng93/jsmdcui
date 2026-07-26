@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { logKittyPlacement } from "./kitty-debug.mjs";
 import { fetchHttpBytes as defaultFetchHttpBytes } from "../platform/commands.js";
+import { canonicalHtmlBundleImageHref } from "../../single-exe/assetsHelper.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -63,8 +64,8 @@ function imageSize(buffer) {
   }
   const svg = buffer.subarray(0, Math.min(buffer.length, 8192)).toString("utf8");
   if (svg.includes("<svg")) {
-    const width = svg.match(/\bwidth=["']([0-9.]+)(?:px)?["']/i);
-    const height = svg.match(/\bheight=["']([0-9.]+)(?:px)?["']/i);
+    const width = svg.match(/\bwidth=["']([0-9.]+)(?:px)?["']/i); //'
+    const height = svg.match(/\bheight=["']([0-9.]+)(?:px)?["']/i); //'
     if (width && height) {
       return { mime: "image/svg+xml", width: Math.round(Number(width[1])), height: Math.round(Number(height[1])) };
     }
@@ -136,11 +137,17 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
   const images = [];
   const maxCols = Math.max(1, Math.trunc(Number(terminalCols) || 80));
   const oscImage = /\x1b\]8;;([^\x1b]*)\x1b\\(?=[^\n]*📷)/;
+  const bundledImages = await options.getBundledImageMap?.() ?? null;
 
   for (let sourceLine = 0; sourceLine < inputLines.length; sourceLine++) {
     const line = inputLines[sourceLine];
     const match = line.match(oscImage);
-    const source = match ? imageSource(match[1], markdownPath, options.allowUrl === true) : null;
+    const bundledPath = match
+      ? bundledImages?.get(canonicalHtmlBundleImageHref(match[1]))
+      : null;
+    const source = bundledPath
+      ? { kind: "bundled", value: bundledPath }
+      : match ? imageSource(match[1], markdownPath, options.allowUrl === true) : null;
     if (!source) {
       outputLines.push(line);
       continue;

@@ -26,6 +26,28 @@ test("Bun-rendered Markdown image links reserve rows and retain Kitty data", asy
   expect(Bun.stripANSI(result.rendered)).toContain("📷 pixel");
 });
 
+test("Kitty images prefer lazily supplied compiled HTML bundle assets", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-bundled-"));
+  const bundledPath = join(dir, "pixel-bundled.png");
+  await writeFile(bundledPath, ONE_PIXEL_PNG);
+  const ansi = Bun.markdown.ansi("![pixel](./images/pixel.png?version=2#preview)", {
+    hyperlinks: true,
+    columns: 40,
+  });
+  let imageMapRequests = 0;
+  const result = await prepareKittyImages(ansi, join(dir, "missing-app.md"), 40, {
+    getBundledImageMap: async () => {
+      imageMapRequests++;
+      return new Map([["./images/pixel.png?version=2#preview", bundledPath]]);
+    },
+  });
+
+  expect(imageMapRequests).toBe(1);
+  expect(result.images).toHaveLength(1);
+  expect(result.images[0].path).toBe(bundledPath);
+  expect(result.images[0].data.equals(ONE_PIXEL_PNG)).toBe(true);
+});
+
 test("Kitty compat converts compressed images to standard PNG payloads", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-compat-"));
   const markdownPath = join(dir, "app.md");
