@@ -129,6 +129,7 @@ import { createInterface } from "node:readline/promises";
 
 import pkg from "../package.json" with { type: "json" };
 import { REPO_ROOT,IS_COMPILED, buildExecutable,buildEarlyExit,stringifyNonPrimitiveDefineValues } from "../single-exe/compiled.js";
+import { expandBuildMdAliases } from "./build-args.js";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1349,14 +1350,20 @@ Remote Markdown:
       Download HTTP(S) Markdown and, with Kitty mode, its HTTP(S) images; allow its code to run
 
 Experimental single-exe:
+  --build-md-exe <file.md> [BUN_ARGS...]
+      Build with <file.md> embedded as global.MDCUI_MAIN & exit
+  --build-md-for <platform> <file.md> [BUN_ARGS...]
+      Build for <platform> with <file.md> embedded & exit
+      
   --build-exe [BUN_ARGS...]
       Build a Bun single-file executable & exit
   --build-for <target> [BUN_ARGS...]
       Build a Bun single-file executable for target & exit
   
   [BUN_ARGS...]
-      --define MDCUI_XXX=1
-        More info in --readme
+      --define MDCUI_OVERWRITE_DEMO=1 
+      --define global.MDCUI_MAIN=myapp.md
+      More info in --readme
       https://bun.com/docs/bundler/executables
 `
   ].join("\n");
@@ -5024,7 +5031,7 @@ class App {
         const name = buf?.name ?? "No name";
         const filename = /^[^\s"'\\]+$/.test(name) ? name : JSON.stringify(name);
         this.openCommandMode(`save ${filename}`);
-        break;
+        break; //"
       }
       case "row":
         if (isTerm) {
@@ -8257,6 +8264,7 @@ function stringDefineFromArgv(argv, name) {
 async function main() {
   addCheckpoint("Argument Parsing");
 
+  expandBuildMdAliases(process.argv);
   stringifyNonPrimitiveDefineValues(process.argv, "global.MDCUI_MAIN");
   const argvMdcuiMain = stringDefineFromArgv(
     process.argv,
