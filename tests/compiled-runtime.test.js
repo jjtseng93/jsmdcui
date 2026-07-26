@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { expandBuildMdAliases } from "../src/build-args.js";
 import {
   isCompiledBinary as isSingleExeCompiled,
   stringifyNonPrimitiveDefineValues,
@@ -8,6 +9,69 @@ test("single-exe recognizes Bun compiled virtual paths", () => {
   expect(isSingleExeCompiled(["bun", "/$bunfs/root/app.js"])).toBe(true);
   expect(isSingleExeCompiled(["bun", "B:/~BUN/root/app.js"])).toBe(true);
   expect(isSingleExeCompiled(["bun", "/project/src/index.js"])).toBe(false);
+});
+
+test("--build-md-exe expands before the existing build flow", () => {
+  const argv = [
+    "bun",
+    "src/index.js",
+    "--build-md-exe",
+    "../中文工具.md",
+    "--sourcemap",
+  ];
+  expect(expandBuildMdAliases(argv)).toBe(true);
+  expect(argv).toEqual([
+    "bun",
+    "src/index.js",
+    "--build-exe",
+    "--define",
+    "global.MDCUI_MAIN=../中文工具.md",
+    "--sourcemap",
+  ]);
+  expect(expandBuildMdAliases(argv)).toBe(false);
+});
+
+test("--build-md-exe requires a Markdown path", () => {
+  expect(() => expandBuildMdAliases(["bun", "index.js", "--build-md-exe"]))
+    .toThrow("Missing Markdown path for --build-md-exe");
+  expect(() => expandBuildMdAliases([
+    "bun",
+    "index.js",
+    "--build-md-exe",
+    "--sourcemap",
+  ])).toThrow("Missing Markdown path for --build-md-exe");
+});
+
+test("--build-md-for expands before the existing cross-build flow", () => {
+  const argv = [
+    "bun",
+    "src/index.js",
+    "--build-md-for",
+    "bun-linux-x64",
+    "../中文工具.md",
+    "--sourcemap",
+  ];
+  expect(expandBuildMdAliases(argv)).toBe(true);
+  expect(argv).toEqual([
+    "bun",
+    "src/index.js",
+    "--build-for",
+    "bun-linux-x64",
+    "--define",
+    "global.MDCUI_MAIN=../中文工具.md",
+    "--sourcemap",
+  ]);
+});
+
+test("--build-md-for requires a platform and Markdown path", () => {
+  expect(() => expandBuildMdAliases(["bun", "index.js", "--build-md-for"]))
+    .toThrow("Missing platform for --build-md-for");
+  expect(() => expandBuildMdAliases([
+    "bun",
+    "index.js",
+    "--build-md-for",
+    "bun-linux-x64",
+  ])).toThrow("Missing Markdown path for --build-md-for");
 });
 
 test("non-primitive MDCUI_MAIN define values become strings", () => {

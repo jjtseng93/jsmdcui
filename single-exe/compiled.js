@@ -92,7 +92,7 @@ export function stringifyNonPrimitiveDefineValues(argv, name) {
 
 export async function buildExecutable(target = "",build_outfile="single.exe", bunArgs = []) {
  
-  const outfile = resolve(process.cwd(), build_outfile);
+  let outfile = resolve(process.cwd(), build_outfile);
   const normalizedTarget = String(target || "").trim();
   const extraBunArgs = Array.from(bunArgs ?? [], String);
   if(!globalThis.Bun || IS_COMPILED)
@@ -164,6 +164,12 @@ export async function buildExecutable(target = "",build_outfile="single.exe", bu
     
   }  //  for steps of build
 
+  const isWindows = normalizedTarget
+    ? normalizedTarget.toLowerCase().includes("windows")
+    : process.platform === "win32";
+  if (isWindows && !outfile.toLowerCase().endsWith(".exe")) {
+    outfile += ".exe";
+  }
   if(await Bun.file(outfile).exists())
   {
     console.log(`Built executable: ${outfile}`);
