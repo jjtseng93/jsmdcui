@@ -577,6 +577,36 @@ supported HTTP(S) images with Kitty graphics, combine the options:
 bun src/index.js --kitty --allow-url https://example.com/app.md
 ```
 
+Images referenced by an app built with `--build-md-exe` are also available to
+the compiled TUI. Bun embeds them through the generated WUI HTML bundle;
+jsmdcui preserves the original Markdown reference, maps it to Bun's
+content-hashed compiled asset (`/$bunfs/root/...` on POSIX systems or
+`B:/~BUN/...` on Windows), and reads the image lazily when Kitty rendering
+needs it. The executable does not need a second copy in the tar asset archive;
+the runtime uses the path reported by Bun rather than assuming either platform
+prefix.
+
+To make a no-argument compiled app enable standard Kitty-compatible rendering
+immediately, inline the environment-mode value at build time:
+
+```sh
+npx jsmdcui --build-md-exe myapp.md \
+  --define process.env.JSMDCUI_KITTY_MODE=compat
+```
+
+For the jsgotty MIME extension, use `extended` instead:
+
+```sh
+npx jsmdcui --build-md-exe myapp.md \
+  --define process.env.JSMDCUI_KITTY_MODE=extended
+```
+
+The jsmdcui build wrapper quotes these bare string values before forwarding
+them to Bun. At the call site, `process` must be the Node/Bun global. Do not
+write `import process from "node:process"`: Bun renames that imported binding
+during bundling, so a define targeting `process.env.JSMDCUI_KITTY_MODE` cannot
+match and inline it.
+
 ### CDP control for TUI automation
 
 The terminal UI can expose a Chrome DevTools Protocol (CDP) server, so another
@@ -784,6 +814,10 @@ npx jsmdcui --build-md-exe myapp.md
 
 This is a convenience alias for
 `--build-exe --define global.MDCUI_MAIN=myapp.md`.
+The generated HTML images are embedded by Bun and can be displayed by the
+compiled TUI. Add
+`--define process.env.JSMDCUI_KITTY_MODE=compat` after the Markdown path when
+the executable should enable Kitty-compatible images on a no-argument launch.
 
 For cross-compilation, specify the Bun target before the Markdown file:
 

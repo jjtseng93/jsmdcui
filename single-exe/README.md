@@ -44,8 +44,15 @@ need quotes. `stringifyNonPrimitiveDefineValues()` converts a bare value with
 `JSON.stringify()` before it reaches Bun. jsmdcui uses it for
 `global.MDCUI_MAIN`.
 
-The switch defines below are presence-based: `=0` and `=false` still enable
-them. Omit a switch define to disable it; examples consistently use `=1`.
+`global.MDCUI_MAIN` is a jsmdcui application convention, not a name reserved by
+the single-executable helpers. An adopting project can use
+`global.MY_EMBEDDED_APP`, or any other build expression, as long as it updates
+its own call sites and passes the same name to
+`stringifyNonPrimitiveDefineValues()`.
+
+The jsmdcui switch defines below are presence-based: `=0` and `=false` still
+enable them. Omit a switch define to disable it; examples consistently use
+`=1`.
 
 - `MDCUI_DEFAULT_EDIT=1`: editable-text default.
 - `MDCUI_DEFAULT_DEMO=1`: no-argument `testapp.md` TUI.
@@ -208,6 +215,111 @@ every file that must work in both modes. Use `readInternalAssetBytes()` when
 a resource should be returned as bytes instead of decoded text.
 Use `listInternalAssetPaths()` to list embedded asset paths and
 `listInternalAssetDirs()` to list embedded directories.
+
+#### Reuse images from a compiled HTML bundle
+
+Bun exposes an imported HTML entry as a `homepage` object in a compiled
+executable. Its `index` points to the compiled HTML and its `files` array lists
+the content-hashed assets under Bun's compiled virtual filesystem: paths
+normally begin with `/$bunfs/root/` on POSIX systems and `B:/~BUN/` on
+Windows. The helpers can turn image references preserved in that HTML into a
+lazy path map without copying the image bytes into `internalAssets`. Always use
+the path returned by `homepage.files`; do not hard-code either platform prefix.
+
+Before compiling, preserve each original image reference in a custom
+attribute. Its name belongs to the adopting project; it is not fixed by the
+helper. This example chooses `data-original-image`. Bun rewrites `src` but
+leaves the custom attribute intact:
+
+```html
+<!-- Input -->
+<img src="./images/photo.jpg" data-original-image="./images/photo.jpg">
+
+<!-- Compiled HTML -->
+<img src="/photo-abcd1234.jpg" data-original-image="./images/photo.jpg">
+```
+
+Export the imported HTML bundle from a module that both the web server and
+terminal runtime can load:
+
+```js
+import homepage from "./index.html";
+
+export { homepage };
+```
+
+Build and cache the map only in a compiled executable. Guard the import first:
+a source-tree launch does not necessarily have the generated server or HTML
+module.
+
+```js
+import {
+  buildHtmlBundleImageMap,
+  canonicalHtmlBundleImageHref,
+} from "../single-exe/assetsHelper.js";
+import { IS_COMPILED } from "../single-exe/compiled.js";
+
+let imageMapPromise = null;
+const imageSourceAttribute = "data-original-image";
+
+function getBundledImageMap() {
+  if (!IS_COMPILED || !global.MY_EMBEDDED_APP) return null;
+
+  imageMapPromise ??= import(global.MY_EMBEDDED_APP + "-server.js")
+    .then(module => buildHtmlBundleImageMap(
+      module.homepage,
+      imageSourceAttribute,
+    ));
+
+  return imageMapPromise;
+}
+
+const images = await getBundledImageMap();
+const key = canonicalHtmlBundleImageHref(originalImageHref);
+const bundledPath = images?.get(key);
+const bytes = bundledPath ? await Bun.file(bundledPath).bytes() : null;
+```
+
+`global.MY_EMBEDDED_APP` is only an example build-time module selector. Name it
+to match the adopting application, replace it with a direct static import, or
+use another compiled-only condition. The helper does not inspect or require
+`global.MDCUI_MAIN`; that is jsmdcui's own convention. When using a Bun
+`--define`, use the same expression at the call site, for example
+`--define global.MY_EMBEDDED_APP=...`.
+
+`buildHtmlBundleImageMap(homepage, sourceAttribute)` reads the compiled HTML
+once and returns a `Map<string, string>` from canonical original image
+references to Bun compiled virtual paths on either platform. The second
+argument is the custom attribute name. It defaults to `"data-mdcui-src"` only
+for jsmdcui's convenience:
+
+```js
+const images = await buildHtmlBundleImageMap(homepage);
+```
+
+Adopting projects can choose any valid HTML attribute name and pass it
+explicitly:
+
+```html
+<img src="./photo.jpg" data-original-image="./photo.jpg">
+```
+
+```js
+const images = await buildHtmlBundleImageMap(
+  homepage,
+  "data-original-image",
+);
+```
+
+The helper decodes HTML attribute entities and percent encoding so the HTML
+reference can match the equivalent original caller reference. Image bytes
+remain lazy and are read only when the caller uses the returned path.
+
+For lower-level lookup, `findHtmlBundleAsset(homepage, publicPath, options)`
+matches a rewritten public path such as `/photo-abcd1234.jpg` to its
+`homepage.files` entry. `findHtmlBundleImageAsset()` restricts the lookup to
+`image/*`, and `htmlBundleImageAssetPath()` returns only the corresponding
+Bun compiled virtual path.
 
 ### 5. Add the optional build commands to the regular CLI
 

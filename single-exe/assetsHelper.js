@@ -74,12 +74,15 @@ export function htmlBundleImageAssetPath(homepage, publicPath) {
   return findHtmlBundleImageAsset(homepage, publicPath)?.path ?? null;
 }
 
-export async function buildHtmlBundleImageMap(homepage) {
+export async function buildHtmlBundleImageMap(
+  homepage,
+  sourceAttribute = "data-mdcui-src",
+) {
   const images = new Map();
   if (!homepage?.index || !Array.isArray(homepage.files)) return images;
   const html = await Bun.file(homepage.index).text();
   for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
-    const rawHref = htmlTagAttribute(tag, "data-mdcui-src");
+    const rawHref = htmlTagAttribute(tag, sourceAttribute);
     const publicPath = htmlTagAttribute(tag, "src");
     if (rawHref == null || publicPath == null) continue;
     const bundledPath = htmlBundleImageAssetPath(homepage, decodeHtmlAttribute(publicPath));

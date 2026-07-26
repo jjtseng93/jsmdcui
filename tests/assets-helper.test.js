@@ -89,3 +89,28 @@ test("HTML bundle href canonicalization decodes serialization without resolving 
   expect(canonicalHtmlBundleImageHref("./a.png?x=1&amp;y=2", { htmlAttribute: true }))
     .toBe("./a.png?x=1&y=2");
 });
+
+test("HTML bundle image map accepts a custom source attribute", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "jsmdcui-html-assets-custom-"));
+  const htmlPath = join(directory, "custom.html");
+  await writeFile(
+    htmlPath,
+    '<img src="/photo-custom123.jpg" data-original-image="./photos/a.jpg">',
+  );
+  const customHomepage = {
+    index: htmlPath,
+    files: [{
+      input: "../../photos/a.jpg",
+      path: "/$bunfs/root/photo-custom123.jpg",
+      loader: "file",
+      headers: { "content-type": "image/jpeg" },
+    }],
+  };
+
+  const images = await buildHtmlBundleImageMap(
+    customHomepage,
+    "data-original-image",
+  );
+  expect(images.get("./photos/a.jpg"))
+    .toBe("/$bunfs/root/photo-custom123.jpg");
+});

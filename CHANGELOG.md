@@ -2,6 +2,53 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.12.0] - 2026-07-27
+
+This release makes Markdown images embedded by Bun's HTML bundler available to
+the compiled terminal UI, adds environment-controlled Kitty rendering, and
+consolidates the reusable single-executable asset helpers.
+
+### Added
+
+- Add `JSMDCUI_KITTY_MODE=off|compat|extended` as an environment-controlled
+  alternative to the Kitty command-line flags. Explicit `--kitty` and
+  `--kitty-compat` arguments continue to take precedence.
+- Preserve each generated WUI image source in `data-mdcui-src`. Bun can rewrite
+  the normal `src` to its content-hashed public asset path while the original
+  Markdown reference remains available for TUI lookup.
+- Add reusable HTML bundle helpers to `single-exe/assetsHelper.js`. They match
+  compiled public image paths to `homepage.files`, canonicalize HTML entities
+  and percent-encoded image references, and build a Markdown-reference-to-bunfs
+  image map from `homepage.index`.
+- Export the bundled `homepage` from generated Markdown server modules so a
+  compiled TUI can inspect the same HTML asset manifest without starting the
+  WUI server.
+
+### Changed
+
+- Reuse images already embedded by Bun's HTML bundler instead of copying a
+  second image archive into the executable. The compiled TUI builds the image
+  path map once on first Kitty use, caches it, and reads image bytes lazily from
+  Bun's compiled virtual filesystem (`/$bunfs/root/...` on POSIX systems or
+  `B:/~BUN/...` on Windows).
+- Load the bundled homepage only when running a compiled executable with
+  `global.MDCUI_MAIN` configured. Source-tree launches retain the existing
+  filesystem and authorized HTTP image fallbacks without importing a generated
+  server module.
+- Consolidate runtime asset access on `single-exe/assetsHelper.js` and remove
+  the duplicate `src/runtime/assets.js` implementation.
+
+### Fixed
+
+- Match compiled Markdown images independently of Bun's build-entry-relative
+  `homepage.files[].input` paths. This fixes images whose Markdown-relative
+  path and bundle-entry-relative path have different spellings.
+- Normalize bare `process.env.JSMDCUI_KITTY_MODE=compat` build definitions into
+  JavaScript string literals before forwarding them to `bun build`.
+- Use the global `process` binding for Kitty-mode build constants, allowing Bun
+  to replace `process.env.JSMDCUI_KITTY_MODE` at build time instead of missing
+  an imported and renamed `node:process` binding.
+
 ## [0.11.2] - 2026-07-26
 
 ### Added
