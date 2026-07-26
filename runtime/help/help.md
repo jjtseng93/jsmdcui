@@ -791,7 +791,7 @@ npx jsmdcui --build-md-for bun-linux-x64-v1.3.14 myapp.md
 ```
 
 This similarly expands to
-`--build-for bun-linux-x64 --define global.MDCUI_MAIN=myapp.md`. Both aliases
+`--build-for bun-linux-x64-v1.3.14 --define global.MDCUI_MAIN=myapp.md`. Both aliases
 are expanded before any generated application files are written.
 
 Place every build define after `--build-exe`, or after the target argument of
