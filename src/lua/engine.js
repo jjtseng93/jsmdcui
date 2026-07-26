@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readInternalAssetBytes } from "../runtime/assets.js";
+import { readInternalAssetBytes } from "../../single-exe/assetsHelper.js";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { REPO_ROOT } from "../../single-exe/compiled.js";

@@ -2,7 +2,7 @@
 
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readInternalAssetText } from './src/runtime/assets.js'
+import { readInternalAssetText } from './single-exe/assetsHelper.js'
 import { fenceEventMap } from './src/cui/fence-events.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 

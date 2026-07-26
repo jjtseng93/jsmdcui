@@ -4,7 +4,7 @@ import { basename, dirname, extname, join, sep } from "node:path";
 import { fetchHttp, downloadFile } from "../platform/commands.js";
 import { extractAndStrip } from "../platform/archive.js";
 import { createLuaEngine } from "../lua/engine.js";
-import { assetPath, hasInternalAssets, internalAssetSource, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../runtime/assets.js";
+import { assetPath, hasInternalAssets, internalAssetSource, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../../single-exe/assetsHelper.js";
 import { execCommand, runBackgroundShell, runCommand } from "../shell/shell.js";
 import { Loc } from "../buffer/loc.js";
 import { BTDefault, BTHelp, BTInfo, BTLog, BTRaw, BTScratch, byteOffset, BufferCore } from "../buffer/buffer.js";

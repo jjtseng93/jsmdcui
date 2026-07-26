@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { dirname, join, basename, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
-import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetBytes } from "../runtime/assets.js";
+import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetBytes } from "../../single-exe/assetsHelper.js";
 import { isMdcuiEncoding } from "../runtime/encodings.js";
 import { newMessage, newMessageAtLine, MTError, MTWarning, MTInfo } from "../buffer/message.js";
 import { Loc } from "../buffer/loc.js";

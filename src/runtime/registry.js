@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { assetPath, hasInternalAssets, listInternalAssetPaths, readInternalAssetBytes } from "./assets.js";
+import { assetPath, hasInternalAssets, listInternalAssetPaths, readInternalAssetBytes } from "../../single-exe/assetsHelper.js";
 
 export const RTColorscheme = 0;
 export const RTSyntax = 1;
