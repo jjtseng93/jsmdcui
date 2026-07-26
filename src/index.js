@@ -94,7 +94,6 @@ import { accessSync, closeSync, constants, existsSync, openSync, readSync, readd
 import { mkdir } from "node:fs/promises";
 import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import process from "node:process";
 import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/task-checkbox.mjs";
 import { fenceEventMap, inlineFenceEventCode } from "./cui/fence-events.mjs";
 import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
@@ -8278,6 +8277,7 @@ async function main() {
   addCheckpoint("Argument Parsing");
 
   expandBuildMdAliases(process.argv);
+  stringifyNonPrimitiveDefineValues(process.argv, "process.env.JSMDCUI_KITTY_MODE");
   stringifyNonPrimitiveDefineValues(process.argv, "global.MDCUI_MAIN");
   const argvMdcuiMain = stringDefineFromArgv(
     process.argv,
