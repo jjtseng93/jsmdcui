@@ -100,6 +100,11 @@ npx jsmdcui --demo-imgtool-zh
 npx jsmdcui --demo-maze
 ```
 
+```sh
+# Event context, heading references, and state demo
+npx jsmdcui --demo-event
+```
+
 To watch jsmdcui start the maze with a local CDP server and solve it
 automatically after three seconds, run:
 
@@ -474,18 +479,151 @@ bun src/index.js --wui demos/select.md
 
 The available selector methods are:
 
+`★★` means the API is intended for portable use in both the TUI and WUI.
+
 | Method | TUI | WUI |
 | --- | --- | --- |
-| `.val()` | Read text blocks or heading task-list values. | Read textareas/controls or heading task-list values. |
-| `.val(value)` | Replace text-block contents, resize multiline values, and record Undo/Redo history. | Set textarea/control values and resize textareas. |
-| `.html()` | Return a selected heading's inner HTML. | Return any successfully selected DOM element's `innerHTML`. |
+| `★★ .id` | Return the selection's resolved ID; nested `$($($(selection)))` wrappers retain it. | Same. |
+| `★★ .val()` | Read text blocks or heading task-list values. | Read textareas/controls or heading task-list values. |
+| `★★ .val(value)` | Replace text-block contents, resize multiline values, and record Undo/Redo history. | Set textarea/control values and resize textareas. |
+| `★★ .text()` | Return a heading's rendered visible text or an object target's `textContent`. Heading string-selector setters are intentionally unsupported. | Read an element's `textContent`; `.text(value)` also updates it. |
+| `★★ .show()`, `.hide()`, `.toggle()` | Keep the heading visible and show or hide its section body. | Promote a hidden heading beside its section, hide the section, and restore both on show. |
+| `★★ .data()`, `.data(key, value)` | Read or update the heading ID's user-data object in `buffer._mdcuiIdStore`. | Use the document ID store and expose the same object as `element.mdcuiData`. |
+| `★★ .removeData(...)` | Remove selected user keys or the complete user-data object without removing framework state. | Same; the backing document state survives temporary DOM removal. |
+| `★★ .push(...items)` | Append unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
+| `★★ .pop()` | Remove and return the last direct task item's label, or `undefined`. | Same. |
+| `★★ .shift()` | Remove and return the first direct task item's label, or `undefined`. | Same. |
+| `★★ .unshift(...items)` | Prepend unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
+| `★★ .splice(start, deleteCount, ...items)` | Remove and insert direct task items; return the removed labels as an array. | Same. |
+| `★★ .slice(start, end)` | Return `{ value, checked }` snapshots without changing the direct task items. | Same. |
+| `.html()` | For a heading selector, return its Bun-generated inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
-| `.push(...items)` | Append unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
-| `.pop()` | Remove and return the last direct task item's label, or `undefined`. | Same. |
-| `.shift()` | Remove and return the first direct task item's label, or `undefined`. | Same. |
-| `.unshift(...items)` | Prepend unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
-| `.splice(start, deleteCount, ...items)` | Remove and insert direct task items; return the removed labels as an array. | Same. |
-| `.slice(start, end)` | Return `{ value, checked }` snapshots without changing the direct task items. | Same. |
+
+Every `$()` selection exposes its resolved `.id`. An object target with an ID
+can be wrapped directly, and selections may be wrapped repeatedly without
+losing their identity:
+
+```js
+const heading = $('#features')
+const nested = $($($(heading)))
+
+nested.id                 // "features"
+nested.text()
+nested.data() === heading.data()
+```
+
+User data and framework state share the same ID record but do not overwrite
+one another. Calling `.removeData()` removes only the user-owned `data`
+property; it does not expand a hidden heading. In the WUI, the data object is
+also attached to the current DOM element as `mdcuiData` for runtime inspection.
+The authoritative copy remains in the document store, so data survives removal
+and later replacement of that DOM element.
+
+### Heading visibility boundaries
+
+`$('#topic').hide()` never removes the heading itself. In the TUI it removes
+the rows after that heading through the row before the next heading of equal or
+higher level. Lower-level headings and their content therefore belong to the
+hidden section. `.show()` inserts the saved section body after the still-visible
+heading, and `.toggle()` switches between these states.
+
+In the WUI, generated heading sections provide the same boundary. Hiding moves
+the heading immediately before its parent `<section>` and sets that section's
+`hidden` property. Showing makes the section visible and restores the heading
+as its first child.
+
+The first visible character of an identified heading is also a fixed toggle
+target. Activate it with a mouse click, `Enter`, or `Space`. When several nested
+headings must be restored after a TUI rerender, inner headings are hidden first
+(h6 toward h1), then their outer sections are hidden.
+
+A hidden TUI heading cannot be used for task-list mutation. Calls to `.push()`,
+`.pop()`, `.shift()`, `.unshift()`, or `.splice()` fail with their normal empty
+return value and are not saved for replay. Show the heading before changing its
+list. A heading with no direct task list also cannot implicitly adopt a child
+heading's list or create a new list.
+
+### Event context
+
+A local `javascript:` Markdown link runs with a link-shaped `this` and matching
+event targets in both interfaces:
+
+```md
+[Inspect](javascript:inspect(this,event))
+```
+
+```js
+export function inspect(target, event) {
+  console.log($(target).text())
+  console.log($(event.target).text())
+  console.log(event.type)
+  console.log(event.target === target)
+  console.log(event.currentTarget === target)
+}
+```
+
+For a TUI OSC 8 link, jsmdcui creates a synthetic anchor containing
+`tagName`, `href`, `textContent`, and `innerHTML`. Because OSC 8 carries display
+text rather than browser DOM markup, this synthetic `innerHTML` currently
+contains the same visible text as `textContent`; it is not the Markdown link's
+original HTML. Mouse activation reports `event.type === "click"`. `Enter` and `Space` report
+`event.type === "keydown"` with standard `event.key` values. The WUI intercepts
+the real anchor click, registers the current front module with the evaluator,
+and binds the real anchor as `this`.
+
+Fence keydown code may likewise receive both values explicitly:
+
+````md
+```text#command @keydown.prevent="handleKey(this,event)"
+Focus here
+```
+````
+
+Both interfaces bind the control as `this`, `event.target`, and
+`event.currentTarget`. The TUI target is synthetic and provides a live
+`value`; the WUI target is the native `<textarea>`.
+
+For a complete interactive example in either interface, run:
+
+```sh
+bun src/index.js --demo-event
+bun src/index.js --wui --demo-event
+```
+
+The demo reports results in its bottom **Output Console** and covers link
+`this`, event targets, keyboard fields, nested `$()` selections, heading data,
+and heading visibility.
+
+### TUI resize and rerender preservation
+
+Changing terminal or split width rerenders MDCUI from the original Markdown.
+Before doing so, jsmdcui expands all hidden heading bodies and captures the
+runtime state. The restore order is:
+
+1. Save hidden heading IDs, expand outer sections before inner sections, then
+   capture the complete visible document.
+2. Save checkbox checked states in full-document order. Checkbox-looking text
+   inside fenced blocks is excluded.
+3. Save fenced-block body rows together with their ANSI styles.
+4. Render the original Markdown at the new width.
+5. Replay successful heading-list `.push()`, `.pop()`, `.shift()`,
+   `.unshift()`, and `.splice()` calls in their original order.
+6. Restore fenced-block bodies, then restore checkbox states by document order.
+7. Reapply heading visibility from the deepest heading toward the outermost.
+
+Macro arguments are JSON snapshots. Replay does not record another macro, and
+an operation is recorded only when it actually changes the visible list.
+Checkbox restoration is applied only when the checkbox count after list replay
+matches the saved count; jsmdcui does not shift later states onto the wrong
+items after a structural mismatch.
+
+This preservation deliberately covers heading-list API mutations, direct
+checkbox toggles, fenced-control contents, and heading visibility. It does not
+promise to reconstruct arbitrary structural edits made through low-level APIs
+such as `micro.putLine()`, `micro.delLine()`, `micro.putAllText()`,
+`micro.putSelection()`, `CurPane().Buf.Insert()`, or direct assignment to
+`buffer.lines`. Those operations use screen rows whose meaning can change at a
+different render width.
 
 TUI heading rows are recalculated after text-block rows are added, removed, or
 replaced with multiline `.val(value)` content.
@@ -576,6 +714,36 @@ supported HTTP(S) images with Kitty graphics, combine the options:
 ```sh
 bun src/index.js --kitty --allow-url https://example.com/app.md
 ```
+
+Images referenced by an app built with `--build-md-exe` are also available to
+the compiled TUI. Bun embeds them through the generated WUI HTML bundle;
+jsmdcui preserves the original Markdown reference, maps it to Bun's
+content-hashed compiled asset (`/$bunfs/root/...` on POSIX systems or
+`B:/~BUN/...` on Windows), and reads the image lazily when Kitty rendering
+needs it. The executable does not need a second copy in the tar asset archive;
+the runtime uses the path reported by Bun rather than assuming either platform
+prefix.
+
+To make a no-argument compiled app enable standard Kitty-compatible rendering
+immediately, inline the environment-mode value at build time:
+
+```sh
+npx jsmdcui --build-md-exe myapp.md \
+  --define process.env.JSMDCUI_KITTY_MODE=compat
+```
+
+For the jsgotty MIME extension, use `extended` instead:
+
+```sh
+npx jsmdcui --build-md-exe myapp.md \
+  --define process.env.JSMDCUI_KITTY_MODE=extended
+```
+
+The jsmdcui build wrapper quotes these bare string values before forwarding
+them to Bun. At the call site, `process` must be the Node/Bun global. Do not
+write `import process from "node:process"`: Bun renames that imported binding
+during bundling, so a define targeting `process.env.JSMDCUI_KITTY_MODE` cannot
+match and inline it.
 
 ### CDP control for TUI automation
 
@@ -784,6 +952,10 @@ npx jsmdcui --build-md-exe myapp.md
 
 This is a convenience alias for
 `--build-exe --define global.MDCUI_MAIN=myapp.md`.
+The generated HTML images are embedded by Bun and can be displayed by the
+compiled TUI. Add
+`--define process.env.JSMDCUI_KITTY_MODE=compat` after the Markdown path when
+the executable should enable Kitty-compatible images on a no-argument launch.
 
 For cross-compilation, specify the Bun target before the Markdown file:
 
