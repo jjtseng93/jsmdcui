@@ -166,6 +166,7 @@ export async function extractJs(md,mdpath,{ bundling = false } = {})
       setTimeout( () => {
         import("./${mdb}.front.js").then(mod=>{
           Object.assign(window,mod);
+          window.__mdcuiFrontModule = mod;
         })
       }, 0 ) ;
     }
@@ -191,6 +192,7 @@ export async function extractJs(md,mdpath,{ bundling = false } = {})
       `import * as frontMod from "./${mdb}.tmpfs.js";
 
 Object.assign(window, frontMod);
+window.__mdcuiFrontModule = frontMod;
 `,
     )
     logWroteFile("bundling import", bundledImportPath)
@@ -341,6 +343,47 @@ export function convertWuiTextareas(html, eventsById = new Map())
   );
 }
 
+function wrapWuiHeadingToggleCharacter(headingHtml)
+{
+  const input = String(headingHtml);
+  const opening = input.match(/^<h[1-6]\b[^>]*>/i);
+  if (!opening || !/\bid\s*=/i.test(opening[0])) return input;
+
+  let index = opening[0].length;
+  while (index < input.length) {
+    if (input[index] === "\0") {
+      const markerEnd = input.indexOf("\0", index + 1);
+      if (markerEnd < 0) return input;
+      index = markerEnd + 1;
+      continue;
+    }
+    if (input[index] === "<") {
+      const end = input.indexOf(">", index + 1);
+      if (end < 0) return input;
+      index = end + 1;
+      continue;
+    }
+    if (/\s/u.test(input[index])) {
+      index++;
+      continue;
+    }
+
+    let end;
+    if (input[index] === "&") {
+      const entityEnd = input.indexOf(";", index + 1);
+      end = entityEnd >= 0 ? entityEnd + 1 : index + 1;
+    } else {
+      end = index + [...input.slice(index)][0].length;
+    }
+    return input.slice(0, index) +
+      '<span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">' +
+      input.slice(index, end) +
+      "</span>" +
+      input.slice(end);
+  }
+  return input;
+}
+
 export function wrapWuiHeadingSections(html)
 {
   const input = String(html);
@@ -360,7 +403,7 @@ export function wrapWuiHeadingSections(html)
   while (input.includes(markerPrefix)) markerPrefix = "_" + markerPrefix;
   const opaqueHtml = [];
   const searchable = input.replace(
-    /<!--[^]*?-->|<(script|style|pre|code|textarea|template)\b[^>]*>[^]*?<\/\1\s*>/gi,
+    /<!--[^]*?-->|<(script|style|pre|textarea|template)\b[^>]*>[^]*?<\/\1\s*>/gi,
     (whole) => {
       const marker = `\0${markerPrefix}${opaqueHtml.length}\0`;
       opaqueHtml.push({ marker, html: whole });
@@ -376,12 +419,13 @@ export function wrapWuiHeadingSections(html)
 
   while ((match = heading.exec(searchable)) !== null) {
     const level = Number(match[1]);
+    const headingHtml = wrapWuiHeadingToggleCharacter(match[0]);
     output += searchable.slice(cursor, match.index);
     while (openLevels.length && openLevels.at(-1) >= level) {
       output += "</section>\n";
       openLevels.pop();
     }
-    output += `<section>\n${match[0]}`;
+    output += `<section>\n${headingHtml}`;
     openLevels.push(level);
     cursor = heading.lastIndex;
   }

@@ -7,6 +7,7 @@ import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetP
 import { isMdcuiEncoding } from "../runtime/encodings.js";
 import { newMessage, newMessageAtLine, MTError, MTWarning, MTInfo } from "../buffer/message.js";
 import { Loc } from "../buffer/loc.js";
+import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
 
 // ── Action registry ──────────────────────────────────────────────────────────
 
@@ -822,31 +823,40 @@ function _blockValue(lines, selector) {
 }
 
 function _headingSelectorId(input) {
+  if (input !== null && typeof input === "object") {
+    const id = String(input.id ?? "").trim();
+    return id || null;
+  }
   const match = String(input ?? "").trim().match(/^#([^\s]+)$/);
   return match?.[1] ?? null;
 }
 
-function _findHeading(buffer, selector) {
-  const id = _headingSelectorId(selector);
+function _tuiSourceHeadings(buffer) {
   const markdown = buffer?._mdcuiTuiSourceText;
-  if (!id || markdown == null || typeof Bun?.markdown?.html !== "function") return undefined;
+  if (markdown == null || typeof Bun?.markdown?.html !== "function") return [];
 
   const html = String(Bun.markdown.html(markdown, { headings: { ids: true } }));
   const headings = /<h([1-6])\b([^>]*)>([^]*?)<\/h\1\s*>/gi;
+  const result = [];
   let match;
   let ordinal = 0;
   while ((match = headings.exec(html)) !== null) {
     const headingId = match[2].match(/\bid="([^"]*)"/i)?.[1];
-    if (headingId === id) {
-      return {
-        html: match[3],
-        level: Number(match[1]),
-        ordinal,
-      };
-    }
+    result.push({
+      id: headingId ?? null,
+      html: match[3],
+      level: Number(match[1]),
+      ordinal,
+    });
     ordinal++;
   }
-  return undefined;
+  return result;
+}
+
+function _findHeading(buffer, selector) {
+  const id = _headingSelectorId(selector);
+  if (!id) return undefined;
+  return _tuiSourceHeadings(buffer).find(heading => heading.id === id);
 }
 
 let _headingAnsiPrefixes;
@@ -869,9 +879,22 @@ function _headingTuiLine(buffer, heading) {
   const ansiText = buffer?._mdcuiAnsiText;
   if (!heading || typeof ansiText !== "string") return 0;
   const tuiHeadings = _tuiHeadingLines(buffer);
-  const exact = tuiHeadings[heading.ordinal];
+  const visibleOrdinal = _headingVisibleOrdinal(buffer, heading);
+  const exact = tuiHeadings[visibleOrdinal];
   if (exact?.level === heading.level) return exact.line;
   return 0;
+}
+
+function _headingVisibleOrdinal(buffer, heading) {
+  let visibleOrdinal = heading?.ordinal ?? -1;
+  if (buffer?._mdcuiIdStore instanceof Map) {
+    for (const record of buffer._mdcuiIdStore.values()) {
+      const state = record?.headingVisibility;
+      if (state?.hidden && state.ordinal < heading.ordinal)
+        visibleOrdinal -= state.headingCount ?? 0;
+    }
+  }
+  return visibleOrdinal;
 }
 
 function _tuiHeadingLines(buffer) {
@@ -903,6 +926,146 @@ function _headingCheckboxValue(buffer, heading, id) {
   return id.startsWith("select") ? null : selected;
 }
 
+function _tuiIdStore(buffer) {
+  if (!(buffer?._mdcuiIdStore instanceof Map))
+    buffer._mdcuiIdStore = new Map();
+  return buffer._mdcuiIdStore;
+}
+
+function _tuiIdRecord(buffer, id) {
+  const store = _tuiIdStore(buffer);
+  let record = store.get(id);
+  if (!record) {
+    record = {};
+    store.set(id, record);
+  }
+  return record;
+}
+
+function _tuiUserData(buffer, id) {
+  if (!buffer || !id) return undefined;
+  const record = _tuiIdRecord(buffer, id);
+  if (!record.data || typeof record.data !== "object")
+    record.data = Object.create(null);
+  return record.data;
+}
+
+function _removeTuiUserData(buffer, id, keys) {
+  if (!buffer || !id) return;
+  const store = _tuiIdStore(buffer);
+  const record = store.get(id);
+  if (!record?.data) return;
+  if (keys.length === 0) delete record.data;
+  else {
+    for (const key of keys) delete record.data[key];
+  }
+  if (Object.keys(record).length === 0) store.delete(id);
+}
+
+function _hideTuiHeadingSection(buffer, heading, id) {
+  if (!buffer || !heading || !id || !Array.isArray(buffer.lines)) return false;
+  const store = _tuiIdStore(buffer);
+  if (store.get(id)?.headingVisibility?.hidden) return true;
+
+  const headingLine = _headingTuiLine(buffer, heading);
+  if (!headingLine) return false;
+  const tuiHeadings = _tuiHeadingLines(buffer);
+  let visibleOrdinal = heading.ordinal;
+  for (const record of store.values()) {
+    const state = record?.headingVisibility;
+    if (state?.hidden && state.ordinal < heading.ordinal)
+      visibleOrdinal -= state.headingCount ?? 0;
+  }
+  let next = null;
+  let nextIndex = tuiHeadings.length;
+  for (let index = visibleOrdinal + 1; index < tuiHeadings.length; index++) {
+    if (tuiHeadings[index].level <= heading.level) {
+      next = tuiHeadings[index];
+      nextIndex = index;
+      break;
+    }
+  }
+
+  // headingLine is one-based. Starting at that array index therefore keeps the
+  // heading itself and removes only the generated section body.
+  const start = headingLine;
+  const end = next ? next.line - 1 : buffer.lines.length;
+  const deleteCount = Math.max(0, end - start);
+  const ansiLines = typeof buffer._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  const segment = {
+    lines: buffer.lines.slice(start, end),
+    styles: Array.isArray(buffer._ansiStyleLines)
+      ? buffer._ansiStyleLines.slice(start, end)
+      : null,
+    ansi: ansiLines?.slice(start, end) ?? null,
+    images: Array.isArray(buffer._mdcuiImages)
+      ? buffer._mdcuiImages
+        .filter(image => image.line >= start && image.line < end)
+        .map(image => ({ ...image, line: image.line - start }))
+      : [],
+  };
+  const headingCount = Math.max(0, nextIndex - visibleOrdinal - 1);
+
+  const modified = buffer.modified;
+  spliceTuiBufferLines(buffer, start, deleteCount, []);
+  buffer.modified = modified;
+  _tuiIdRecord(buffer, id).headingVisibility = {
+    hidden: true,
+    ordinal: heading.ordinal,
+    headingCount,
+    segment,
+  };
+  return true;
+}
+
+function _showTuiHeadingSection(buffer, heading, id) {
+  if (!buffer || !heading || !id || !Array.isArray(buffer.lines)) return false;
+  const store = _tuiIdStore(buffer);
+  const record = store.get(id);
+  const state = record?.headingVisibility;
+  if (!state?.hidden) return true;
+
+  const headingLine = _headingTuiLine(buffer, heading);
+  if (!headingLine) return false;
+  const segment = state.segment;
+  const modified = buffer.modified;
+  spliceTuiBufferLines(buffer, headingLine, 0, segment.lines, {
+    styles: segment.styles ?? undefined,
+    ansi: segment.ansi ?? undefined,
+  });
+  if (Array.isArray(buffer._mdcuiImages) && segment.images.length > 0) {
+    buffer._mdcuiImages.push(
+      ...segment.images.map(image => ({ ...image, line: headingLine + image.line })),
+    );
+    buffer._mdcuiImages.sort((a, b) => a.line - b.line);
+  }
+  buffer.modified = modified;
+  delete record.headingVisibility;
+  if (Object.keys(record).length === 0) store.delete(id);
+  return true;
+}
+
+export function toggleTuiHeadingAt(buffer, y, x) {
+  if (!buffer || !Array.isArray(buffer.lines)) return false;
+  const row = Math.trunc(Number(y));
+  const column = Math.trunc(Number(x));
+  if (row < 0 || row >= buffer.lines.length) return false;
+  const line = String(buffer.lines[row] ?? "");
+  const firstCharacter = line.search(/\S/);
+  if (firstCharacter < 0 || column !== firstCharacter) return false;
+
+  const heading = _tuiSourceHeadings(buffer)
+    .find(candidate => candidate.id && _headingTuiLine(buffer, candidate) === row + 1);
+  if (!heading) return false;
+
+  const state = _tuiIdStore(buffer).get(heading.id)?.headingVisibility;
+  if (state?.hidden) _showTuiHeadingSection(buffer, heading, heading.id);
+  else _hideTuiHeadingSection(buffer, heading, heading.id);
+  return true;
+}
+
 function _tuiHeadingTaskList(buffer, heading) {
   const savedAnchor = buffer?._mdcuiHeadingTaskListAnchors?.get(heading.ordinal);
   if (savedAnchor) {
@@ -917,7 +1080,8 @@ function _tuiHeadingTaskList(buffer, heading) {
   if (!headingLine || !Array.isArray(buffer?.lines)) return null;
 
   const tuiHeadings = _tuiHeadingLines(buffer);
-  const nextHeading = tuiHeadings[heading.ordinal + 1];
+  const visibleOrdinal = _headingVisibleOrdinal(buffer, heading);
+  const nextHeading = tuiHeadings[visibleOrdinal + 1];
   const endLine = nextHeading?.line ?? buffer.lines.length + 1;
   let first = -1;
   let indent = "";
@@ -1069,6 +1233,198 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
   return list.items.length + replacement.lines.length;
 }
 
+function _recordTuiHeadingListMutation(buffer, selector, method, args) {
+  if (!buffer || buffer._mdcuiReplayingMutations) return;
+  try {
+    const argsJson = JSON.stringify(args);
+    if (typeof argsJson !== "string") return;
+    if (!Array.isArray(buffer._mdcuiMutationMacros))
+      buffer._mdcuiMutationMacros = [];
+    buffer._mdcuiMutationMacros.push({
+      selector: String(selector),
+      method,
+      argsJson,
+    });
+  } catch {}
+}
+
+function _mutateAndRecordTuiHeadingList(buffer, heading, selector, method, args, failureValue) {
+  if (!buffer || !heading) return failureValue;
+  if (_tuiIdStore(buffer).get(heading.id)?.headingVisibility?.hidden)
+    return failureValue;
+  const before = Array.isArray(buffer.lines) ? buffer.lines.join("\n") : "";
+  const result = _mutateTuiHeadingList(buffer, heading, method, args);
+  const after = Array.isArray(buffer.lines) ? buffer.lines.join("\n") : "";
+  if (after !== before)
+    _recordTuiHeadingListMutation(buffer, selector, method, args);
+  return result;
+}
+
+export function replayTuiMutationMacros(buffer) {
+  if (!buffer || !Array.isArray(buffer._mdcuiMutationMacros)) return;
+  buffer._mdcuiReplayingMutations = true;
+  try {
+    for (const macro of buffer._mdcuiMutationMacros) {
+      if (!macro || !["push", "pop", "shift", "unshift", "splice"].includes(macro.method))
+        continue;
+      let args;
+      try {
+        args = JSON.parse(macro.argsJson);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(args)) continue;
+      const heading = _findHeading(buffer, macro.selector);
+      if (heading) _mutateTuiHeadingList(buffer, heading, macro.method, args);
+    }
+  } finally {
+    buffer._mdcuiReplayingMutations = false;
+  }
+}
+
+function _tuiBlockSignature(block) {
+  const header = block.header;
+  return JSON.stringify([
+    header.kind,
+    header.tag,
+    header.id,
+    header.classes,
+  ]);
+}
+
+function _captureTuiFenceBlocks(buffer) {
+  const ansiLines = typeof buffer?._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  return buildTuiBlockIndex(buffer?.lines ?? []).map((block) => ({
+    signature: _tuiBlockSignature(block),
+    lines: buffer.lines.slice(block.start + 1, block.end),
+    styles: Array.isArray(buffer._ansiStyleLines)
+      ? buffer._ansiStyleLines.slice(block.start + 1, block.end)
+      : null,
+    ansi: ansiLines?.slice(block.start + 1, block.end) ?? null,
+  }));
+}
+
+function _restoreTuiFenceBlocks(buffer, snapshots) {
+  if (!Array.isArray(snapshots) || snapshots.length === 0) return;
+  const blocks = buildTuiBlockIndex(buffer?.lines ?? []);
+  if (
+    blocks.length !== snapshots.length
+    || blocks.some((block, index) => _tuiBlockSignature(block) !== snapshots[index].signature)
+  ) {
+    buffer._mdcuiRerenderMismatch = {
+      ...(buffer._mdcuiRerenderMismatch ?? {}),
+      fenceBlocks: { before: snapshots.length, after: blocks.length },
+    };
+    return;
+  }
+  for (let index = blocks.length - 1; index >= 0; index--) {
+    const block = blocks[index];
+    const snapshot = snapshots[index];
+    spliceTuiBufferLines(
+      buffer,
+      block.start + 1,
+      Math.max(0, block.end - block.start - 1),
+      snapshot.lines,
+      {
+        styles: snapshot.styles ?? undefined,
+        ansi: snapshot.ansi ?? undefined,
+      },
+    );
+  }
+}
+
+function _tuiCheckboxRows(buffer) {
+  const blocks = buildTuiBlockIndex(buffer?.lines ?? []);
+  const rows = [];
+  let blockIndex = 0;
+  for (let y = 0; y < (buffer?.lines?.length ?? 0); y++) {
+    while (blocks[blockIndex] && y >= blocks[blockIndex].end) blockIndex++;
+    const block = blocks[blockIndex];
+    if (block && y > block.start && y < block.end) continue;
+    const match = String(buffer.lines[y] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)/);
+    if (match) rows.push({ y, x: match[1].length, checked: match[2] === "☒" });
+  }
+  return rows;
+}
+
+function _restoreTuiCheckboxStates(buffer, states) {
+  const rows = _tuiCheckboxRows(buffer);
+  if (rows.length !== states.length) {
+    buffer._mdcuiRerenderMismatch = {
+      ...(buffer._mdcuiRerenderMismatch ?? {}),
+      checkboxes: { before: states.length, after: rows.length },
+    };
+    return;
+  }
+  const ansiLines = typeof buffer._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    const checked = Boolean(states[index]);
+    const glyph = checked ? "☒" : "☐";
+    if (buffer.lines[row.y][row.x] === glyph) continue;
+    buffer.lines[row.y] =
+      buffer.lines[row.y].slice(0, row.x) + glyph + buffer.lines[row.y].slice(row.x + 1);
+    const styleLine = buffer._ansiStyleLines?.[row.y];
+    if (Array.isArray(styleLine)) {
+      const style = checked ? { fg: "green" } : null;
+      styleLine[row.x] = style;
+      if (buffer.lines[row.y][row.x + 1] === " ") styleLine[row.x + 1] = style;
+    }
+    if (ansiLines)
+      ansiLines[row.y] = updateAnsiTaskCheckbox(ansiLines[row.y], row.x, checked);
+  }
+  if (ansiLines) buffer._mdcuiAnsiText = ansiLines.join("\n");
+}
+
+export function captureTuiRerenderState(buffer) {
+  const headings = new Map(_tuiSourceHeadings(buffer).map((heading) => [heading.id, heading]));
+  const hiddenHeadings = [];
+  if (buffer?._mdcuiIdStore instanceof Map) {
+    for (const [id, record] of buffer._mdcuiIdStore) {
+      if (!record?.headingVisibility?.hidden) continue;
+      const heading = headings.get(id);
+      if (heading) hiddenHeadings.push({ id, level: heading.level, ordinal: heading.ordinal });
+    }
+  }
+
+  // Outer sections must be shown first so nested heading handles become visible.
+  for (const item of hiddenHeadings.slice().sort((a, b) =>
+    a.level - b.level || a.ordinal - b.ordinal
+  )) {
+    _showTuiHeadingSection(buffer, headings.get(item.id), item.id);
+  }
+
+  return {
+    hiddenHeadings,
+    checkboxStates: _tuiCheckboxRows(buffer).map((item) => item.checked),
+    fenceBlocks: _captureTuiFenceBlocks(buffer),
+  };
+}
+
+export function restoreTuiRerenderState(buffer, snapshot) {
+  if (!buffer || !snapshot) return;
+  buffer._mdcuiRerenderMismatch = null;
+  replayTuiMutationMacros(buffer);
+  _restoreTuiFenceBlocks(buffer, snapshot.fenceBlocks);
+  _restoreTuiCheckboxStates(buffer, snapshot.checkboxStates ?? []);
+
+  restoreTuiHiddenHeadings(buffer, snapshot.hiddenHeadings);
+}
+
+export function restoreTuiHiddenHeadings(buffer, hiddenHeadings) {
+  const headings = new Map(_tuiSourceHeadings(buffer).map((heading) => [heading.id, heading]));
+  // Nested sections are hidden first; an outer hide may then safely contain them.
+  for (const item of (hiddenHeadings ?? []).slice().sort((a, b) =>
+    b.level - a.level || b.ordinal - a.ordinal
+  )) {
+    _hideTuiHeadingSection(buffer, headings.get(item.id), item.id);
+  }
+}
+
 export function spliceTuiBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
   buffer._mdcuiFenceBlockIndex = null;
@@ -1187,10 +1543,19 @@ function _setBlockValue(buffer, selector, value) {
 
 export function createTuiSelector(getBuffer) {
   return function $(selector) {
-    const parsedSelector = _parseBlockIdentity(selector, { selector: true });
+    const objectTarget = selector !== null && typeof selector === "object"
+      ? selector
+      : null;
+    const parsedSelector = objectTarget
+      ? null
+      : _parseBlockIdentity(selector, { selector: true });
+    const selectorId = _headingSelectorId(selector) ?? parsedSelector?.id ?? null;
     const selection = {
+      id: selectorId ?? "",
       html() {
         try {
+          if (objectTarget && "innerHTML" in objectTarget)
+            return String(objectTarget.innerHTML ?? "");
           return _findHeading(getBuffer?.(), selector)?.html ?? "";
         } catch {
           return "";
@@ -1204,11 +1569,98 @@ export function createTuiSelector(getBuffer) {
           return 0;
         }
       },
+      text(...args) {
+        try {
+          const buffer = getBuffer?.();
+          const heading = _findHeading(buffer, selector);
+          if (!objectTarget || (heading && !("textContent" in objectTarget))) {
+            if (args.length > 0) return selection;
+            const line = _headingTuiLine(buffer, heading);
+            return line > 0 ? String(buffer.lines?.[line - 1] ?? "").trim() : "";
+          }
+          if (args.length > 0) {
+            objectTarget.textContent = String(args[0] ?? "");
+            return selection;
+          }
+          return String(objectTarget.textContent ?? "");
+        } catch {
+          return args.length > 0 ? selection : "";
+        }
+      },
+      show() {
+        try {
+          const buffer = getBuffer?.();
+          const id = _headingSelectorId(selector);
+          _showTuiHeadingSection(buffer, _findHeading(buffer, selector), id);
+        } catch {}
+        return selection;
+      },
+      hide() {
+        try {
+          const buffer = getBuffer?.();
+          const id = _headingSelectorId(selector);
+          _hideTuiHeadingSection(buffer, _findHeading(buffer, selector), id);
+        } catch {}
+        return selection;
+      },
+      toggle() {
+        try {
+          const buffer = getBuffer?.();
+          const id = _headingSelectorId(selector);
+          const heading = _findHeading(buffer, selector);
+          if (_tuiIdStore(buffer).get(id)?.headingVisibility?.hidden)
+            _showTuiHeadingSection(buffer, heading, id);
+          else
+            _hideTuiHeadingSection(buffer, heading, id);
+        } catch {}
+        return selection;
+      },
+      data(...args) {
+        try {
+          const buffer = getBuffer?.();
+          const data = _tuiUserData(buffer, selectorId);
+          if (!data) return args.length === 0 ? undefined : selection;
+          if (args.length === 0) return data;
+          if (args.length === 1) {
+            if (args[0] && typeof args[0] === "object") {
+              Object.assign(data, args[0]);
+              return selection;
+            }
+            return data[String(args[0])];
+          }
+          data[String(args[0])] = args[1];
+          return selection;
+        } catch {
+          return args.length <= 1 ? undefined : selection;
+        }
+      },
+      removeData(...keys) {
+        try {
+          const buffer = getBuffer?.();
+          const normalized = keys
+            .flatMap(key => Array.isArray(key) ? key : String(key).split(/\s+/))
+            .filter(Boolean)
+            .map(String);
+          _removeTuiUserData(buffer, selectorId, normalized);
+        } catch {}
+        return selection;
+      },
       val(...args) {
         try {
           const buffer = getBuffer?.();
-          if (!buffer) return args.length > 0 ? selection : "";
           const heading = _findHeading(buffer, selector);
+          if (objectTarget && (!heading || "value" in objectTarget || "textContent" in objectTarget)) {
+            if (args.length > 0) {
+              const value = String(args[0] ?? "");
+              if ("value" in objectTarget) objectTarget.value = value;
+              else objectTarget.textContent = value;
+              return selection;
+            }
+            return "value" in objectTarget
+              ? String(objectTarget.value ?? "")
+              : String(objectTarget.textContent ?? "");
+          }
+          if (!buffer) return args.length > 0 ? selection : "";
           const headingId = _headingSelectorId(selector);
           if (heading && headingId) {
             if (args.length > 0) return selection;
@@ -1232,7 +1684,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return heading ? _mutateTuiHeadingList(buffer, heading, "push", items) : 0;
+          return _mutateAndRecordTuiHeadingList(
+            buffer, heading, selector, "push", items, 0,
+          );
         } catch {
           return 0;
         }
@@ -1241,7 +1695,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return heading ? _mutateTuiHeadingList(buffer, heading, "pop", []) : undefined;
+          return _mutateAndRecordTuiHeadingList(
+            buffer, heading, selector, "pop", [], undefined,
+          );
         } catch {
           return undefined;
         }
@@ -1250,7 +1706,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return heading ? _mutateTuiHeadingList(buffer, heading, "shift", []) : undefined;
+          return _mutateAndRecordTuiHeadingList(
+            buffer, heading, selector, "shift", [], undefined,
+          );
         } catch {
           return undefined;
         }
@@ -1259,7 +1717,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return heading ? _mutateTuiHeadingList(buffer, heading, "unshift", items) : 0;
+          return _mutateAndRecordTuiHeadingList(
+            buffer, heading, selector, "unshift", items, 0,
+          );
         } catch {
           return 0;
         }
@@ -1268,7 +1728,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return heading ? _mutateTuiHeadingList(buffer, heading, "splice", args) : [];
+          return _mutateAndRecordTuiHeadingList(
+            buffer, heading, selector, "splice", args, [],
+          );
         } catch {
           return [];
         }

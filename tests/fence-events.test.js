@@ -3,9 +3,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fenceEventMap, inlineFenceEventCode, parseFenceDeclarations } from "../src/cui/fence-events.mjs";
-import { evalFront } from "../src/cui/rpc.mjs";
+import { evalFront, installWebDollar } from "../src/cui/rpc.mjs";
 import { buildTuiBlockIndex, createTuiSelector, findTuiBlockAtLine, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward } from "../src/plugins/js-bridge.js";
-import { convertWuiTextareas } from "../runmd.mjs";
+import { convertWuiTextareas, wrapWuiHeadingSections } from "../runmd.mjs";
 
 const tui = join(import.meta.dir, "..", "tui");
 const bunBin = Bun.which("bun") || process.argv0;
@@ -290,11 +290,128 @@ test("front evaluation exposes the TUI event scope to inline statements", async 
   expect(seen).toEqual(["Enter"]);
 });
 
+test("front evaluation binds link this and event targets to the same object", async () => {
+  const $ = createTuiSelector(() => null);
+  const target = {
+    tagName: "A",
+    href: "javascript:inspect(event)",
+    textContent: "Save",
+  };
+  const event = { target, currentTarget: target };
+  const result = await evalFront(
+    {
+      inspect(current) {
+        return {
+          thisText: this?.textContent,
+          eventText: current.target.textContent,
+          sameTarget: current.target === current.currentTarget,
+        };
+      },
+    },
+    "javascript:({ direct: $(this).text(), called: inspect.call(this, event) })",
+    { event, target, $ },
+    target,
+  );
+
+  expect(result).toEqual({
+    direct: "Save",
+    called: {
+      thisText: "Save",
+      eventText: "Save",
+      sameTarget: true,
+    },
+  });
+});
+
+test("WUI javascript href interception injects the registered front module, this, and event", async () => {
+  let clickListener;
+  let seen;
+  const anchor = {
+    tagName: "A",
+    href: "javascript:inspect(this,event)",
+    getAttribute(name) {
+      return name === "href" ? this.href : null;
+    },
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  };
+  const documentObject = {
+    readyState: "complete",
+    addEventListener(name, listener) {
+      if (name === "click") clickListener = listener;
+    },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  const target = {
+    document: documentObject,
+    addEventListener() {},
+    __mdcuiFrontModule: {
+      inspect(targetArg, eventArg) {
+        seen = {
+          targetArg,
+          eventArg,
+          target: eventArg.target,
+          currentTarget: eventArg.currentTarget,
+          type: eventArg.type,
+        };
+      },
+    },
+  };
+  installWebDollar(target);
+  const nativeEvent = {
+    type: "click",
+    target: anchor,
+    preventDefault() {},
+  };
+
+  await clickListener(nativeEvent);
+
+  expect(seen).toEqual({
+    targetArg: anchor,
+    eventArg: expect.any(Object),
+    target: anchor,
+    currentTarget: anchor,
+    type: "click",
+  });
+});
+
+test("WUI wraps only the first visible heading character as a toggle target", () => {
+  const html = wrapWuiHeadingSections(
+    '<h2 id="title"><em>Title</em></h2><p>Body</p><h2 id="next">&amp; next</h2>',
+  );
+
+  expect(html).toContain(
+    '<em><span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">T</span>itle</em>',
+  );
+  expect(html).toContain(
+    '<span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">&amp;</span> next',
+  );
+});
+
+test("WUI heading toggles preserve inline code and opaque block markers", () => {
+  const inlineCode = wrapWuiHeadingSections(
+    '<h2 id="code"><code>foo</code></h2><p>Body</p>',
+  );
+  expect(inlineCode).toContain(
+    '<code><span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">f</span>oo</code>',
+  );
+  expect(inlineCode).not.toContain("MDCUI_HEADING_OPAQUE_");
+
+  const protectedBlock = wrapWuiHeadingSections(
+    '<pre><code><h2 id="fake">Fake</h2></code></pre><h2 id="real">Real</h2>',
+  );
+  expect(protectedBlock).toContain('<pre><code><h2 id="fake">Fake</h2></code></pre>');
+  expect(protectedBlock).not.toContain("MDCUI_HEADING_OPAQUE_");
+  expect(protectedBlock.match(/<section>/g)).toHaveLength(1);
+});
+
 test("TUI keydown.prevent runs before editing and blocks text input", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-keydown-"));
   const markdownPath = join(dir, "app.md");
   const markdown = [
-    '```text#field @keydown.prevent="record(event)"',
+    '```text#field @keydown.prevent="record(this,event)"',
     "a",
     "```",
     "",
@@ -303,9 +420,9 @@ test("TUI keydown.prevent runs before editing and blocks text input", async () =
     "```",
     "",
     "```js front",
-    "export function record(event) {",
+    "export function record(target, event) {",
     "  const data = JSON.parse(JSON.stringify(event));",
-    "  $('#status').val(`${data.key}:${data.target.id}:${data.target.value}:${data.defaultPrevented}:${Object.keys(event).includes('toJSON')}`);",
+    "  $('#status').val(`${data.key}:${data.target.id}:${data.target.value}:${data.defaultPrevented}:${Object.keys(event).includes('toJSON')}:${target === event.target}`);",
     "}",
     "```",
     "",
@@ -330,10 +447,10 @@ test("TUI keydown.prevent runs before editing and blocks text input", async () =
     });
     await waitFor(() => Bun.stripANSI(output).includes("waiting"));
     terminal.write("x");
-    await waitFor(() => Bun.stripANSI(output).includes("x:field:a:true:false"));
+    await waitFor(() => Bun.stripANSI(output).includes("x:field:a:true:false:true"));
     terminal.write("\x11");
     await Promise.race([proc.exited, Bun.sleep(2000)]);
-    expect(Bun.stripANSI(output)).toContain("x:field:a:true:false");
+    expect(Bun.stripANSI(output)).toContain("x:field:a:true:false:true");
   } finally {
     if (proc && proc.exitCode == null) proc.kill();
     terminal?.close();

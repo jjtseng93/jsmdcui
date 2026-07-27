@@ -106,7 +106,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -553,6 +553,25 @@ function parseOsc8Link(ansiText) {
   return null;
 }
 
+function osc8LinkSpanAtColumn(ansiText, column) {
+  const input = String(ansiText ?? "");
+  const re = /\x1b]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)([\s\S]*?)\x1b]8;;(?:\x07|\x1b\\)/g;
+  let match;
+  while ((match = re.exec(input)) !== null) {
+    const before = Bun.stripANSI(input.slice(0, match.index));
+    const textContent = Bun.stripANSI(match[2]);
+    const start = displayWidth(before);
+    const end = start + displayWidth(textContent);
+    if (column >= start && column < end) {
+      return {
+        href: match[1],
+        textContent,
+      };
+    }
+  }
+  return null;
+}
+
 function localModuleUrl(filePath) {
   const absPath = resolve(filePath);
   let href = pathToFileURL(absPath).href;
@@ -572,14 +591,42 @@ function mdcuiCellPayload(buf, y, x, trigger = "unknown") {
   const ansi = typeof Bun?.sliceAnsi === "function"
     ? Bun.sliceAnsi(ansiLine, col - 1, col)
     : line.slice(charIdx, charIdx + 1);
+  const linkSpan = osc8LinkSpanAtColumn(ansiLine, col - 1);
   return {
     trigger,
     row: rowIdx + 1,
     col,
     ansi,
-    link: parseOsc8Link(ansi),
+    link: linkSpan?.href ?? parseOsc8Link(ansi),
+    linkText: linkSpan?.textContent ?? "",
     line,
   };
+}
+
+function tuiLinkActivationContext(payload) {
+  const target = {
+    tagName: "A",
+    href: payload.link,
+    textContent: payload.linkText,
+    innerHTML: payload.linkText,
+  };
+  let defaultPrevented = false;
+  let propagationStopped = false;
+  const event = {
+    type: payload.trigger === "mouse" ? "click" : "keydown",
+    key: payload.trigger === "enter"
+      ? "Enter"
+      : payload.trigger === "space"
+        ? " "
+        : undefined,
+    target,
+    currentTarget: target,
+    get defaultPrevented() { return defaultPrevented; },
+    get propagationStopped() { return propagationStopped; },
+    preventDefault() { defaultPrevented = true; },
+    stopPropagation() { propagationStopped = true; },
+  };
+  return { event, target };
 }
 
 function resizeMdcuiTextBlock(buf, y, x) {
@@ -2040,13 +2087,23 @@ class BufferModel {
     if (!isMdcuiEncoding(this.encoding) || this._mdcuiTuiSourceText == null) return false;
     const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
     if (renderWidth === this._mdcuiRenderWidth) return false;
-    const { rendered, images } = await renderMdcui(this._mdcuiTuiSourceText, renderWidth, null, this.path);
+    const snapshot = captureTuiRerenderState(this);
+    let rerendered;
+    try {
+      rerendered = await renderMdcui(this._mdcuiTuiSourceText, renderWidth, null, this.path);
+    } catch (error) {
+      restoreTuiHiddenHeadings(this, snapshot.hiddenHeadings);
+      throw error;
+    }
+    const { rendered, images } = rerendered;
     const styled = parseAnsiStyledText(rendered);
     this.lines = normalizeBufferText(styled.text).split("\n");
     if (this.lines.length === 0) this.lines = [""];
     this._ansiStyleLines = styled.styleLines;
     this._mdcuiAnsiText = rendered;
     this._mdcuiImages = images;
+    this._mdcuiHeadingTaskListAnchors = null;
+    restoreTuiRerenderState(this, snapshot);
     this._mdcuiRenderWidth = renderWidth;
     this.fileformat = detectFileFormat(styled.text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
     this.Settings.fileformat = this.fileformat;
@@ -4603,7 +4660,7 @@ class App {
           ? import(global.MDCUI_MAIN + ".front.js")
           : import(localModuleUrl(frontPath)),
       ]);
-      const result = await evalFront(frontMod, code, { event });
+      const result = await evalFront(frontMod, code, { event, target }, target);
       if (result && typeof result === "object" && result.ok === false) {
         this.message = `mdcui ${eventName}: ${String(result.error ?? "Unknown error")}`;
       }
@@ -4617,6 +4674,10 @@ class App {
   async handleMdcuiCellCallback(buf, y = buf?.cursor?.y ?? 0, x = buf?.cursor?.x ?? 0, trigger = "unknown") {
     const payload = mdcuiCellPayload(buf, y, x, trigger);
     if (!payload) return false;
+    if (
+      (trigger === "space" || trigger === "enter" || trigger === "mouse")
+      && toggleTuiHeadingAt(buf, y, x)
+    ) return true;
     const resizeResult = resizeMdcuiTextBlock(buf, y, x);
     if (resizeResult) {
       if (resizeResult === "added") this.message = "Added text row";
@@ -4647,7 +4708,13 @@ class App {
               ? import(global.MDCUI_MAIN + ".front.js")
               : import(localModuleUrl(`${buf.path}.front.js`)),
           ]);
-          const result = await evalFront(frontMod, payload.link);
+          const context = tuiLinkActivationContext(payload);
+          const result = await evalFront(
+            frontMod,
+            payload.link,
+            context,
+            context.target,
+          );
           if (result && typeof result === "object" && result.ok === false) {
             this.protectedAlert(String(result.error ?? "Unknown error"));
           } else if (result != null) {

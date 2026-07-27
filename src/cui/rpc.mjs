@@ -71,6 +71,140 @@ function isWebHeading(element)
   return /^h[1-6]$/i.test(String(element?.tagName ?? ""));
 }
 
+function semanticWebHeadingHtml(heading)
+{
+  const copy = heading?.cloneNode?.(true);
+  if (!copy) return String(heading?.innerHTML ?? "");
+  for (const toggle of copy.querySelectorAll?.(".mdcui-heading-toggle") ?? [])
+    toggle.replaceWith?.(...toggle.childNodes);
+  return String(copy.innerHTML ?? "");
+}
+
+function firstWebHeadingTextNode(root)
+{
+  for (const child of root?.childNodes ?? []) {
+    if (child.nodeType === 3 && /\S/u.test(String(child.textContent ?? "")))
+      return child;
+    const nested = firstWebHeadingTextNode(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function ensureWebHeadingToggle(heading)
+{
+  if (!isWebHeading(heading) || !heading.id) return null;
+  const existing = heading.querySelector?.(".mdcui-heading-toggle");
+  if (existing) {
+    if (existing.style) existing.style.cursor = "pointer";
+    return existing;
+  }
+
+  const textNode = firstWebHeadingTextNode(heading);
+  const text = String(textNode?.textContent ?? "");
+  const start = text.search(/\S/u);
+  if (!textNode || start < 0) return null;
+  const character = [...text.slice(start)][0];
+  const documentObject = heading.ownerDocument;
+  const range = documentObject?.createRange?.();
+  const toggle = documentObject?.createElement?.("span");
+  if (!range || !toggle) return null;
+
+  toggle.className = "mdcui-heading-toggle";
+  toggle.setAttribute?.("role", "button");
+  toggle.setAttribute?.("tabindex", "0");
+  toggle.setAttribute?.("aria-expanded", "true");
+  if (toggle.style) toggle.style.cursor = "pointer";
+  range.setStart(textNode, start);
+  range.setEnd(textNode, start + character.length);
+  range.surroundContents(toggle);
+  return toggle;
+}
+
+function webIdStore(documentObject)
+{
+  if (!(documentObject?._mdcuiIdStore instanceof Map))
+    documentObject._mdcuiIdStore = new Map();
+  return documentObject._mdcuiIdStore;
+}
+
+function webIdRecord(documentObject, id)
+{
+  const store = webIdStore(documentObject);
+  let record = store.get(id);
+  if (!record) {
+    record = {};
+    store.set(id, record);
+  }
+  return record;
+}
+
+function webUserData(documentObject, id, element)
+{
+  if (!documentObject || !id) return undefined;
+  const record = webIdRecord(documentObject, id);
+  if (!record.data || typeof record.data !== "object")
+    record.data = Object.create(null);
+  if (element) element.mdcuiData = record.data;
+  return record.data;
+}
+
+function removeWebUserData(documentObject, id, element, keys)
+{
+  if (!documentObject || !id) return;
+  const store = webIdStore(documentObject);
+  const record = store.get(id);
+  if (!record?.data) return;
+  if (keys.length === 0) {
+    delete record.data;
+    if (element) delete element.mdcuiData;
+  } else {
+    for (const key of keys) delete record.data[key];
+  }
+  if (Object.keys(record).length === 0) store.delete(id);
+}
+
+function hideWebHeadingSection(documentObject, heading)
+{
+  if (!isWebHeading(heading) || !heading.id) return false;
+  const store = webIdStore(documentObject);
+  if (store.get(heading.id)?.headingVisibility?.hidden) return true;
+
+  const section = heading.parentElement;
+  const parent = section?.parentElement;
+  if (String(section?.tagName ?? "").toLowerCase() !== "section" || !parent) return false;
+
+  heading.remove?.();
+  parent.insertBefore?.(heading, section);
+  section.hidden = true;
+  heading.querySelector?.(".mdcui-heading-toggle")
+    ?.setAttribute?.("aria-expanded", "false");
+  webIdRecord(documentObject, heading.id).headingVisibility = {
+    hidden: true,
+    section,
+  };
+  return true;
+}
+
+function showWebHeadingSection(documentObject, heading)
+{
+  if (!isWebHeading(heading) || !heading.id) return false;
+  const store = webIdStore(documentObject);
+  const record = store.get(heading.id);
+  const state = record?.headingVisibility;
+  if (!state?.hidden) return true;
+
+  const section = state.section;
+  section.hidden = false;
+  heading.remove?.();
+  section.insertBefore?.(heading, section.firstChild ?? null);
+  heading.querySelector?.(".mdcui-heading-toggle")
+    ?.setAttribute?.("aria-expanded", "true");
+  delete record.headingVisibility;
+  if (Object.keys(record).length === 0) store.delete(heading.id);
+  return true;
+}
+
 function firstHeadingList(heading)
 {
   for (let sibling = heading?.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
@@ -263,23 +397,207 @@ function installWebTextareaResize(target)
     queueMicrotask(resizeAll);
 }
 
+function webLinkActivationEvent(nativeEvent, anchor)
+{
+  return {
+    type: String(nativeEvent?.type ?? "click"),
+    target: anchor,
+    currentTarget: anchor,
+    originalEvent: nativeEvent,
+    ctrlKey: Boolean(nativeEvent?.ctrlKey),
+    altKey: Boolean(nativeEvent?.altKey),
+    shiftKey: Boolean(nativeEvent?.shiftKey),
+    metaKey: Boolean(nativeEvent?.metaKey),
+    get defaultPrevented() { return Boolean(nativeEvent?.defaultPrevented); },
+    preventDefault() { nativeEvent?.preventDefault?.(); },
+    stopPropagation() { nativeEvent?.stopPropagation?.(); },
+  };
+}
+
+function installWebLinkContext(target)
+{
+  const documentObject = target?.document;
+  if (!documentObject || documentObject.__mdcuiLinkContextInstalled) return;
+  documentObject.__mdcuiLinkContextInstalled = true;
+  documentObject.addEventListener?.("click", async nativeEvent => {
+    const anchor = nativeEvent.target?.closest?.("a[href]");
+    const href = anchor?.getAttribute?.("href") ?? "";
+    if (!/^javascript:/i.test(href)) return;
+    nativeEvent.preventDefault?.();
+    const event = webLinkActivationEvent(nativeEvent, anchor);
+    await evalFront(
+      target.__mdcuiFrontModule ?? {},
+      href,
+      { event, target: anchor },
+      anchor,
+    );
+  });
+}
+
+function installWebHeadingToggle(target)
+{
+  const documentObject = target?.document;
+  if (!documentObject || documentObject.__mdcuiHeadingToggleInstalled) return;
+  documentObject.__mdcuiHeadingToggleInstalled = true;
+
+  const decorateAll = () => {
+    for (const heading of documentObject.querySelectorAll?.(
+      "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]",
+    ) ?? []) ensureWebHeadingToggle(heading);
+  };
+  if (documentObject.readyState === "loading")
+    documentObject.addEventListener?.("DOMContentLoaded", decorateAll, { once: true });
+  else
+    queueMicrotask(decorateAll);
+
+  const activate = event => {
+    const toggle = event.target?.closest?.(".mdcui-heading-toggle");
+    const heading = toggle?.closest?.("h1, h2, h3, h4, h5, h6");
+    if (!heading?.id) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+    createWebDollar(documentObject)(heading).toggle();
+  };
+  documentObject.addEventListener?.("click", activate, { capture: true });
+  documentObject.addEventListener?.("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") activate(event);
+  }, { capture: true });
+}
+
 export function createWebDollar(documentObject = globalThis.document)
 {
   return function $(selectorText) {
-    const selector = parseDollarIdentity(selectorText, { selector: true });
+    const objectTarget = selectorText !== null && typeof selectorText === "object"
+      ? selectorText
+      : null;
+    const selector = objectTarget
+      ? null
+      : parseDollarIdentity(selectorText, { selector: true });
+    const selectorId = String(objectTarget?.id ?? selector?.id ?? "");
+    const nestedSelection = Boolean(objectTarget?._mdcuiDollarSelection);
+    const identityOnlyObject = Boolean(
+      objectTarget
+      && selectorId
+      && !("value" in objectTarget)
+      && !("textContent" in objectTarget)
+      && !("innerHTML" in objectTarget)
+      && !objectTarget.tagName
+      && !objectTarget.nodeType
+      && !objectTarget.ownerDocument
+    );
+    const resolveElementById = () => (
+      documentObject?.getElementById?.(selectorId)
+      ?? findWebDollarElement(
+        documentObject,
+        `#${selectorId}`,
+        parseDollarIdentity(`#${selectorId}`, { selector: true }),
+      )
+    );
+    const resolveElement = () => nestedSelection || identityOnlyObject
+      ? (
+        resolveElementById()
+      )
+      : objectTarget ?? findWebDollarElement(documentObject, selectorText, selector);
     const selection = {
+      id: selectorId,
+      _mdcuiDollarSelection: true,
       html() {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
-          return element ? String(element.innerHTML ?? "") : "";
+          const element = resolveElement();
+          if (!element) return "";
+          return isWebHeading(element)
+            ? semanticWebHeadingHtml(element)
+            : String(element.innerHTML ?? "");
         } catch {
           return "";
         }
       },
+      text(...args) {
+        try {
+          const element = resolveElement();
+          if (!element) return args.length > 0 ? selection : "";
+          if (args.length > 0) {
+            element.textContent = String(args[0] ?? "");
+            if (isWebHeading(element)) ensureWebHeadingToggle(element);
+            return selection;
+          }
+          return String(element.textContent ?? "");
+        } catch {
+          return args.length > 0 ? selection : "";
+        }
+      },
+      show() {
+        try {
+          const element = resolveElement();
+          showWebHeadingSection(documentObject, element);
+        } catch {}
+        return selection;
+      },
+      hide() {
+        try {
+          const element = resolveElement();
+          hideWebHeadingSection(documentObject, element);
+        } catch {}
+        return selection;
+      },
+      toggle() {
+        try {
+          const element = resolveElement();
+          const hidden = webIdStore(documentObject)
+            .get(element?.id)?.headingVisibility?.hidden;
+          if (hidden) showWebHeadingSection(documentObject, element);
+          else hideWebHeadingSection(documentObject, element);
+        } catch {}
+        return selection;
+      },
+      data(...args) {
+        try {
+          const element = resolveElement();
+          const id = element?.id || selector?.id || selectorId;
+          const data = webUserData(documentObject, id, element);
+          if (!data) return args.length === 0 ? undefined : selection;
+          if (args.length === 0) return data;
+          if (args.length === 1) {
+            if (args[0] && typeof args[0] === "object") {
+              Object.assign(data, args[0]);
+              return selection;
+            }
+            return data[String(args[0])];
+          }
+          data[String(args[0])] = args[1];
+          return selection;
+        } catch {
+          return args.length <= 1 ? undefined : selection;
+        }
+      },
+      removeData(...keys) {
+        try {
+          const element = resolveElement();
+          const id = element?.id || selector?.id || selectorId;
+          const normalized = keys
+            .flatMap(key => Array.isArray(key) ? key : String(key).split(/\s+/))
+            .filter(Boolean)
+            .map(String);
+          removeWebUserData(documentObject, id, element, normalized);
+        } catch {}
+        return selection;
+      },
       val(...args) {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           if (!element) return args.length > 0 ? selection : "";
+          if (objectTarget) {
+            if (args.length > 0) {
+              const value = String(args[0] ?? "");
+              if ("value" in element) {
+                element.value = value;
+                resizeWebTextarea(element);
+              } else element.textContent = value;
+              return selection;
+            }
+            return webDollarValue(element);
+          }
           if (isWebHeading(element)) {
             if (args.length > 0) return selection;
             return webHeadingValue(element);
@@ -301,7 +619,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       push(...items) {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           return isWebHeading(element) ? mutateWebHeadingList(element, "push", items) : 0;
         } catch {
           return 0;
@@ -309,7 +627,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       pop() {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           return isWebHeading(element) ? mutateWebHeadingList(element, "pop", []) : undefined;
         } catch {
           return undefined;
@@ -317,7 +635,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       shift() {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           return isWebHeading(element) ? mutateWebHeadingList(element, "shift", []) : undefined;
         } catch {
           return undefined;
@@ -325,7 +643,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       unshift(...items) {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           return isWebHeading(element) ? mutateWebHeadingList(element, "unshift", items) : 0;
         } catch {
           return 0;
@@ -333,7 +651,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       splice(...args) {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           return isWebHeading(element) ? mutateWebHeadingList(element, "splice", args) : [];
         } catch {
           return [];
@@ -341,7 +659,7 @@ export function createWebDollar(documentObject = globalThis.document)
       },
       slice(...args) {
         try {
-          const element = findWebDollarElement(documentObject, selectorText, selector);
+          const element = resolveElement();
           if (!isWebHeading(element)) return [];
           const list = firstHeadingList(element);
           if (!list) return [];
@@ -361,6 +679,8 @@ export function installWebDollar(target = globalThis)
   const $ = createWebDollar(target.document);
   target.$ = $;
   installWebTextareaResize(target);
+  installWebHeadingToggle(target);
+  installWebLinkContext(target);
   return $;
 }
 
@@ -451,7 +771,7 @@ function safeFrontValue(value)
   };
 }
 
-export async function evalFront(mod, text, scope = {})
+export async function evalFront(mod, text, scope = {}, thisArg = undefined)
 {
 try{
 
@@ -467,10 +787,10 @@ try{
     const values = entries.map(([, value]) => safeFrontValue(value));
 
     try {
-      return await new AsyncFunction(...names, `return await (${text})`)(...values);
+      return await new AsyncFunction(...names, `return await (${text})`).call(thisArg, ...values);
     } catch(e) {
       if (e instanceof SyntaxError)
-        return await new AsyncFunction(...names, text)(...values);
+        return await new AsyncFunction(...names, text).call(thisArg, ...values);
       throw e;
     }
 
