@@ -1061,6 +1061,36 @@ export function indexTuiHeadingRows(buffer) {
   return _tuiHeadingRowIndex(buffer);
 }
 
+export function navigateTuiHeadingFragment(buffer, href) {
+  const value = String(href ?? "");
+  if (!value.startsWith("#") || value.length === 1) return false;
+
+  let id;
+  try {
+    id = decodeURIComponent(value.slice(1));
+  } catch {
+    return false;
+  }
+  if (!id) return false;
+
+  const heading = _tuiSourceHeadings(buffer).find(item => item.id === id);
+  if (!heading) return false;
+  const rendered = _tuiHeadingRowIndex(buffer).byOrdinal.get(heading.ordinal);
+  if (
+    !rendered
+    || rendered.id !== heading.id
+    || rendered.level !== heading.level
+  ) return false;
+
+  buffer.cursor = {
+    x: rendered.column,
+    y: rendered.row,
+  };
+  buffer.allowCursorOffscreen = false;
+  buffer.ensureCursor?.();
+  return true;
+}
+
 function _cachedTuiHeadingRowIndex(buffer) {
   const cached = buffer?._mdcuiHeadingRowIndex;
   return (

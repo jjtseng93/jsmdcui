@@ -5,6 +5,7 @@ import {
   refreshTuiLinkIndex,
   tuiLinkActivationContext,
 } from "../src/cui/tui-links.mjs";
+import { navigateTuiHeadingFragment } from "../src/plugins/js-bridge.js";
 
 function markdownBuffer(markdown, columns) {
   const ansi = String(Bun.markdown.ansi(markdown, {
@@ -253,5 +254,43 @@ describe("TUI OSC 8 link index", () => {
     expect(hit?.href).toBe("javascript:new()");
     expect(hit?.textContent).toBe("new rich");
     expect(hit?.innerHTML).toBe("new <strong>rich</strong>");
+  });
+
+  test("same-document fragments move to the rendered heading toggle", () => {
+    const markdown = [
+      "[Jump](#%E4%B8%AD%E6%96%87-%E8%A8%AD%E5%AE%9A)",
+      "",
+      "# Root",
+      "",
+      "> ## 中文 設定！",
+    ].join("\n");
+    const buffer = markdownBuffer(markdown, 80);
+    let ensureCursorCalls = 0;
+    buffer.cursor = { x: 0, y: 0 };
+    buffer.scroll = { x: 0, y: 0, row: 0 };
+    buffer.ensureCursor = () => { ensureCursorCalls++; };
+
+    const link = indexedTuiLinkAtPosition(buffer, 0, 0);
+    expect(link?.href).toBe(
+      "#%E4%B8%AD%E6%96%87-%E8%A8%AD%E5%AE%9A",
+    );
+    expect(navigateTuiHeadingFragment(buffer, link.href)).toBeTrue();
+    expect(buffer.lines[buffer.cursor.y]).toContain("中文 設定");
+    expect(buffer.cursor.x).toBeGreaterThan(0);
+    expect(buffer.allowCursorOffscreen).toBeFalse();
+    expect(ensureCursorCalls).toBe(1);
+  });
+
+  test("fragment navigation ignores missing, empty, and malformed IDs", () => {
+    const buffer = markdownBuffer("# Existing", 80);
+    buffer.cursor = { x: 0, y: 0 };
+    buffer.ensureCursor = () => {
+      throw new Error("missing fragments must not move the cursor");
+    };
+
+    expect(navigateTuiHeadingFragment(buffer, "#missing")).toBeFalse();
+    expect(navigateTuiHeadingFragment(buffer, "#")).toBeFalse();
+    expect(navigateTuiHeadingFragment(buffer, "#%ZZ")).toBeFalse();
+    expect(buffer.cursor).toEqual({ x: 0, y: 0 });
   });
 });

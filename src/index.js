@@ -116,7 +116,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -3147,7 +3147,7 @@ class App {
     for (const p of tab.panes()) {
       if (p.buffer?._pendingCenterScroll) {
         delete p.buffer._pendingCenterScroll;
-        this._ttsScrollToCenter(p);
+        this.scrollCursorToCenter(p);
       }
     }
 
@@ -3798,9 +3798,7 @@ class App {
   }
 
   // Center the current cursor line vertically in the pane.
-  // Called during TTS playback so each new sentence scrolls into the middle
-  // of the screen rather than just becoming barely visible at the edge.
-  _ttsScrollToCenter(pane) {
+  scrollCursorToCenter(pane) {
     const buf = pane?.buffer;
     if (!buf) return;
     const gutterW = editorGutterWidth(buf);
@@ -4634,6 +4632,16 @@ class App {
     if (resizeResult) {
       if (resizeResult === "added") this.message = "Added text row";
       else if (resizeResult === "removed") this.message = "Removed empty text row";
+      return true;
+    }
+    if (
+      payload.link?.startsWith("#")
+      && navigateTuiHeadingFragment(buf, payload.link)
+    ) {
+      if (this.pane?.buffer === buf) {
+        this.pane.selection = null;
+        this.scrollCursorToCenter(this.pane);
+      }
       return true;
     }
     const callback = this.context?.mdcuiCallback ?? globalThis.mdcuiCallback;
@@ -6697,7 +6705,7 @@ class App {
         buf.cursor = { x: start.x, y: start.y };
         buf.allowCursorOffscreen = false;
         buf.ensureCursor();
-        this._ttsScrollToCenter(pane);
+        this.scrollCursorToCenter(pane);
       }
       this.render();
       const spawnOpts = { stdout: "ignore", stderr: "ignore",env:Bun.env };

@@ -9,6 +9,8 @@ demo.jpg
 ```
 
 - [讀取圖片 metadata](javascript:readMetadata())
+- .
+- [跳到寫入按鈕](#寫入狀態)
 
 ```text#image-metadata
 尚未讀取 metadata
@@ -131,7 +133,10 @@ demo.jpg
 - [x] yes
 - [ ] no
 
-- [Resize and write image](javascript:resizeAndWrite())
+## 最後一步
+- [跳到頂端](#bunimage-processor)
+- .
+- [處理並寫入圖片](javascript:resizeAndWrite())
 
 ## 寫入狀態
 

@@ -28,6 +28,8 @@ All notable user-visible changes to jsmdcui are documented here.
   with a visible-text fallback when source metadata is unavailable.
 - Add `--outline FILE.md` to print every selectable heading ID as an indented
   `-` item and every named fenced-block ID as a top-level `+` item.
+- Let TUI `#heading-id` links move the cursor to the matching Markdown heading
+  and center it vertically, matching same-document WUI navigation.
 
 ### Changed
 

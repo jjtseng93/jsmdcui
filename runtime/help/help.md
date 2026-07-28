@@ -666,8 +666,8 @@ selection, search, and copy remain available.
 | Input | Result |
 | --- | --- |
 | Arrow keys, `Home`, `End`, `PageUp`, `PageDown` | Move through the rendered UI. |
-| `Enter` or `Space` | Activate the cell under the cursor. Put the cursor on a `javascript:` link to run it, or on or to the right of `☐` or `☒` to toggle that task. |
-| Left click | Move to and activate the clicked cell. A `javascript:` link runs immediately; clicking on or to the right of `☐` or `☒` toggles that task. |
+| `Enter` or `Space` | Activate the cell under the cursor. A `javascript:` link runs, a `#heading-id` link jumps to and centers that heading, and `☐` or `☒` toggles when activated on or to its right. |
+| Left click | Move to and activate the clicked cell. `javascript:` and `#heading-id` links follow the same behavior; clicking on or to the right of `☐` or `☒` toggles that task. |
 | Mouse wheel | Scroll three rows at a time. |
 | `Shift` + arrow keys | Select rendered text. |
 | `Ctrl-C` | Copy the selection, or the current line when nothing is selected. |
@@ -682,8 +682,9 @@ and the arrow keys to browse the available themes. Press `Enter` to switch to
 the selected theme, or `Esc` to cancel and restore the previous one.
 
 The terminal automatically reflows the Markdown when its width changes.
-Only `javascript:` links execute in the TUI; ordinary web links behave as
-normal links in the browser.
+Same-document links such as `[Jump](#target-heading)` navigate to Markdown
+heading IDs in the TUI. Only `javascript:` links execute code there; ordinary
+web links behave as normal links in the browser.
 
 Local Markdown images are displayed automatically in terminals that support
 the Kitty graphics protocol. Relative image paths are resolved from the

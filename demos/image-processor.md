@@ -9,6 +9,8 @@ demo.jpg
 ```
 
 - [Read image metadata](javascript:readMetadata())
+- .
+- [Jump to Write Button](#processing-result)
 
 ```text#image-metadata
 Metadata has not been read
@@ -131,6 +133,9 @@ Palette color count (used when Palette is enabled; `2`–`256`):
 - [x] yes
 - [ ] no
 
+## Final step
+- [Jump to Top](#bunimage-processor)
+- .
 - [Process and write image](javascript:resizeAndWrite())
 
 ## Processing Result
