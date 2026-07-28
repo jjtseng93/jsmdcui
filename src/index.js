@@ -116,7 +116,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, tuiCheckboxRerenderMismatchMessage, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -2892,10 +2892,18 @@ class App {
         if (!buf || seen.has(buf) || !isMdcuiEncoding(buf.encoding)) continue;
         seen.add(buf);
         const width = Math.max(1, (pane.w ?? this.cols) - editorGutterWidth(buf));
-        jobs.push(buf.rerenderMdcui(width));
+        jobs.push({ buf, promise: buf.rerenderMdcui(width) });
       }
     }
-    if (jobs.length > 0) await Promise.allSettled(jobs);
+    if (jobs.length === 0) return;
+    const results = await Promise.allSettled(jobs.map(job => job.promise));
+    const mismatches = jobs.filter((job, index) => (
+      results[index].status === "fulfilled"
+      && results[index].value === true
+      && job.buf._mdcuiRerenderMismatch?.checkboxes
+    ));
+    const mismatch = mismatches.find(job => job.buf === this.buffer) ?? mismatches[0];
+    if (mismatch) this.message = tuiCheckboxRerenderMismatchMessage(mismatch.buf);
   }
 
   async reinitializeClipboard(setting) {
@@ -4081,14 +4089,14 @@ class App {
       }
 
       if (activePaneObj.terminal.exited && events.some((event) => event.type === "key" && event.key === "enter")) {
-        this.closeTermPane(activePaneObj);
+        await this.closeTermPane(activePaneObj);
         this.render();
         return;
       }
 
       // Escape alone: close pane in legacy mode; protocol-aware shells need it as input.
       if (text === "\x1b" && !(activePaneObj.terminal?.vt?.keyboardProtocolFlags || activePaneObj.terminal?.vt?.modifyOtherKeys)) {
-        this.closeTermPane(activePaneObj);
+        await this.closeTermPane(activePaneObj);
         this.render();
         return;
       }
@@ -5532,7 +5540,7 @@ class App {
   async _doCloseCurrentPane() {
     if (this.tab.panes().length > 1) {
       await this.notifyMdcuiExit(this.buffer, "close-pane");
-      this.closePane(this.pane);
+      await this.closePane(this.pane);
       this.render();
     } else {
       await this.closeCurrentTab({ force: true });
@@ -5586,7 +5594,7 @@ class App {
   async toggleHelp() {
     const cur = this.pane;
     if (cur?.isHelp) {
-      this.closePane(cur);
+      await this.closePane(cur);
       return;
     }
     await this.openHelp("help", { hsplit: true });
@@ -5652,7 +5660,7 @@ class App {
     this.message = "No previous diff";
   }
 
-  closeTermPane(pane) {
+  async closeTermPane(pane) {
     pane.terminal?.close();
     pane.terminal = null;
     if (pane.prevBuffer) {
@@ -5660,11 +5668,11 @@ class App {
       pane.buffer = pane.prevBuffer;
       pane.prevBuffer = null;
     } else {
-      this.closePane(pane);
+      await this.closePane(pane);
     }
   }
 
-  closePane(pane) {
+  async closePane(pane) {
     pane.terminal?.close();
     const closingBuffers = [...new Set([pane.buffer, pane.prevBuffer].filter(Boolean))];
     const tab = this.tab;
@@ -5676,6 +5684,8 @@ class App {
       this.tabs.splice(this.activeTabIdx, 1);
       this.activeTabIdx = Math.min(this.activeTabIdx, this.tabs.length - 1);
     }
+    this.layoutEditorArea();
+    await this.rerenderMdcuiBuffersForLayout();
   }
 
   async closeCurrentTab({ force = false } = {}) {
@@ -6110,6 +6120,8 @@ class App {
           attachSyntax(newBuf, this.context, "", "");
         }
         this.tab.split(this.pane, new Pane(newBuf), "h");
+        this.layoutEditorArea();
+        await this.rerenderMdcuiBuffersForLayout();
         this.render();
         break;
       }

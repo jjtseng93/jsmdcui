@@ -8,6 +8,7 @@ import {
   restoreTuiRerenderState,
   spliceTuiBufferLines,
   toggleTuiHeadingAt,
+  tuiCheckboxRerenderMismatchMessage,
 } from "../src/plugins/js-bridge.js";
 
 function tuiSelector(markdown) {
@@ -970,6 +971,22 @@ describe("TUI id-centered user data", () => {
 });
 
 describe("TUI source-dependent state reset", () => {
+  test("checkbox count mismatches provide a visible rerender message", () => {
+    expect(tuiCheckboxRerenderMismatchMessage({
+      name: "tasks.md",
+      _mdcuiRerenderMismatch: {
+        checkboxes: { before: 3, after: 2 },
+      },
+    })).toBe(
+      "Checkbox state restore skipped in tasks.md: count changed from 3 to 2",
+    );
+    expect(tuiCheckboxRerenderMismatchMessage({
+      _mdcuiRerenderMismatch: {
+        fenceBlocks: { before: 1, after: 2 },
+      },
+    })).toBe("");
+  });
+
   test("reopen cache clearing drops old render state while preserving user data", () => {
     const oldSource = `# Topic
 
@@ -1125,6 +1142,99 @@ describe("TUI heading text getter", () => {
 });
 
 describe("TUI resize state restoration", () => {
+  test("restores every checkbox glyph by full-text order without block filtering", () => {
+    const buffer = {
+      name: "glyphs.md",
+      lines: [
+        "Legend: ☒ done and ☐ pending",
+        "│ ☒ table value │",
+        "```text#sample",
+        "☐ fenced value",
+        "```",
+      ],
+      _mdcuiTuiSourceText: "",
+      _mdcuiAnsiText: "",
+      cursor: { x: 0, y: 0 },
+      ensureCursor() {},
+      invalidateHighlightFrom() {},
+    };
+    const snapshot = captureTuiRerenderState(buffer);
+    buffer.lines = [
+      "Legend: ☐ done and ☒ pending",
+      "│ ☐ table value │",
+      "```text#sample",
+      "☒ fenced value",
+      "```",
+    ];
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect(buffer.lines).toEqual([
+      "Legend: ☒ done and ☐ pending",
+      "│ ☒ table value │",
+      "```text#sample",
+      "☐ fenced value",
+      "```",
+    ]);
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
+  });
+
+  test("restores exact ANSI styles for checkbox glyphs by visible column", () => {
+    const originalAnsi = [
+      "中文 \x1b[1;38;2;12;34;56;48;5;20m☒\x1b[0m suffix",
+      "\x1b[35m😀 ☐ tail\x1b[0m",
+    ].join("\n");
+    const buffer = {
+      name: "styled.md",
+      lines: Bun.stripANSI(originalAnsi).split("\n"),
+      _mdcuiTuiSourceText: "",
+      _mdcuiAnsiText: originalAnsi,
+      _ansiStyleLines: [
+        Array.from({ length: 20 }, () => null),
+        Array.from({ length: 20 }, () => null),
+      ],
+      cursor: { x: 0, y: 0 },
+      ensureCursor() {},
+      invalidateHighlightFrom() {},
+    };
+    const firstX = buffer.lines[0].indexOf("☒");
+    const secondX = buffer.lines[1].indexOf("☐");
+    buffer._ansiStyleLines[0][firstX] = {
+      bold: true,
+      fg: "#0c2238",
+      bg: 20,
+    };
+    buffer._ansiStyleLines[1][secondX] = { fg: "magenta" };
+    const snapshot = captureTuiRerenderState(buffer);
+
+    const rerenderedAnsi = [
+      "中文 \x1b[31m☐\x1b[0m suffix",
+      "\x1b[36m😀 ☒ tail\x1b[0m",
+    ].join("\n");
+    buffer.lines = Bun.stripANSI(rerenderedAnsi).split("\n");
+    buffer._mdcuiAnsiText = rerenderedAnsi;
+    buffer._ansiStyleLines[0][firstX] = { fg: "red" };
+    buffer._ansiStyleLines[1][secondX] = { fg: "cyan" };
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect(buffer.lines).toEqual(Bun.stripANSI(originalAnsi).split("\n"));
+    expect(buffer._ansiStyleLines[0][firstX]).toEqual({
+      bold: true,
+      fg: "#0c2238",
+      bg: 20,
+    });
+    expect(buffer._ansiStyleLines[1][secondX]).toEqual({ fg: "magenta" });
+    expect(
+      Bun.sliceAnsi(buffer._mdcuiAnsiText.split("\n")[0], 5, 6),
+    ).toBe(
+      Bun.sliceAnsi(originalAnsi.split("\n")[0], 5, 6),
+    );
+    expect(
+      Bun.sliceAnsi(buffer._mdcuiAnsiText.split("\n")[1], 3, 4),
+    ).toBe(
+      Bun.sliceAnsi(originalAnsi.split("\n")[1], 3, 4),
+    );
+  });
+
   test("preserves direct checkbox state inside a blockquote", () => {
     const source = `> ## Quoted
 >

@@ -468,7 +468,10 @@ function registerBuiltinActions() {
   // Split actions (delegate to handleCommand for buffer opening)
   reg("VSplitAction", async (app) => app.handleCommand?.("vsplit"));
   reg("HSplitAction", async (app) => app.handleCommand?.("hsplit"));
-  reg("Unsplit", (app) => { if ((app.tab?.panes().length ?? 0) > 1) app.closePane?.(app.pane); });
+  reg("Unsplit", async (app) => {
+    if ((app.tab?.panes().length ?? 0) > 1)
+      await app.closePane?.(app.pane);
+  });
 
   // File operations
   reg("OpenFile",  (app) => app.openCommandMode?.("open "));
@@ -1721,19 +1724,25 @@ function _restoreTuiFenceBlocks(buffer, snapshots) {
 }
 
 function _tuiCheckboxRows(buffer) {
-  const blocks = buildTuiBlockIndex(buffer?.lines ?? []);
   const rows = [];
-  let blockIndex = 0;
+  const ansiLines = typeof buffer?._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
   for (let y = 0; y < (buffer?.lines?.length ?? 0); y++) {
-    while (blocks[blockIndex] && y >= blocks[blockIndex].end) blockIndex++;
-    const block = blocks[blockIndex];
-    if (block && y > block.start && y < block.end) continue;
-    const checkbox = _tuiRenderedTaskCheckbox(buffer.lines[y]);
-    if (checkbox) {
+    const line = String(buffer.lines[y] ?? "");
+    for (const match of line.matchAll(/[☐☒]/gu)) {
+      const style = buffer._ansiStyleLines?.[y]?.[match.index] ?? null;
+      const column = globalThis.Bun?.stringWidth
+        ? Bun.stringWidth(line.slice(0, match.index))
+        : match.index;
       rows.push({
         y,
-        x: checkbox.column,
-        checked: checkbox.checked,
+        x: match.index,
+        checked: match[0] === "☒",
+        style: style ? { ...style } : null,
+        ansi: ansiLines && globalThis.Bun?.sliceAnsi
+          ? Bun.sliceAnsi(ansiLines[y] ?? "", column, column + 1)
+          : null,
       });
     }
   }
@@ -1754,21 +1763,51 @@ function _restoreTuiCheckboxStates(buffer, states) {
     : null;
   for (let index = 0; index < rows.length; index++) {
     const row = rows[index];
-    const checked = Boolean(states[index]);
+    const state = states[index];
+    const checked = typeof state === "object" && state !== null
+      ? Boolean(state.checked)
+      : Boolean(state);
     const glyph = checked ? "☒" : "☐";
-    if (buffer.lines[row.y][row.x] === glyph) continue;
-    buffer.lines[row.y] =
-      buffer.lines[row.y].slice(0, row.x) + glyph + buffer.lines[row.y].slice(row.x + 1);
     const styleLine = buffer._ansiStyleLines?.[row.y];
     if (Array.isArray(styleLine)) {
-      const style = checked ? { fg: "green" } : null;
-      styleLine[row.x] = style;
-      if (buffer.lines[row.y][row.x + 1] === " ") styleLine[row.x + 1] = style;
+      const style = typeof state === "object" && state !== null
+        ? state.style
+        : (checked ? { fg: "green" } : null);
+      styleLine[row.x] = style ? { ...style } : null;
     }
-    if (ansiLines)
-      ansiLines[row.y] = updateAnsiTaskCheckbox(ansiLines[row.y], row.x, checked);
+    if (ansiLines) {
+      if (
+        typeof state === "object"
+        && state !== null
+        && typeof state.ansi === "string"
+        && globalThis.Bun?.sliceAnsi
+      ) {
+        const line = String(buffer.lines[row.y] ?? "");
+        const column = globalThis.Bun?.stringWidth
+          ? Bun.stringWidth(line.slice(0, row.x))
+          : row.x;
+        ansiLines[row.y] =
+          Bun.sliceAnsi(ansiLines[row.y], 0, column)
+          + state.ansi
+          + Bun.sliceAnsi(ansiLines[row.y], column + 1);
+      } else {
+        ansiLines[row.y] = updateAnsiTaskCheckbox(ansiLines[row.y], row.x, checked);
+      }
+    }
+    if (buffer.lines[row.y][row.x] !== glyph) {
+      buffer.lines[row.y] =
+        buffer.lines[row.y].slice(0, row.x) + glyph + buffer.lines[row.y].slice(row.x + 1);
+    }
   }
   if (ansiLines) buffer._mdcuiAnsiText = ansiLines.join("\n");
+}
+
+export function tuiCheckboxRerenderMismatchMessage(buffer) {
+  const mismatch = buffer?._mdcuiRerenderMismatch?.checkboxes;
+  if (!mismatch) return "";
+  const name = String(buffer?.name ?? "").trim();
+  const location = name ? ` in ${name}` : "";
+  return `Checkbox state restore skipped${location}: count changed from ${mismatch.before} to ${mismatch.after}`;
 }
 
 export function captureTuiRerenderState(buffer) {
@@ -1791,7 +1830,11 @@ export function captureTuiRerenderState(buffer) {
 
   return {
     hiddenHeadings,
-    checkboxStates: _tuiCheckboxRows(buffer).map((item) => item.checked),
+    checkboxStates: _tuiCheckboxRows(buffer).map(({ checked, style, ansi }) => ({
+      checked,
+      style,
+      ansi,
+    })),
     fenceBlocks: _captureTuiFenceBlocks(buffer),
   };
 }
