@@ -4,6 +4,13 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ## [0.14.0] - 2026-07-29
 
+### Added
+
+- Add TUI `$('#heading-id').cell(row, col).text()` and `.text(value)` for
+  reading or replacing zero-based cells in the heading-associated table.
+  Wrapped cell lines are joined on read; writes remain inside the existing
+  rendered rectangle and survive width rerenders.
+
 ### Fixed
 
 - Render a full-width divider between logical TUI table rows associated with

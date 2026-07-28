@@ -10,6 +10,7 @@ import { Loc } from "../buffer/loc.js";
 import { renderMarkdownWithHeadingIds } from "../cui/heading-ids.mjs";
 import { isMdcuiId, parseMdcuiIdentity, parseMdcuiIdSelector } from "../cui/identity.mjs";
 import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
+import { replaceAnsiPlainRange } from "../cui/table-row-edit.mjs";
 
 // ── Action registry ──────────────────────────────────────────────────────────
 
@@ -1493,6 +1494,186 @@ function _tuiHeadingTaskList(buffer, heading) {
   return { first, end, indent, items, quoteDepth };
 }
 
+function _tuiHeadingTable(buffer, heading) {
+  if (!heading || _headingHasHiddenTuiAncestor(buffer, heading)) return null;
+  const headingIndex = _tuiHeadingRowIndex(buffer);
+  const renderedHeading = headingIndex.byOrdinal.get(heading.ordinal);
+  if (
+    !renderedHeading
+    || renderedHeading.id !== heading.id
+    || !Array.isArray(buffer?.lines)
+  ) return null;
+
+  const nextHeading = headingIndex.entries[renderedHeading.position + 1];
+  const endLine = Math.min(
+    nextHeading?.row ?? buffer.lines.length,
+    _tuiHeadingContainerEndRow(buffer, renderedHeading),
+  );
+  let top = -1;
+  let opening = -1;
+  let closing = -1;
+  for (let y = renderedHeading.row + 1; y < endLine; y++) {
+    const line = String(buffer.lines[y] ?? "");
+    const start = line.indexOf("┌");
+    const end = line.lastIndexOf("┐");
+    if (
+      start >= 0
+      && end > start
+      && /^┌─+(?:┬─+)*┐$/u.test(line.slice(start, end + 1))
+    ) {
+      top = y;
+      opening = start;
+      closing = end;
+      break;
+    }
+  }
+  if (top < 0) return null;
+
+  const rows = [];
+  let visualLines = [];
+  for (let y = top + 1; y < endLine; y++) {
+    const line = String(buffer.lines[y] ?? "");
+    const frame = line.slice(opening, closing + 1);
+    if (/^└─+(?:┴─+)*┘$/u.test(frame)) {
+      if (visualLines.length) rows.push(visualLines);
+      return { top, bottom: y, opening, closing, rows };
+    }
+    if (/^├─+(?:┼─+)*┤$/u.test(frame)) {
+      if (visualLines.length) rows.push(visualLines);
+      visualLines = [];
+      continue;
+    }
+    if (/^│ .* │$/u.test(frame)) {
+      const separators = [];
+      for (let index = opening; index <= closing; index++) {
+        if (line[index] === "│") separators.push(index);
+      }
+      if (separators.length >= 2) visualLines.push({ y, separators });
+    }
+  }
+  return null;
+}
+
+function _tuiTableCell(table, row, col) {
+  const rowIndex = Number(row);
+  const columnIndex = Number(col);
+  if (
+    !Number.isInteger(rowIndex)
+    || !Number.isInteger(columnIndex)
+    || rowIndex < 0
+    || columnIndex < 0
+  ) return null;
+  const visualLines = table?.rows?.[rowIndex];
+  if (
+    !Array.isArray(visualLines)
+    || visualLines.length === 0
+    || visualLines.some(line => columnIndex + 1 >= line.separators.length)
+  ) return null;
+  return { visualLines, columnIndex };
+}
+
+function _tuiTableCellText(buffer, table, row, col) {
+  const cell = _tuiTableCell(table, row, col);
+  if (!cell) return "";
+  return cell.visualLines.map(({ y, separators }) => {
+    const start = separators[cell.columnIndex] + 2;
+    const end = separators[cell.columnIndex + 1] - 1;
+    return String(buffer.lines[y] ?? "").slice(start, end).trimEnd();
+  }).join("");
+}
+
+const _tableCellSegmenter = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : null;
+
+function _tuiCellGraphemes(value) {
+  const text = String(value ?? "").replace(/\r\n?|\n/gu, "");
+  return _tableCellSegmenter
+    ? [..._tableCellSegmenter.segment(text)].map(item => item.segment)
+    : Array.from(text);
+}
+
+function _tuiStringWidth(value) {
+  return typeof globalThis.Bun?.stringWidth === "function"
+    ? Bun.stringWidth(String(value ?? ""))
+    : Array.from(String(value ?? "")).length;
+}
+
+function _setTuiTableCell(buffer, heading, row, col, value) {
+  const table = _tuiHeadingTable(buffer, heading);
+  const cell = _tuiTableCell(table, row, col);
+  if (!cell) return false;
+
+  const graphemes = _tuiCellGraphemes(value);
+  let grapheme = 0;
+  const replacements = [];
+  for (const { y, separators } of cell.visualLines) {
+    const start = separators[cell.columnIndex] + 2;
+    const end = separators[cell.columnIndex + 1] - 1;
+    const capacity = _tuiStringWidth(
+      String(buffer.lines[y] ?? "").slice(start, end),
+    );
+    let text = "";
+    let width = 0;
+    while (grapheme < graphemes.length) {
+      const next = graphemes[grapheme];
+      const nextWidth = _tuiStringWidth(next);
+      if (nextWidth <= 0) {
+        text += next;
+        grapheme++;
+        continue;
+      }
+      if (width + nextWidth > capacity) break;
+      text += next;
+      width += nextWidth;
+      grapheme++;
+    }
+    replacements.push({
+      y,
+      start,
+      end,
+      text: text + " ".repeat(Math.max(0, capacity - width)),
+    });
+  }
+
+  const before = _tuiTableCellText(buffer, table, row, col);
+  if (before === replacements.map(item => item.text.trimEnd()).join(""))
+    return true;
+  if (!buffer._mdcuiReplayingMutations) buffer.pushUndo?.(true);
+  const ansiLines = typeof buffer._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  for (const replacement of replacements) {
+    const oldLine = String(buffer.lines[replacement.y] ?? "");
+    const styleLine = buffer._ansiStyleLines?.[replacement.y];
+    if (Array.isArray(styleLine)) {
+      const style = styleLine[replacement.start] ?? null;
+      styleLine.splice(
+        replacement.start,
+        replacement.end - replacement.start,
+        ...Array.from({ length: replacement.text.length }, () => style),
+      );
+    }
+    if (ansiLines) {
+      ansiLines[replacement.y] = replaceAnsiPlainRange(
+        ansiLines[replacement.y] ?? "",
+        replacement.start,
+        replacement.end,
+        replacement.text,
+      );
+    }
+    buffer.lines[replacement.y] =
+      oldLine.slice(0, replacement.start)
+      + replacement.text
+      + oldLine.slice(replacement.end);
+    buffer.invalidateHighlightFrom?.(replacement.y);
+  }
+  if (ansiLines) buffer._mdcuiAnsiText = ansiLines.join("\n");
+  buffer._mdcuiLinkIndex = null;
+  buffer.modified = true;
+  return true;
+}
+
 function _normalizedSpliceRange(length, argumentCount, start, deleteCount) {
   if (argumentCount === 0) return { start: 0, deleteCount: 0 };
   let relativeStart = Number(start);
@@ -1650,8 +1831,23 @@ export function replayTuiMutationMacros(buffer) {
   buffer._mdcuiReplayingMutations = true;
   try {
     for (const macro of buffer._mdcuiMutationMacros) {
-      if (!macro || !["push", "pop", "shift", "unshift", "splice"].includes(macro.method))
+      if (macro?.method === "cellText") {
+        const heading = _findHeading(buffer, macro.selector);
+        if (heading) {
+          _setTuiTableCell(
+            buffer,
+            heading,
+            macro.row,
+            macro.col,
+            macro.value,
+          );
+        }
         continue;
+      }
+      if (
+        !macro
+        || !["push", "pop", "shift", "unshift", "splice"].includes(macro.method)
+      ) continue;
       let args;
       if (Array.isArray(macro.args)) args = macro.args;
       else {
@@ -2043,6 +2239,47 @@ export function createTuiSelector(getBuffer) {
         } catch {
           return args.length > 0 ? selection : "";
         }
+      },
+      cell(row, col) {
+        const cellSelection = {
+          text(...args) {
+            try {
+              const buffer = getBuffer?.();
+              const heading = _findHeading(buffer, selector);
+              const table = _tuiHeadingTable(buffer, heading);
+              if (args.length === 0)
+                return _tuiTableCellText(buffer, table, row, col);
+              const before = _tuiTableCellText(buffer, table, row, col);
+              const found = _setTuiTableCell(
+                buffer,
+                heading,
+                row,
+                col,
+                args[0],
+              );
+              const afterTable = _tuiHeadingTable(buffer, heading);
+              const after = _tuiTableCellText(buffer, afterTable, row, col);
+              if (
+                found
+                && before !== after
+                && buffer
+                && !buffer._mdcuiReplayingMutations
+              ) {
+                if (!Array.isArray(buffer._mdcuiMutationMacros))
+                  buffer._mdcuiMutationMacros = [];
+                buffer._mdcuiMutationMacros.push({
+                  selector: String(selector),
+                  method: "cellText",
+                  row: Number(row),
+                  col: Number(col),
+                  value: String(args[0] ?? ""),
+                });
+              }
+            } catch {}
+            return args.length > 0 ? cellSelection : "";
+          },
+        };
+        return cellSelection;
       },
       show() {
         try {

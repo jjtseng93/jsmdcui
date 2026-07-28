@@ -505,6 +505,8 @@ The available selector methods are:
 | `★★ .unshift(...items)` | Prepend unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
 | `★★ .splice(start, deleteCount, ...items)` | Remove and insert direct task items; return the removed labels as an array. | Same. |
 | `★★ .slice(start, end)` | Return `{ value, checked }` snapshots without changing the direct task items. | Same. |
+| `.cell(row, col).text()` | Read a heading-associated table cell using zero-based coordinates. Wrapped visual lines are joined without a separator. | Not available. |
+| `.cell(row, col).text(value)` | Replace text inside the cell's existing rendered rectangle; excess text is truncated and table borders stay fixed. | Not available. |
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
 
@@ -605,9 +607,9 @@ and heading visibility.
 ### TUI resize behavior
 
 Changing terminal or split width rerenders MDCUI while preserving heading
-visibility, task-list changes made through the heading API, direct checkbox
-state, and fenced-control contents. Multiline `.val(value)` changes also update
-later heading positions.
+visibility, task-list and table-cell changes made through the heading API,
+direct checkbox state, and fenced-control contents. Multiline `.val(value)`
+changes also update later heading positions.
 
 State changed through public `$()` control and heading APIs is supported.
 Arbitrary screen-row edits made through low-level editor APIs are outside this
