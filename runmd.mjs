@@ -9,6 +9,7 @@ import {
   renderMarkdownWithHeadingIds,
 } from './src/cui/heading-ids.mjs'
 import { parseMdcuiIdentity } from './src/cui/identity.mjs'
+import { addTuiTableRowSeparators } from './src/cui/table-render.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -251,6 +252,7 @@ export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
             }
           )
        || md  )+'' ;
+  md = addTuiTableRowSeparators(md);
        
   return md ;
        

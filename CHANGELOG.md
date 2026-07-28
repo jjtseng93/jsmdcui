@@ -6,6 +6,12 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ### Fixed
 
+- Render a full-width divider between every displayed TUI table row and use
+  the active colorscheme's cursor-line or color-column color for the header
+  and alternating body-row backgrounds.
+- Edit rendered TUI table rows in fixed-width overwrite mode so Backspace,
+  Delete, spaces, and printable input cannot remove cell separators or change
+  the row's visual width.
 - Add default table borders, cell padding, striped rows, and hover highlighting
   directly to the generated WUI HTML boilerplate.
 - Rerender MDCUI buffers at their new pane width immediately after `vsplit`

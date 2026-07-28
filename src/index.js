@@ -95,6 +95,8 @@ import { mkdir } from "node:fs/promises";
 import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/task-checkbox.mjs";
+import { backspaceMdcuiTableRow, deleteMdcuiTableRow, isMdcuiTableRow, overwriteMdcuiTableRow, replaceAnsiPlainRange } from "./cui/table-row-edit.mjs";
+import { markTuiTableStripeStyles } from "./cui/table-render.mjs";
 import { fenceEventMap, inlineFenceEventCode } from "./cui/fence-events.mjs";
 import {
   checkMarkdownIdCollisions,
@@ -379,6 +381,7 @@ async function decodeAndRenderTextBytes(bytes, encoding = "utf-8", width = proce
   const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
   const { rendered, tuiSourceText, images } = await renderMdcui(decoded.text, renderWidth, mdpath, mdpath);
   const styled = parseAnsiStyledText(rendered);
+  markTuiTableStripeStyles(styled.styleLines, styled.text.split("\n"));
   return { text: styled.text, encoding: "mdcui", sourceText: decoded.text, tuiSourceText, ansiText: rendered, ansiStyleLines: styled.styleLines, mdcuiImages: images, mdcuiRenderWidth: renderWidth };
 }
 
@@ -619,6 +622,36 @@ function canEditMdcuiSelection(buf, selection) {
   const { first, last } = selectionBounds(selection);
   const prefixLength = mdcuiEditablePrefixLength(buf, first.y);
   return first.y === last.y && prefixLength > 0 && first.x >= prefixLength;
+}
+
+function applyMdcuiTableRowEdit(buf, edit) {
+  if (!buf || !edit) return false;
+  const row = buf.cursor.y;
+  const styleLine = buf._ansiStyleLines?.[row];
+  if (Array.isArray(styleLine)) {
+    const style = styleLine[edit.start] ?? null;
+    styleLine.splice(
+      edit.start,
+      edit.end - edit.start,
+      ...Array.from({ length: edit.replacement.length }, () => style),
+    );
+  }
+  if (typeof buf._mdcuiAnsiText === "string") {
+    const ansiLines = buf._mdcuiAnsiText.split("\n");
+    ansiLines[row] = replaceAnsiPlainRange(
+      ansiLines[row] ?? "",
+      edit.start,
+      edit.end,
+      edit.replacement,
+    );
+    buf._mdcuiAnsiText = ansiLines.join("\n");
+  }
+  buf.lines[row] = edit.line;
+  buf.cursor.x = edit.cursor;
+  buf.invalidateHighlightFrom(row);
+  buf._mdcuiLinkIndex = null;
+  buf.modified = true;
+  return true;
 }
 
 function mdcuiTextareaAtCursor(buf) {
@@ -2006,6 +2039,7 @@ class BufferModel {
     }
     const { rendered, images } = rerendered;
     const styled = parseAnsiStyledText(rendered);
+    markTuiTableStripeStyles(styled.styleLines, styled.text.split("\n"));
     this.lines = normalizeBufferText(styled.text).split("\n");
     if (this.lines.length === 0) this.lines = [""];
     this._ansiStyleLines = styled.styleLines;
@@ -4155,6 +4189,24 @@ class App {
 
     if (event.type === "paste") {
       if (
+        isMdcuiEncoding(buf?.encoding)
+        && isMdcuiTableRow(buf?.line?.())
+      ) {
+        if (this.pane?.selection || /[\r\n]/u.test(event.text)) {
+          this.message = "Protected table row";
+          this.render();
+          return;
+        }
+        buf.pushUndo();
+        for (const character of event.text) {
+          const edit = overwriteMdcuiTableRow(buf.line(), buf.cursor.x, character);
+          if (!applyMdcuiTableRowEdit(buf, edit)) break;
+        }
+        this.message = pasteStatusMessage("terminal", event.text);
+        this.render();
+        return;
+      }
+      if (
         (isEditLockedBuffer(buf) && !isMdcuiEncoding(buf?.encoding))
         || (isMdcuiEncoding(buf?.encoding) && (
           !canEditMdcuiAtCursor(buf)
@@ -4382,7 +4434,19 @@ class App {
         break;
       case "backspace":
         buf.pushUndo();
-        if (this.pane?.selection) deleteSelection(buf, this.pane);
+        if (
+          isMdcuiEncoding(buf?.encoding)
+          && isMdcuiTableRow(buf.line())
+        ) {
+          if (this.pane?.selection) this.message = "Protected table row";
+          else {
+            applyMdcuiTableRowEdit(
+              buf,
+              backspaceMdcuiTableRow(buf.line(), buf.cursor.x),
+            );
+          }
+        }
+        else if (this.pane?.selection) deleteSelection(buf, this.pane);
         else if (await this.runPluginBool("preBackspace")) {
           const textarea = mdcuiTextareaAtCursor(buf);
           if (!mergeTuiTextareaBackward(buf, textarea)) buf.backspace();
@@ -4390,7 +4454,19 @@ class App {
         break;
       case "delete":
         buf.pushUndo();
-        if (this.pane?.selection) deleteSelection(buf, this.pane);
+        if (
+          isMdcuiEncoding(buf?.encoding)
+          && isMdcuiTableRow(buf.line())
+        ) {
+          if (this.pane?.selection) this.message = "Protected table row";
+          else {
+            applyMdcuiTableRowEdit(
+              buf,
+              deleteMdcuiTableRow(buf.line(), buf.cursor.x),
+            );
+          }
+        }
+        else if (this.pane?.selection) deleteSelection(buf, this.pane);
         else {
           const textarea = mdcuiTextareaAtCursor(buf);
           if (!mergeTuiTextareaForward(buf, textarea)) buf.deleteForward();
@@ -4566,6 +4642,35 @@ class App {
           }
           if (!this._undoInsertChain || this.pane?.selection) {
             buf.pushUndo();
+          }
+          if (
+            isMdcuiEncoding(buf?.encoding)
+            && isMdcuiTableRow(buf.line())
+          ) {
+            if (this.pane?.selection || text.includes("\n")) {
+              this.message = "Protected table row";
+              break;
+            }
+            this._undoInsertChain = true;
+            for (const character of text) {
+              const edit = overwriteMdcuiTableRow(
+                buf.line(),
+                buf.cursor.x,
+                character,
+              );
+              if (!applyMdcuiTableRowEdit(buf, edit)) break;
+              await this.context.plugins?.run(
+                "onRune",
+                makePaneAdapter(buf, this),
+                character,
+              );
+              await this.context.jsPlugins?.run(
+                "onRune",
+                makePaneAdapter(buf, this),
+                character,
+              );
+            }
+            break;
           }
           if (isMdcuiEncoding(buf?.encoding) && !canEditMdcuiSelection(buf, this.pane?.selection)) {
             this.message = "Protected mdcui prefix";
@@ -7846,6 +7951,11 @@ function renderHighlightedCells(buf, lineNo, scrollX, maxWidth, colorscheme, sel
   }
   // Go: cursor-line bg is skipped when a syntax style already has a non-default background (preservebg)
   const defBg = colorscheme?.defaultStyle?.bg ?? "default";
+  const tableStripeBg = colorscheme?.styles?.has("cursor-line")
+    ? colorscheme.get("cursor-line")?.fg
+    : colorscheme?.styles?.has("color-column")
+      ? colorscheme.get("color-column")?.fg
+      : null;
 
   const showTrailingWs = buf.Settings?.hltrailingws ?? false;
   let trailingWsIdx = raw.length;
@@ -7932,7 +8042,15 @@ function renderHighlightedCells(buf, lineNo, scrollX, maxWidth, colorscheme, sel
       ? { ...(colorscheme?.defaultStyle ?? {}), ...ansiStyle }
       : (colorscheme?.get(group) ?? colorscheme?.defaultStyle ?? {});
     let preservebg = syntaxStyle.bg !== undefined && syntaxStyle.bg !== defBg;
-    let baseStyle = (cursorLineBg && !preservebg) ? { ...syntaxStyle, bg: cursorLineBg } : syntaxStyle;
+    const stripedStyle = (
+      ansiStyle?.mdcuiTableStripe
+      && tableStripeBg != null
+      && !preservebg
+    ) ? { ...syntaxStyle, bg: tableStripeBg } : syntaxStyle;
+    if (stripedStyle !== syntaxStyle) preservebg = true;
+    let baseStyle = cursorLineBg
+      ? { ...stripedStyle, bg: cursorLineBg }
+      : stripedStyle;
     while (searchIdx < searchRanges.length && searchRanges[searchIdx][1] <= i) searchIdx++;
     const inSearch = searchIdx < searchRanges.length && i >= searchRanges[searchIdx][0] && i < searchRanges[searchIdx][1];
     const selected = isSelected(selection, lineNo, i, i + charLen);

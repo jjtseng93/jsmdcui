@@ -1,0 +1,90 @@
+import { expect, test } from "bun:test";
+import {
+  backspaceMdcuiTableRow,
+  deleteMdcuiTableRow,
+  isMdcuiTableRow,
+  overwriteMdcuiTableRow,
+  replaceAnsiPlainRange,
+} from "../src/cui/table-row-edit.mjs";
+
+test("the minimal rendered table-row check requires both vertical edges", () => {
+  expect(isMdcuiTableRow("│ cell │")).toBe(true);
+  expect(isMdcuiTableRow("  │ cell │  ")).toBe(true);
+  expect(isMdcuiTableRow("│cell│")).toBe(false);
+  expect(isMdcuiTableRow("│ cell│")).toBe(false);
+  expect(isMdcuiTableRow("│cell │")).toBe(false);
+  expect(isMdcuiTableRow("│ blockquote")).toBe(false);
+  expect(isMdcuiTableRow("plain │ text")).toBe(false);
+
+  const rendered = Bun.stripANSI(String(Bun.markdown.ansi(
+    "| one | two |\n| --- | --- |\n| A | B |\n",
+    { columns: 40 },
+  ))).split("\n");
+  expect(isMdcuiTableRow(rendered.find(line => line.includes("A")))).toBe(true);
+});
+
+test("table-row backspace clears one grapheme without changing display width", () => {
+  const line = "│ A中 │";
+  const edit = backspaceMdcuiTableRow(line, line.indexOf("中") + 1);
+
+  expect(edit.line).toBe("│ A   │");
+  expect(edit.cursor).toBe(line.indexOf("中"));
+  expect(Bun.stringWidth(edit.line)).toBe(Bun.stringWidth(line));
+  expect(backspaceMdcuiTableRow(line, 1)).toBeNull();
+});
+
+test("table-row backspace stops at separator padding", () => {
+  const line = "│ A │ B │";
+  const leftPadding = 1;
+  const middleLeftPadding = line.indexOf("│", 1) - 1;
+  const middleRightPadding = line.indexOf("│", 1) + 1;
+  const rightPadding = line.lastIndexOf("│") - 1;
+
+  for (const padding of [
+    leftPadding,
+    middleLeftPadding,
+    middleRightPadding,
+    rightPadding,
+  ]) {
+    expect(backspaceMdcuiTableRow(line, padding + 1)).toBeNull();
+  }
+});
+
+test("table-row overwrite and delete preserve separators and visual width", () => {
+  const line = "│ 中B │";
+  const space = overwriteMdcuiTableRow(line, line.indexOf("中"), " ");
+  expect(space.line).toBe("│   B │");
+  expect(space.cursor).toBe(line.indexOf("中") + 1);
+  expect(Bun.stringWidth(space.line)).toBe(Bun.stringWidth(line));
+
+  const wide = overwriteMdcuiTableRow("│ AB │", 2, "中");
+  expect(wide).toBeNull();
+  expect(overwriteMdcuiTableRow(line, 0, "x")).toBeNull();
+  expect(deleteMdcuiTableRow(line, line.indexOf("中")).line).toBe("│   B │");
+});
+
+test("table-row overwrite preserves padding beside every separator", () => {
+  const line = "│ A │ B │";
+  const paddingColumns = [
+    1,
+    line.indexOf("│", 1) - 1,
+    line.indexOf("│", 1) + 1,
+    line.lastIndexOf("│") - 1,
+  ];
+
+  for (const cursor of paddingColumns) {
+    expect(overwriteMdcuiTableRow(line, cursor, "x")).toBeNull();
+    const space = overwriteMdcuiTableRow(line, cursor, " ");
+    expect(space.line).toBe(line);
+    expect(Bun.stringWidth(space.line)).toBe(Bun.stringWidth(line));
+  }
+});
+
+test("ANSI range replacement keeps one surrounding OSC 8 link", () => {
+  const line = "\x1b]8;;javascript:test()\x1b\\\x1b[34m☐ haha\x1b[0m\x1b]8;;\x1b\\";
+  const replaced = replaceAnsiPlainRange(line, 0, 1, " ");
+
+  expect(Bun.stripANSI(replaced)).toBe("  haha");
+  expect(replaced.match(/\x1b]8;;javascript:test\(\)\x1b\\/g)).toHaveLength(1);
+  expect(replaced.match(/\x1b]8;;\x1b\\/g)).toHaveLength(1);
+});
