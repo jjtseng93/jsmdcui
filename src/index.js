@@ -1147,12 +1147,6 @@ function parseArgs(argv) {
     else if (arg === "--demo") {
       flags.demo = { option: arg, filename: "testapp.md", asset: "testapp.md" };
     }
-    else if (arg === "--demo-imgtool") {
-      flags.demo = { option: arg, filename: "image-processor.md", asset: "demos/image-processor.md" };
-    }
-    else if (arg === "--demo-imgtool-zh") {
-      flags.demo = { option: arg, filename: "image-processor.zh-TW.md", asset: "demos/image-processor.zh-TW.md" };
-    }
     else if (arg.startsWith("--demo-")) {
       const name = arg.slice("--demo-".length);
       flags.demo = isValidDemoName(name)
@@ -1325,11 +1319,6 @@ Demo:
       Open it in the TUI and write 5 generated files beside it
       For example: --demo-select, --demo-todo, or --demo-todo-zh
       
-  --demo-imgtool
-      Alias for --demo-image-processor
-  --demo-imgtool-zh
-      Alias for --demo-image-processor.zh-TW
-
   --overwrite-demo
       Overwrite an existing local demo with the bundled copy; combine with any --demo option
       
@@ -8373,9 +8362,6 @@ function printDemoList() {
   for (const { option, asset } of entries) {
     console.log(`  ${option.padEnd(optionWidth)}  ${asset}`);
   }
-  console.log("\nCompatibility aliases:\n");
-  console.log("  --demo-imgtool     --demo-image-processor");
-  console.log("  --demo-imgtool-zh  --demo-image-processor.zh-TW");
 }
 
 async function prepareDemo(flags, rawFiles) {

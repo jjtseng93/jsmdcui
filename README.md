@@ -172,8 +172,8 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --demo` | Use local `testapp.md` when present, otherwise write the bundled demo; open it in the terminal UI and write five generated files beside it. |
 | `bun src/index.js --overwrite-demo --demo` | Replace an existing local `testapp.md` with the bundled copy before opening it. `--overwrite-demo` can modify any `--demo-*` option. |
 | `bun src/index.js --demo-<filename>` | Load `demos/<filename>.md`; preserve an existing local copy or write the bundled copy, then open it and generate its five companion files. New files added under `demos/` work automatically. |
-| `bun src/index.js --demo-imgtool` | Compatibility alias for `--demo-image-processor`. |
-| `bun src/index.js --demo-imgtool-zh` | Compatibility alias for `--demo-image-processor.zh-TW`. |
+| `bun src/index.js --demo-imgtool` | Load the compact table-based Bun.Image processor demo. |
+| `bun src/index.js --demo-imgtool-zh` | Load the Traditional Chinese table-based Bun.Image processor demo. |
 | `bun src/index.js --cdp-maze` | Load the maze demo, start CDP on `127.0.0.1:9222`, and run the bundled solver after three seconds. |
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory and, with Kitty mode enabled, download its HTTP(S) images; write 5 generated files and allow embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |

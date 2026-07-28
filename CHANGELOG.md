@@ -43,6 +43,12 @@ All notable user-visible changes to jsmdcui are documented here.
 - Add default table borders, cell padding, striped rows, and hover highlighting
   directly to the generated WUI HTML boilerplate.
 
+### Changed
+
+- Replace the special-case `--demo-imgtool` and `--demo-imgtool-zh` aliases
+  with normal `demos/imgtool.md` discovery. Both commands now load compact
+  table-based image processor demos and create same-named local Markdown files.
+
 ## [0.13.1] - 2026-07-29
 
 ### Fixed
