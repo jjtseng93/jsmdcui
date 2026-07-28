@@ -38,6 +38,8 @@ test("--demo-list lists root and automatically discovered demos", () => {
   expect(output).toMatch(/--demo-image-processor\s+demos\/image-processor\.md/);
   expect(output).toMatch(/--demo-imgtool\s+demos\/imgtool\.md/);
   expect(output).toMatch(/--demo-imgtool-zh\s+demos\/imgtool-zh\.md/);
+  expect(output).toContain("compact table-based modern image processor UI");
+  expect(output).toContain("long-form document image processor UI");
   expect(output).toMatch(/--demo-select\s+demos\/select\.md/);
   expect(output).toMatch(/--demo-todo-zh\s+demos\/todo-zh\.md/);
   expect(output).not.toContain("Compatibility aliases:");

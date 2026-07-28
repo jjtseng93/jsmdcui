@@ -8357,10 +8357,20 @@ function printDemoList() {
   }));
   const entries = [{ option: "--demo", asset: "testapp.md" }, ...demos];
   const optionWidth = Math.max(...entries.map(({ option }) => option.length));
+  const descriptions = new Map([
+    ["demos/imgtool.md", "compact table-based modern image processor UI"],
+    ["demos/imgtool-zh.md", "Traditional Chinese compact table-based modern image processor UI"],
+    ["demos/image-processor.md", "long-form document image processor UI"],
+    ["demos/image-processor.zh-TW.md", "Traditional Chinese long-form document image processor UI"],
+  ]);
 
   console.log("Available demos:\n");
   for (const { option, asset } of entries) {
-    console.log(`  ${option.padEnd(optionWidth)}  ${asset}`);
+    const description = descriptions.get(asset);
+    console.log(
+      `  ${option.padEnd(optionWidth)}  ${asset}`
+      + (description ? `  — ${description}` : ""),
+    );
   }
 }
 
