@@ -9,7 +9,10 @@ import {
   renderMarkdownWithHeadingIds,
 } from './src/cui/heading-ids.mjs'
 import { parseMdcuiIdentity } from './src/cui/identity.mjs'
-import { addTuiTableRowSeparators } from './src/cui/table-render.mjs'
+import {
+  addTuiTableRowSeparators,
+  markHeadingTableRows,
+} from './src/cui/table-render.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -245,14 +248,15 @@ export async function writeRuntimeFiles(mdpath)
 
 export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
 {
+  const tablePlan = markHeadingTableRows(md);
   md = (  Bun?.markdown?.ansi?.(
-            md,{
+            tablePlan.markdown,{
               hyperlinks:true,
               columns:TERMINAL_WIDTH
             }
           )
        || md  )+'' ;
-  md = addTuiTableRowSeparators(md);
+  md = addTuiTableRowSeparators(md, tablePlan);
        
   return md ;
        

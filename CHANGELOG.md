@@ -2,11 +2,12 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
-## [0.13.1] - 2026-07-29
+## [0.14.0] - 2026-07-29
 
 ### Fixed
 
-- Render a full-width divider between every displayed TUI table row and use
+- Render a full-width divider between logical TUI table rows associated with
+  headings (without splitting wrapped cell text), and use
   the active colorscheme's cursor-line or color-column color for the header
   and alternating body-row backgrounds.
 - Edit rendered TUI table rows in fixed-width overwrite mode so Backspace,
@@ -14,6 +15,11 @@ All notable user-visible changes to jsmdcui are documented here.
   the row's visual width.
 - Add default table borders, cell padding, striped rows, and hover highlighting
   directly to the generated WUI HTML boilerplate.
+
+## [0.13.1] - 2026-07-29
+
+### Fixed
+
 - Rerender MDCUI buffers at their new pane width immediately after `vsplit`
   and after a split pane closes.
 - Show a TUI message when checkbox state restoration is skipped because a

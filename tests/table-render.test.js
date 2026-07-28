@@ -1,22 +1,30 @@
 import { expect, test } from "bun:test";
 import {
   addTuiTableRowSeparators,
+  markHeadingTableRows,
   markTuiTableStripeStyles,
   tuiTableStripeRows,
 } from "../src/cui/table-render.mjs";
 
-test("TUI tables receive full-width separators between every displayed row", () => {
-  const markdown = `| A | B |
+function renderHeadingTable(markdown, columns) {
+  const plan = markHeadingTableRows(markdown);
+  const rendered = String(Bun.markdown.ansi(
+    plan.markdown,
+    { hyperlinks: true, columns },
+  ));
+  return addTuiTableRowSeparators(rendered, plan);
+}
+
+test("heading-associated TUI tables receive logical-row separators", () => {
+  const markdown = `# Table
+
+| A | B |
 | --- | --- |
 | one | first |
 | two | second |
 | three | third |
 `;
-  const rendered = String(Bun.markdown.ansi(
-    markdown,
-    { hyperlinks: true, columns: 40 },
-  ));
-  const decorated = addTuiTableRowSeparators(rendered);
+  const decorated = renderHeadingTable(markdown, 40);
   const lines = Bun.stripANSI(decorated).split("\n");
   const separators = lines.filter(line => /^├─+(?:┼─+)*┤$/u.test(line));
 
@@ -27,33 +35,33 @@ test("TUI tables receive full-width separators between every displayed row", () 
   );
 });
 
-test("wrapped visual table rows are separated without changing table width", () => {
-  const markdown = `| A | B |
+test("wrapped visual lines do not receive false logical-row separators", () => {
+  const markdown = `# Table
+
+| A | B |
 | --- | --- |
 | this is a long cell that wraps | value |
 | next | row |
 `;
-  const decorated = addTuiTableRowSeparators(String(Bun.markdown.ansi(
-    markdown,
-    { columns: 20 },
-  )));
+  const decorated = renderHeadingTable(markdown, 20);
   const lines = Bun.stripANSI(decorated).split("\n");
   const topWidth = Bun.stringWidth(lines.find(line => line.startsWith("┌")));
 
   for (const line of lines.filter(line => /^[├│└]/u.test(line))) {
     expect(Bun.stringWidth(line)).toBe(topWidth);
   }
+  expect(lines.filter(line => /^├─+(?:┼─+)*┤$/u.test(line))).toHaveLength(2);
 });
 
 test("wide table cell text does not break rendered-row discovery", () => {
-  const markdown = `| 名稱 | 狀態 |
+  const markdown = `# 中文表格
+
+| 名稱 | 狀態 |
 | --- | --- |
 | 中文 | 完成 |
 | emoji | ✅ |
 `;
-  const lines = Bun.stripANSI(addTuiTableRowSeparators(String(
-    Bun.markdown.ansi(markdown, { columns: 30 }),
-  ))).split("\n");
+  const lines = Bun.stripANSI(renderHeadingTable(markdown, 30)).split("\n");
 
   expect(lines.filter(line => /^├─+(?:┼─+)*┤$/u.test(line))).toHaveLength(2);
   expect([...tuiTableStripeRows(lines)]).toHaveLength(2);
@@ -84,4 +92,16 @@ test("TUI headers and even body display rows receive the colorscheme marker", ()
 test("non-table box frames are left unchanged", () => {
   const ansi = "\x1b[2m┌─ js\x1b[0m\n\x1b[2m│ code\x1b[0m\n\x1b[2m└─\x1b[0m";
   expect(addTuiTableRowSeparators(ansi)).toBe(ansi);
+});
+
+test("tables without an associated heading keep Bun's original separators", () => {
+  const markdown = `| A | B |
+| --- | --- |
+| one | 1 |
+| two | 2 |
+`;
+  const rendered = String(Bun.markdown.ansi(markdown, { columns: 30 }));
+  const plan = markHeadingTableRows(markdown);
+  expect(plan.markers).toHaveLength(0);
+  expect(addTuiTableRowSeparators(rendered, plan)).toBe(rendered);
 });

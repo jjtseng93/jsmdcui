@@ -969,7 +969,7 @@ function baseMarkdownHeadingId(heading) {
 
 export function collectMarkdownHeadingDeclarations(
   markdown,
-  { includeLevel = false } = {},
+  { includeLevel = false, includeEndLine = false } = {},
 ) {
   const source = String(markdown ?? "");
   const lines = source.split(/\r\n?|\n/);
@@ -1143,6 +1143,13 @@ export function collectMarkdownHeadingDeclarations(
     kind: "heading",
     ...(includeLevel ? { level: heading.heading.level } : {}),
     line: heading.line,
+    ...(includeEndLine
+      ? {
+        endLine: Number.isInteger(heading.setextUnderline)
+          ? heading.setextUnderline + 1
+          : heading.line,
+      }
+      : {}),
     source: heading.source,
   })).filter(heading => heading.id);
 }
