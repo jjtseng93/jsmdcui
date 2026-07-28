@@ -19,6 +19,9 @@ test("createWui constrains images to their content width", async () => {
   const html = await createWui("![wide](wide.png)", markdownPath);
 
   expect(html).toContain("img {\n  max-width: 100%;\n  height: auto;\n}");
+  expect(html).toContain("table {\n  border-collapse: collapse;\n}");
+  expect(html).toContain("th, td {\n  border: 1px solid black;");
+  expect(html).toContain("tr:hover {\n  background: #ddddee;\n}");
   expect(html).toContain('src="wide.png" alt="wide" data-mdcui-src="wide.png"');
   expect(html.match(/max-width: 100%/g)).toHaveLength(1);
   expect(html.match(/image\.md\.front\.js/g)).toHaveLength(1);

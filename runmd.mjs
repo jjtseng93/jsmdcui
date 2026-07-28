@@ -995,6 +995,27 @@ img {
   max-width: 100%;
   height: auto;
 }
+
+table {
+  border-collapse: collapse;
+}
+
+th, td {
+  border: 1px solid black;
+  padding: 4px 8px;
+}
+
+th {
+  background: #ddd;
+}
+
+tr:nth-child(even) {
+  background: #ddd;
+}
+
+tr:hover {
+  background: #ddddee;
+}
 </style>`;
   const moduleEntry = bundling ? `${mdb}.tmpfi.js` : `${mdb}.front.js`;
   const moduleScript = `<scr`+`ipt type="module" src="./${moduleEntry}"></scr`+`ipt>`;

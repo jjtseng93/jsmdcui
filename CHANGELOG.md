@@ -6,6 +6,8 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ### Fixed
 
+- Add default table borders, cell padding, striped rows, and hover highlighting
+  directly to the generated WUI HTML boilerplate.
 - Rerender MDCUI buffers at their new pane width immediately after `vsplit`
   and after a split pane closes.
 - Show a TUI message when checkbox state restoration is skipped because a
