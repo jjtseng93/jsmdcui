@@ -61,4 +61,4 @@ rules:
 # checkbox radio file hidden image button submit reset
 # event.preventDefault
 # onMdcuiExit removeData
-# push pop shift unshift splice slice cell left right up down lt rt dn
+# push pop shift unshift splice slice cell parent left right up down lt rt dn

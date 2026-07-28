@@ -530,11 +530,15 @@ export function indexedTuiLinkAtPosition(buffer, row, characterIndex) {
 
 export function tuiLinkActivationContext(payload) {
   const textContent = String(payload?.linkText ?? "");
+  const parent = payload?.linkParent ?? null;
   const target = {
     tagName: "A",
     href: payload?.link,
     textContent,
     innerHTML: payload?.linkHtml ?? textContent,
+    parent() {
+      return parent;
+    },
   };
   let defaultPrevented = false;
   let propagationStopped = false;

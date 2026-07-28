@@ -67,6 +67,7 @@ describe("TUI OSC 8 link index", () => {
       link: link.href,
       linkText: link.textContent,
       linkHtml: link.innerHTML,
+      linkParent: { row: 1, col: 2 },
     };
     const { event, target } = tuiLinkActivationContext(payload);
     expect(target.href).toBe('javascript:inspect("hello")');
@@ -76,6 +77,7 @@ describe("TUI OSC 8 link index", () => {
     );
     expect(event.target).toBe(target);
     expect(event.key).toBe("Enter");
+    expect(target.parent()).toBe(payload.linkParent);
   });
 
   test("matches repeated hrefs in order without letting images shift metadata", () => {

@@ -12,6 +12,7 @@ import {
   restoreTuiRerenderState,
   spliceTuiBufferLines,
   toggleTuiHeadingAt,
+  tuiTableCellAtPosition,
   tuiCheckboxRerenderMismatchMessage,
 } from "../src/plugins/js-bridge.js";
 
@@ -1254,6 +1255,30 @@ describe("TUI heading-associated table cells", () => {
     expect(buffer._mdcuiAnsiText).toContain("javascript:run()");
   });
 
+  test("a table link parent exposes the complete cell selection", () => {
+    const linkedMarkdown = `## Linked Table
+
+| Name | Action |
+| --- | --- |
+| item | [open](javascript:run()) |
+| next | later |
+`;
+    const { $, buffer } = tuiTableSelector(linkedMarkdown, 40);
+    const y = buffer.lines.findIndex(line => line.includes("open"));
+    const x = buffer.lines[y].indexOf("open");
+    const parentCell = tuiTableCellAtPosition(buffer, y, x);
+    const linkTarget = { parent: () => parentCell };
+    const parent = $(linkTarget).parent();
+
+    expect(parent.row).toBe(1);
+    expect(parent.col).toBe(1);
+    expect(parent.text()).toBe("open");
+    expect(parent.lt().text()).toBe("item");
+    expect(parent.dn().text()).toBe("later");
+    expect(parent.text("執行")).toBe(parent);
+    expect(parent.text()).toBe("執行");
+  });
+
   test("cell replacements replay after a width rerender", () => {
     const { $, buffer } = tuiTableSelector(tableMarkdown, 24);
     $("#table-with-id").cell(1, 0).text("replacement value");
@@ -1767,6 +1792,67 @@ function nestedWebSelector() {
     childBody,
   };
 }
+
+function webTableSelector() {
+  const documentObject = new TestDocument();
+  const section = documentObject.createElement("section");
+  const heading = documentObject.createElement("h2");
+  heading.id = "table-with-id";
+  heading.append(documentObject.createTextNode("Table With Id"));
+  const table = documentObject.createElement("table");
+  const header = documentObject.createElement("tr");
+  const name = documentObject.createElement("th");
+  const action = documentObject.createElement("th");
+  name.append(documentObject.createTextNode("Name"));
+  action.append(documentObject.createTextNode("Action"));
+  header.append(name, action);
+  const body = documentObject.createElement("tr");
+  const item = documentObject.createElement("td");
+  const linked = documentObject.createElement("td");
+  const anchor = documentObject.createElement("a");
+  item.append(documentObject.createTextNode("item"));
+  anchor.append(documentObject.createTextNode("open"));
+  linked.append(anchor);
+  body.append(item, linked);
+  table.append(header, body);
+  section.append(heading, table);
+  documentObject.root.append(section);
+  return {
+    $: createWebDollar(documentObject),
+    documentObject,
+    heading,
+    table,
+    anchor,
+  };
+}
+
+describe("WUI heading-associated table cells", () => {
+  test("cell navigation matches TUI coordinates and bounds", () => {
+    const { $ } = webTableSelector();
+    const cell = $("#table-with-id").cell(1, 0);
+
+    expect(cell.row).toBe(1);
+    expect(cell.col).toBe(0);
+    expect(cell.text()).toBe("item");
+    expect(cell.rt().text()).toBe("open");
+    expect(cell.up().text()).toBe("Name");
+    expect(cell.left()).toBeNull();
+    expect(cell.down()).toBeNull();
+  });
+
+  test("link parent returns its cell and text replacement retains the anchor", () => {
+    const { $, anchor } = webTableSelector();
+    const parent = $(anchor).parent();
+
+    expect(parent.row).toBe(1);
+    expect(parent.col).toBe(1);
+    expect(parent.lt().text()).toBe("item");
+    expect(parent.text("執行")).toBe(parent);
+    expect(parent.text()).toBe("執行");
+    expect(anchor.parentElement.textContent).toBe("執行");
+    expect(anchor.parentElement.children[0]).toBe(anchor);
+  });
+});
 
 describe("WUI heading task-list Array methods", () => {
   test("uses the first list and follows Array return values", () => {

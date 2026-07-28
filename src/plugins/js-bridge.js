@@ -2278,6 +2278,15 @@ export function createTuiSelector(getBuffer) {
           return args.length > 0 ? selection : "";
         }
       },
+      parent() {
+        try {
+          return objectTarget && typeof objectTarget.parent === "function"
+            ? objectTarget.parent()
+            : null;
+        } catch {
+          return null;
+        }
+      },
       cell(row, col) {
         const makeCellSelection = (cellRow, cellCol) => {
           const normalizedRow = Number(cellRow);
@@ -2563,6 +2572,43 @@ export function createTuiSelector(getBuffer) {
     };
     return selection;
   };
+}
+
+export function tuiTableCellAtPosition(buffer, lineIndex, characterIndex) {
+  const row = Math.trunc(Number(lineIndex));
+  const column = Math.trunc(Number(characterIndex));
+  if (
+    !Array.isArray(buffer?.lines)
+    || !Number.isInteger(row)
+    || !Number.isInteger(column)
+    || row < 0
+    || row >= buffer.lines.length
+    || column < 0
+  ) return null;
+
+  for (const heading of _tuiSourceHeadings(buffer)) {
+    const table = _tuiHeadingTable(buffer, heading);
+    if (!table || row <= table.top || row >= table.bottom) continue;
+    for (let rowIndex = 0; rowIndex < table.rows.length; rowIndex++) {
+      const visual = table.rows[rowIndex].find(item => item.y === row);
+      if (!visual) continue;
+      for (
+        let colIndex = 0;
+        colIndex + 1 < visual.separators.length;
+        colIndex++
+      ) {
+        if (
+          column > visual.separators[colIndex]
+          && column < visual.separators[colIndex + 1]
+        ) {
+          return createTuiSelector(() => buffer)({ id: heading.id })
+            .cell(rowIndex, colIndex);
+        }
+      }
+      return null;
+    }
+  }
+  return null;
 }
 
 // ── micro global object ───────────────────────────────────────────────────────

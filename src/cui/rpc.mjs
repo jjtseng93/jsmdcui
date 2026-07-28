@@ -574,6 +574,140 @@ function installWebHeadingToggle(target)
   }, { capture: true });
 }
 
+function webElementChildren(element) {
+  return Array.from(element?.children ?? []);
+}
+
+function firstWebTableAfterHeading(heading) {
+  for (
+    let sibling = heading?.nextElementSibling;
+    sibling;
+    sibling = sibling.nextElementSibling
+  ) {
+    if (String(sibling.tagName ?? "").toUpperCase() === "TABLE")
+      return sibling;
+    if (String(sibling.tagName ?? "").toUpperCase() === "SECTION")
+      return null;
+    const nested = sibling.querySelector?.("table");
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function webTableRows(table) {
+  if (table?.rows) return Array.from(table.rows);
+  const rows = [];
+  const visit = (element) => {
+    for (const child of webElementChildren(element)) {
+      if (String(child.tagName ?? "").toUpperCase() === "TR") rows.push(child);
+      else visit(child);
+    }
+  };
+  visit(table);
+  return rows;
+}
+
+function webRowCells(row) {
+  if (row?.cells) return Array.from(row.cells);
+  return webElementChildren(row).filter(element =>
+    ["TH", "TD"].includes(String(element.tagName ?? "").toUpperCase())
+  );
+}
+
+function webClosestCell(element) {
+  for (let current = element; current; current = current.parentElement) {
+    if (["TH", "TD"].includes(String(current.tagName ?? "").toUpperCase()))
+      return current;
+  }
+  return null;
+}
+
+function webClosestTable(element) {
+  for (let current = element; current; current = current.parentElement) {
+    if (String(current.tagName ?? "").toUpperCase() === "TABLE") return current;
+  }
+  return null;
+}
+
+function replaceWebTextNodes(element, value) {
+  const textNodes = [];
+  const visit = (node) => {
+    for (const child of node?.childNodes ?? []) {
+      if (child?.nodeType === 3 || (!child?.tagName && "textContent" in child))
+        textNodes.push(child);
+      else visit(child);
+    }
+  };
+  visit(element);
+  if (textNodes.length === 0) {
+    element?.append?.(
+      element.ownerDocument?.createTextNode?.(String(value ?? "")),
+    );
+    return;
+  }
+  textNodes[0].textContent = String(value ?? "");
+  for (const node of textNodes.slice(1)) node.textContent = "";
+}
+
+function createWebCellSelection(table, row, col) {
+  const normalizedRow = Number(row);
+  const normalizedCol = Number(col);
+  const resolveCell = () => {
+    if (
+      !Number.isInteger(normalizedRow)
+      || !Number.isInteger(normalizedCol)
+      || normalizedRow < 0
+      || normalizedCol < 0
+    ) return null;
+    return webRowCells(webTableRows(table)[normalizedRow])[
+      normalizedCol
+    ] ?? null;
+  };
+  const neighbor = (rowDelta, colDelta) => {
+    if (!resolveCell()) return null;
+    const nextRow = normalizedRow + rowDelta;
+    const rows = webTableRows(table);
+    if (nextRow < 0 || nextRow >= rows.length) return null;
+    const nextCol = normalizedCol + colDelta;
+    if (nextCol < 0 || nextCol >= webRowCells(rows[nextRow]).length)
+      return null;
+    return createWebCellSelection(table, nextRow, nextCol);
+  };
+  const selection = {
+    get row() { return normalizedRow; },
+    get col() { return normalizedCol; },
+    text(...args) {
+      const cell = resolveCell();
+      if (!cell) return args.length > 0 ? selection : "";
+      if (args.length === 0) return String(cell.textContent ?? "");
+      replaceWebTextNodes(cell, args[0]);
+      return selection;
+    },
+    left() { return neighbor(0, -1); },
+    lt() { return neighbor(0, -1); },
+    right() { return neighbor(0, 1); },
+    rt() { return neighbor(0, 1); },
+    up() { return neighbor(-1, 0); },
+    down() { return neighbor(1, 0); },
+    dn() { return neighbor(1, 0); },
+  };
+  return selection;
+}
+
+function webCellSelectionFromElement(element) {
+  const cell = webClosestCell(element);
+  const table = webClosestTable(cell);
+  if (!cell || !table) return null;
+  const rows = webTableRows(table);
+  const row = rows.findIndex(candidate => candidate === cell.parentElement);
+  const col = row >= 0
+    ? webRowCells(rows[row]).findIndex(candidate => candidate === cell)
+    : -1;
+  return row >= 0 && col >= 0
+    ? createWebCellSelection(table, row, col)
+    : null;
+}
+
 export function createWebDollar(documentObject = globalThis.document)
 {
   return function $(selectorInput) {
@@ -616,6 +750,24 @@ export function createWebDollar(documentObject = globalThis.document)
           return String(element.textContent ?? "");
         } catch {
           return args.length > 0 ? selection : "";
+        }
+      },
+      parent() {
+        try {
+          return webCellSelectionFromElement(resolveElement());
+        } catch {
+          return null;
+        }
+      },
+      cell(row, col) {
+        try {
+          const element = resolveElement();
+          const table = isWebHeading(element)
+            ? firstWebTableAfterHeading(element)
+            : null;
+          return createWebCellSelection(table, row, col);
+        } catch {
+          return createWebCellSelection(null, row, col);
         }
       },
       show() {

@@ -118,7 +118,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, tuiCheckboxRerenderMismatchMessage, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, tuiCheckboxRerenderMismatchMessage, tuiTableCellAtPosition, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -583,6 +583,9 @@ function mdcuiCellPayload(buf, y, x, trigger = "unknown") {
     link: linkSpan?.href ?? null,
     linkText: linkSpan?.textContent ?? "",
     linkHtml: linkSpan?.innerHTML ?? null,
+    linkParent: linkSpan
+      ? tuiTableCellAtPosition(buf, rowIdx, charIdx)
+      : null,
     line,
   };
 }
