@@ -1,56 +1,9 @@
 import { parseFenceDeclarations } from "./fence-events.mjs";
-
-function markdownHeadingDeclarations(markdown) {
-  const lines = String(markdown).split(/\r?\n/);
-  const declarations = [];
-  let fence = null;
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
-    if (fenceMatch) {
-      const marker = fenceMatch[1][0];
-      const length = fenceMatch[1].length;
-      if (!fence) fence = { marker, length };
-      else if (marker === fence.marker && length >= fence.length) fence = null;
-      continue;
-    }
-    if (fence) continue;
-
-    const atx = line.match(/^ {0,3}(#{1,6})(?:[ \t]+(.*?)\s*#*\s*|[ \t]*)$/);
-    if (atx) {
-      declarations.push({
-        line: index + 1,
-        source: line.trim(),
-        markdown: line,
-      });
-      continue;
-    }
-
-    if (index + 1 < lines.length && line.trim() && /^ {0,3}(?:=+|-+)\s*$/.test(lines[index + 1])) {
-      declarations.push({
-        line: index + 1,
-        source: `${line.trim()} / ${lines[index + 1].trim()}`,
-        markdown: `${line}\n${lines[index + 1]}`,
-      });
-      index++;
-    }
-  }
-
-  if (!declarations.length) return [];
-  return declarations.map((item) => {
-    // Render headings independently so Bun cannot hide a source-level
-    // collision by suffixing later duplicates as "-1", "-2", and so on.
-    const html = String(Bun.markdown.html(item.markdown, { headings: { ids: true } }));
-    const id = html.match(/<h[1-6]\b[^>]*\bid="([^"]*)"[^>]*>/i)?.[1] ?? "";
-    return {
-      id,
-      kind: "heading",
-      line: item.line,
-      source: item.source,
-    };
-  }).filter((item) => item.id);
-}
+import {
+  collectMarkdownHeadingDeclarations,
+  collectRawHtmlHeadingDeclarations,
+  renderMarkdownWithHeadingIds,
+} from "./heading-ids.mjs";
 
 function fencedBlockDeclarations(markdown) {
   return parseFenceDeclarations(markdown)
@@ -64,8 +17,15 @@ function fencedBlockDeclarations(markdown) {
 }
 
 export function checkMarkdownIdCollisions(markdown) {
+  const rendered = renderMarkdownWithHeadingIds(markdown);
+  if (!rendered.normalized)
+    throw new Error("Markdown headings could not be classified safely");
   const declarations = [
-    ...markdownHeadingDeclarations(markdown),
+    ...collectMarkdownHeadingDeclarations(markdown, { includeLevel: true }),
+    ...collectRawHtmlHeadingDeclarations(markdown, {
+      strict: true,
+      includeLevel: true,
+    }),
     ...fencedBlockDeclarations(markdown),
   ].sort((a, b) => a.line - b.line);
   const byId = new Map();
@@ -79,6 +39,22 @@ export function checkMarkdownIdCollisions(markdown) {
   return { declarations, collisions };
 }
 
+export function formatMarkdownOutline(result) {
+  const lines = [];
+  for (const declaration of result?.declarations ?? []) {
+    if (
+      declaration.kind === "heading"
+      || declaration.kind === "raw HTML heading"
+    ) {
+      const level = Math.min(6, Math.max(1, Number(declaration.level) || 1));
+      lines.push(`${"  ".repeat(level - 1)}- ${declaration.id}`);
+    } else {
+      lines.push(`+ ${declaration.id}`);
+    }
+  }
+  return lines.length ? `${lines.join("\n")}\n` : "";
+}
+
 function inlineCode(value) {
   const text = String(value);
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
@@ -88,7 +64,9 @@ function inlineCode(value) {
 }
 
 export function formatMarkdownIdCheck(path, result) {
-  const headings = result.declarations.filter((item) => item.kind === "heading").length;
+  const headings = result.declarations.filter(
+    item => item.kind === "heading" || item.kind === "raw HTML heading",
+  ).length;
   const fencedBlocks = result.declarations.length - headings;
   const lines = [
     "# Markdown UI ID Check",

@@ -5,6 +5,27 @@ import { fetchHttpBytes as defaultFetchHttpBytes } from "../platform/commands.js
 import { canonicalHtmlBundleImageHref } from "../../single-exe/assetsHelper.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const REMOTE_IMAGE_TIMEOUT_MS = 10_000;
+
+async function withTimeout(promise, timeoutMs, onTimeout) {
+  let timeout;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => {
+            try { onTimeout?.(); } catch {}
+            reject(new Error("remote image timed out"));
+          },
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function imageSize(buffer) {
   if (buffer.length >= 24 && buffer.subarray(0, 8).equals(PNG)) {
@@ -138,6 +159,10 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
   const maxCols = Math.max(1, Math.trunc(Number(terminalCols) || 80));
   const oscImage = /\x1b\]8;;([^\x1b]*)\x1b\\(?=[^\n]*📷)/;
   const bundledImages = await options.getBundledImageMap?.() ?? null;
+  const remoteBudgetMs = Number.isFinite(options.remoteTimeoutMs)
+    ? Math.max(1, Math.trunc(options.remoteTimeoutMs))
+    : REMOTE_IMAGE_TIMEOUT_MS;
+  const remoteDeadline = Date.now() + remoteBudgetMs;
 
   for (let sourceLine = 0; sourceLine < inputLines.length; sourceLine++) {
     const line = inputLines[sourceLine];
@@ -156,7 +181,17 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
       let data;
       if (source.kind === "remote") {
         const fetchBytes = options.fetchHttpBytes ?? defaultFetchHttpBytes;
-        data = Buffer.from(await fetchBytes(source.value));
+        const timeoutMs = remoteDeadline - Date.now();
+        if (timeoutMs <= 0) throw new Error("remote image budget exhausted");
+        const controller = new AbortController();
+        data = Buffer.from(await withTimeout(
+          fetchBytes(source.value, {
+            timeoutMs,
+            signal: controller.signal,
+          }),
+          timeoutMs,
+          () => controller.abort(),
+        ));
       } else {
         const file = Bun.file(source.value);
         if (!(await file.exists())) throw new Error("missing image");

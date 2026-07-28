@@ -7,6 +7,8 @@ import { assetPath, hasInternalAssets, listInternalAssetDirs, listInternalAssetP
 import { isMdcuiEncoding } from "../runtime/encodings.js";
 import { newMessage, newMessageAtLine, MTError, MTWarning, MTInfo } from "../buffer/message.js";
 import { Loc } from "../buffer/loc.js";
+import { renderMarkdownWithHeadingIds } from "../cui/heading-ids.mjs";
+import { isMdcuiId, parseMdcuiIdentity, parseMdcuiIdSelector } from "../cui/identity.mjs";
 import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
 
 // ── Action registry ──────────────────────────────────────────────────────────
@@ -690,15 +692,7 @@ function _deleteSel(buf, pane) {
 // ── mdcui block selector ────────────────────────────────────────────────────
 
 function _parseBlockIdentity(input, { selector = false } = {}) {
-  const text = String(input ?? "").trim();
-  const match = text.match(/^([A-Za-z_][\w:-]*)?(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
-  if (!match || (!match[1] && !match[2] && !match[3])) return null;
-  if (!selector && !match[1]) return null;
-  return {
-    tag: match[1] || null,
-    id: match[2] || null,
-    classes: match[3] ? match[3].slice(1).split(".") : [],
-  };
+  return parseMdcuiIdentity(input, { selector });
 }
 
 function _blockHeader(line) {
@@ -825,30 +819,67 @@ function _blockValue(lines, selector) {
 function _headingSelectorId(input) {
   if (input !== null && typeof input === "object") {
     const id = String(input.id ?? "");
-    return /^[A-Za-z_][\w:-]*$/.test(id) ? id : null;
+    return isMdcuiId(id) ? id : null;
   }
-  const match = String(input ?? "").trim().match(/^#([^\s]+)$/);
-  return match?.[1] ?? null;
+  return parseMdcuiIdSelector(input);
+}
+
+function _sameHeadingContainer(left, right) {
+  const leftPath = left?.containerPath ?? [];
+  const rightPath = right?.containerPath ?? [];
+  return (
+    leftPath.length === rightPath.length
+    && leftPath.every((container, index) => container === rightPath[index])
+  );
+}
+
+function _headingContainerContains(containerHeading, candidate) {
+  const containerPath = containerHeading?.containerPath ?? [];
+  const candidatePath = candidate?.containerPath ?? [];
+  return (
+    candidatePath.length >= containerPath.length
+    && containerPath.every(
+      (container, index) => container === candidatePath[index],
+    )
+  );
 }
 
 function _tuiSourceHeadings(buffer) {
   const markdown = buffer?._mdcuiTuiSourceText;
   if (markdown == null || typeof Bun?.markdown?.html !== "function") return [];
+  const cached = buffer?._mdcuiSourceHeadingIndex;
+  if (cached?.source === markdown) return cached.headings;
 
-  const html = String(Bun.markdown.html(markdown, { headings: { ids: true } }));
-  const headings = /<h([1-6])\b([^>]*)>([^]*?)<\/h\1\s*>/gi;
-  const result = [];
-  let match;
-  let ordinal = 0;
-  while ((match = headings.exec(html)) !== null) {
-    const headingId = match[2].match(/\bid="([^"]*)"/i)?.[1];
-    result.push({
-      id: headingId ?? null,
-      html: match[3],
-      level: Number(match[1]),
-      ordinal,
-    });
-    ordinal++;
+  const result = renderMarkdownWithHeadingIds(markdown).headings.map(
+    heading => ({ ...heading }),
+  );
+
+  for (const heading of result) {
+    heading.endOrdinal = result.length;
+    for (
+      let ordinal = heading.ordinal + 1;
+      ordinal < result.length;
+      ordinal++
+    ) {
+      const candidate = result[ordinal];
+      if (
+        !_headingContainerContains(heading, candidate)
+        || (
+          _sameHeadingContainer(heading, candidate)
+          && candidate.level <= heading.level
+        )
+      ) {
+        heading.endOrdinal = ordinal;
+        break;
+      }
+    }
+  }
+
+  if (buffer && typeof buffer === "object") {
+    buffer._mdcuiSourceHeadingIndex = {
+      source: markdown,
+      headings: result,
+    };
   }
   return result;
 }
@@ -876,17 +907,11 @@ function _tuiHeadingAnsiPrefixes() {
 }
 
 function _headingTuiLine(buffer, heading) {
-  const ansiText = buffer?._mdcuiAnsiText;
-  if (
-    !heading ||
-    typeof ansiText !== "string" ||
-    _headingHasHiddenTuiAncestor(buffer, heading)
-  ) return 0;
-  const tuiHeadings = _tuiHeadingLines(buffer);
-  const visibleOrdinal = _headingVisibleOrdinal(buffer, heading);
-  const exact = tuiHeadings[visibleOrdinal];
-  if (exact?.level === heading.level) return exact.line;
-  return 0;
+  if (!heading) return 0;
+  const exact = _tuiHeadingRowIndex(buffer).byOrdinal.get(heading.ordinal);
+  return exact?.id === heading.id && exact.level === heading.level
+    ? exact.row + 1
+    : 0;
 }
 
 function _hiddenTuiHeadingAncestors(buffer, heading) {
@@ -909,32 +934,14 @@ function _hiddenTuiHeadingAncestors(buffer, heading) {
     const ancestor = sourceHeadings[hidden.ordinal];
     if (!ancestor || ancestor.id !== hidden.id) continue;
 
-    let containsHeading = true;
-    for (let index = hidden.ordinal + 1; index <= heading.ordinal; index++) {
-      if (sourceHeadings[index]?.level <= ancestor.level) {
-        containsHeading = false;
-        break;
-      }
-    }
-    if (containsHeading) result.push({ id: hidden.id, heading: ancestor });
+    if (heading.ordinal < ancestor.endOrdinal)
+      result.push({ id: hidden.id, heading: ancestor });
   }
   return result.sort((a, b) => a.heading.ordinal - b.heading.ordinal);
 }
 
 function _headingHasHiddenTuiAncestor(buffer, heading) {
   return _hiddenTuiHeadingAncestors(buffer, heading).length > 0;
-}
-
-function _headingVisibleOrdinal(buffer, heading) {
-  let visibleOrdinal = heading?.ordinal ?? -1;
-  if (buffer?._mdcuiIdStore instanceof Map) {
-    for (const record of buffer._mdcuiIdStore.values()) {
-      const state = record?.headingVisibility;
-      if (state?.hidden && state.ordinal < heading.ordinal)
-        visibleOrdinal -= state.headingCount ?? 0;
-    }
-  }
-  return visibleOrdinal;
 }
 
 function _tuiHeadingLines(buffer) {
@@ -944,13 +951,162 @@ function _tuiHeadingLines(buffer) {
   const tuiHeadings = [];
   for (const [lineIndex, line] of ansiText.split("\n").entries()) {
     for (const [level, prefix] of prefixes) {
-      if (line.startsWith(prefix)) {
-        tuiHeadings.push({ level, line: lineIndex + 1 });
-        break;
-      }
+      const prefixIndex = line.indexOf(prefix);
+      if (prefixIndex < 0) continue;
+      const visiblePrefix = Bun.stripANSI(line.slice(0, prefixIndex));
+      if (!/^[\s│|]*$/u.test(visiblePrefix)) continue;
+      tuiHeadings.push({
+        level,
+        line: lineIndex + 1,
+        column: visiblePrefix.length,
+        prefix: visiblePrefix,
+      });
+      break;
     }
   }
   return tuiHeadings;
+}
+
+function _visibleTuiSourceHeadings(buffer, sourceHeadings) {
+  const hidden = new Set();
+  if (buffer?._mdcuiIdStore instanceof Map) {
+    for (const [id, record] of buffer._mdcuiIdStore) {
+      const state = record?.headingVisibility;
+      const heading = sourceHeadings[state?.ordinal];
+      if (
+        state?.hidden
+        && Number.isInteger(state.ordinal)
+        && heading?.id === id
+      ) hidden.add(state.ordinal);
+    }
+  }
+
+  const visible = [];
+  let concealedUntil = 0;
+  for (const heading of sourceHeadings) {
+    if (heading.ordinal < concealedUntil) continue;
+    visible.push(heading);
+    if (hidden.has(heading.ordinal))
+      concealedUntil = heading.endOrdinal;
+  }
+  return visible;
+}
+
+function _replaceTuiHeadingRowEntries(buffer, index, entries) {
+  entries.sort((a, b) => a.row - b.row);
+  index.entries = entries;
+  index.byRow.clear();
+  index.byOrdinal.clear();
+  for (const [position, entry] of entries.entries()) {
+    entry.position = position;
+    index.byRow.set(entry.row, entry);
+    index.byOrdinal.set(entry.ordinal, entry);
+  }
+  index.ansiText = buffer?._mdcuiAnsiText;
+  index.lines = buffer?.lines;
+  index.lineCount = buffer?.lines?.length ?? 0;
+  return index;
+}
+
+function _buildTuiHeadingRowIndex(buffer) {
+  const sourceHeadings = _tuiSourceHeadings(buffer);
+  const renderedHeadings = _tuiHeadingLines(buffer);
+  const visibleHeadings = _visibleTuiSourceHeadings(buffer, sourceHeadings);
+  const valid = (
+    visibleHeadings.length === renderedHeadings.length
+    && visibleHeadings.every((heading, index) =>
+      heading.level === renderedHeadings[index].level
+    )
+  );
+  const index = {
+    source: buffer?._mdcuiTuiSourceText,
+    ansiText: buffer?._mdcuiAnsiText,
+    lines: buffer?.lines,
+    lineCount: buffer?.lines?.length ?? 0,
+    valid,
+    entries: [],
+    byRow: new Map(),
+    byOrdinal: new Map(),
+  };
+  if (valid) {
+    _replaceTuiHeadingRowEntries(
+      buffer,
+      index,
+      visibleHeadings.map((heading, position) => ({
+        ...heading,
+        row: renderedHeadings[position].line - 1,
+        column: renderedHeadings[position].column,
+        prefix: renderedHeadings[position].prefix,
+      })),
+    );
+  }
+  if (buffer && typeof buffer === "object")
+    buffer._mdcuiHeadingRowIndex = index;
+  return index;
+}
+
+function _tuiHeadingRowIndex(buffer) {
+  const cached = buffer?._mdcuiHeadingRowIndex;
+  if (
+    cached
+    && cached.source === buffer?._mdcuiTuiSourceText
+    && cached.ansiText === buffer?._mdcuiAnsiText
+    && cached.lines === buffer?.lines
+    && cached.lineCount === (buffer?.lines?.length ?? 0)
+  ) return cached;
+  return _buildTuiHeadingRowIndex(buffer);
+}
+
+export function indexTuiHeadingRows(buffer) {
+  return _tuiHeadingRowIndex(buffer);
+}
+
+function _cachedTuiHeadingRowIndex(buffer) {
+  const cached = buffer?._mdcuiHeadingRowIndex;
+  return (
+    cached?.valid
+    && cached.source === buffer?._mdcuiTuiSourceText
+    && cached.ansiText === buffer?._mdcuiAnsiText
+    && cached.lines === buffer?.lines
+    && cached.lineCount === (buffer?.lines?.length ?? 0)
+  ) ? cached : null;
+}
+
+function _tuiRenderedContainerPrefix(line) {
+  const text = String(line ?? "");
+  const prefix = text.match(/^[ \t│|]*/u)?.[0] ?? "";
+  let quoteDepth = 0;
+  for (const character of prefix) {
+    if (character === "│" || character === "|") quoteDepth++;
+  }
+  return {
+    contentColumn: prefix.length,
+    empty: prefix.length === text.length,
+    quoteDepth,
+  };
+}
+
+function _tuiRenderedTaskCheckbox(line, expectedQuoteDepth = null) {
+  // Matching the heading's quote depth keeps table-cell borders from looking
+  // like task-list container markers.
+  const match = String(line ?? "").match(
+    /^((?:[ \t]*[│|])*[ \t]*)([☐☒])(?:[ \t]+|$)(.*)$/u,
+  );
+  if (!match) return null;
+  const quoteDepth = [...match[1]]
+    .filter(character => character === "│" || character === "|")
+    .length;
+  if (
+    Number.isInteger(expectedQuoteDepth)
+    && quoteDepth !== expectedQuoteDepth
+  ) return null;
+  return {
+    checked: match[2] === "☒",
+    column: match[1].length,
+    prefix: match[1],
+    quoteDepth,
+    value: match[3],
+  };
 }
 
 function _headingCheckboxValue(buffer, heading, id) {
@@ -958,8 +1114,11 @@ function _headingCheckboxValue(buffer, heading, id) {
   if (!list) return id.startsWith("select") ? null : [];
   const selected = [];
   for (const item of list.items) {
-    const checkbox = String(buffer.lines[item.start] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
-    if (checkbox?.[2] !== "☒") continue;
+    const checkbox = _tuiRenderedTaskCheckbox(
+      buffer.lines[item.start],
+      list.quoteDepth,
+    );
+    if (!checkbox?.checked) continue;
     if (id.startsWith("select")) return item.value;
     selected.push(item.value);
   }
@@ -1002,6 +1161,36 @@ function _removeTuiUserData(buffer, id, keys) {
   if (Object.keys(record).length === 0) store.delete(id);
 }
 
+function _takeTuiTaskListAnchors(buffer, start, end) {
+  const anchors = [];
+  const stored = buffer?._mdcuiHeadingTaskListAnchors;
+  if (!(stored instanceof Map)) return anchors;
+
+  for (const [ordinal, anchor] of stored) {
+    if (!anchor || anchor.index < start || anchor.index >= end) continue;
+    anchors.push({
+      ordinal,
+      anchor: { ...anchor, index: anchor.index - start },
+    });
+    stored.delete(ordinal);
+  }
+  return anchors;
+}
+
+function _restoreTuiTaskListAnchors(buffer, start, anchors) {
+  if (!Array.isArray(anchors) || anchors.length === 0) return;
+  if (!(buffer._mdcuiHeadingTaskListAnchors instanceof Map))
+    buffer._mdcuiHeadingTaskListAnchors = new Map();
+
+  for (const entry of anchors) {
+    if (!entry?.anchor || !Number.isInteger(entry.anchor.index)) continue;
+    buffer._mdcuiHeadingTaskListAnchors.set(entry.ordinal, {
+      ...entry.anchor,
+      index: start + entry.anchor.index,
+    });
+  }
+}
+
 export function clearTuiSourceDependentState(buffer) {
   if (!buffer || typeof buffer !== "object") return;
 
@@ -1023,6 +1212,29 @@ export function clearTuiSourceDependentState(buffer) {
   buffer._mdcuiRerenderMismatch = null;
   buffer._mdcuiFenceBlockIndex = null;
   buffer._mdcuiControlBlockIndex = null;
+  buffer._mdcuiSourceHeadingIndex = null;
+  buffer._mdcuiHeadingRowIndex = null;
+}
+
+function _tuiHeadingContainerEndRow(buffer, heading) {
+  const lines = buffer?.lines;
+  if (
+    !Array.isArray(lines)
+    || !Array.isArray(heading?.containerPath)
+    || heading.containerPath.length === 0
+  ) return lines?.length ?? 0;
+
+  const prefix = String(heading.prefix ?? "");
+  if (!prefix) return lines.length;
+  const required = _tuiRenderedContainerPrefix(prefix);
+
+  for (let row = heading.row + 1; row < lines.length; row++) {
+    const candidate = _tuiRenderedContainerPrefix(lines[row]);
+    if (candidate.quoteDepth < required.quoteDepth) return row;
+    if (candidate.empty) continue;
+    if (candidate.contentColumn < required.contentColumn) return row;
+  }
+  return lines.length;
 }
 
 function _hideTuiHeadingSection(buffer, heading, id) {
@@ -1030,29 +1242,42 @@ function _hideTuiHeadingSection(buffer, heading, id) {
   const store = _tuiIdStore(buffer);
   if (store.get(id)?.headingVisibility?.hidden) return true;
 
-  const headingLine = _headingTuiLine(buffer, heading);
-  if (!headingLine) return false;
-  const tuiHeadings = _tuiHeadingLines(buffer);
-  let visibleOrdinal = heading.ordinal;
-  for (const record of store.values()) {
-    const state = record?.headingVisibility;
-    if (state?.hidden && state.ordinal < heading.ordinal)
-      visibleOrdinal -= state.headingCount ?? 0;
-  }
+  const headingIndex = _tuiHeadingRowIndex(buffer);
+  const renderedHeading = headingIndex.byOrdinal.get(heading.ordinal);
+  if (
+    !headingIndex.valid
+    || renderedHeading?.id !== id
+    || renderedHeading.level !== heading.level
+  ) return false;
+
   let next = null;
-  let nextIndex = tuiHeadings.length;
-  for (let index = visibleOrdinal + 1; index < tuiHeadings.length; index++) {
-    if (tuiHeadings[index].level <= heading.level) {
-      next = tuiHeadings[index];
-      nextIndex = index;
+  const sectionHeadings = [];
+  for (
+    let position = renderedHeading.position + 1;
+    position < headingIndex.entries.length;
+    position++
+  ) {
+    const candidate = headingIndex.entries[position];
+    if (
+      !_headingContainerContains(renderedHeading, candidate)
+      || (
+        _sameHeadingContainer(renderedHeading, candidate)
+        && candidate.level <= heading.level
+      )
+    ) {
+      next = candidate;
       break;
     }
+    sectionHeadings.push(candidate);
   }
 
-  // headingLine is one-based. Starting at that array index therefore keeps the
-  // heading itself and removes only the generated section body.
-  const start = headingLine;
-  const end = next ? next.line - 1 : buffer.lines.length;
+  // Starting after the zero-based heading row keeps the heading itself and
+  // removes only its generated section body.
+  const start = renderedHeading.row + 1;
+  const end = Math.min(
+    next ? next.row : buffer.lines.length,
+    _tuiHeadingContainerEndRow(buffer, renderedHeading),
+  );
   const deleteCount = Math.max(0, end - start);
   const ansiLines = typeof buffer._mdcuiAnsiText === "string"
     ? buffer._mdcuiAnsiText.split("\n")
@@ -1068,8 +1293,14 @@ function _hideTuiHeadingSection(buffer, heading, id) {
         .filter(image => image.line >= start && image.line < end)
         .map(image => ({ ...image, line: image.line - start }))
       : [],
+    anchors: _takeTuiTaskListAnchors(buffer, start, end),
+    headings: sectionHeadings
+      .filter(candidate => candidate.row < end)
+      .map((candidate) => ({
+        ...candidate,
+        row: candidate.row - start,
+      })),
   };
-  const headingCount = Math.max(0, nextIndex - visibleOrdinal - 1);
 
   const modified = buffer.modified;
   spliceTuiBufferLines(buffer, start, deleteCount, []);
@@ -1077,7 +1308,6 @@ function _hideTuiHeadingSection(buffer, heading, id) {
   _tuiIdRecord(buffer, id).headingVisibility = {
     hidden: true,
     ordinal: heading.ordinal,
-    headingCount,
     segment,
   };
   return true;
@@ -1097,6 +1327,7 @@ function _showTuiHeadingSection(buffer, heading, id) {
   spliceTuiBufferLines(buffer, headingLine, 0, segment.lines, {
     styles: segment.styles ?? undefined,
     ansi: segment.ansi ?? undefined,
+    headings: segment.headings ?? undefined,
   });
   if (Array.isArray(buffer._mdcuiImages) && segment.images.length > 0) {
     buffer._mdcuiImages.push(
@@ -1104,6 +1335,7 @@ function _showTuiHeadingSection(buffer, heading, id) {
     );
     buffer._mdcuiImages.sort((a, b) => a.line - b.line);
   }
+  _restoreTuiTaskListAnchors(buffer, headingLine, segment.anchors);
   buffer.modified = modified;
   delete record.headingVisibility;
   if (Object.keys(record).length === 0) store.delete(id);
@@ -1142,18 +1374,13 @@ export function toggleTuiHeadingAt(buffer, y, x) {
   const row = Math.trunc(Number(y));
   const column = Math.trunc(Number(x));
   if (row < 0 || row >= buffer.lines.length) return false;
-  const line = String(buffer.lines[row] ?? "");
-  const firstCharacter = line.search(/\S/);
-  if (firstCharacter < 0 || column !== firstCharacter) return false;
-
-  const heading = _tuiSourceHeadings(buffer)
-    .find(candidate => candidate.id && _headingTuiLine(buffer, candidate) === row + 1);
-  if (!heading) return false;
+  const heading = _tuiHeadingRowIndex(buffer).byRow.get(row);
+  if (!heading?.id || column !== heading.column) return false;
 
   const state = _tuiIdStore(buffer).get(heading.id)?.headingVisibility;
-  if (state?.hidden) _showTuiHeadingSection(buffer, heading, heading.id);
-  else _hideTuiHeadingSection(buffer, heading, heading.id);
-  return true;
+  return state?.hidden
+    ? _showTuiHeadingSection(buffer, heading, heading.id)
+    : _hideTuiHeadingSection(buffer, heading, heading.id);
 }
 
 function _tuiHeadingTaskList(buffer, heading) {
@@ -1165,61 +1392,72 @@ function _tuiHeadingTaskList(buffer, heading) {
       end: savedAnchor.index,
       indent: savedAnchor.indent,
       items: [],
+      quoteDepth: _tuiRenderedContainerPrefix(savedAnchor.indent).quoteDepth,
     };
   }
-  const headingLine = _headingTuiLine(buffer, heading);
-  if (!headingLine || !Array.isArray(buffer?.lines)) return null;
+  const headingIndex = _tuiHeadingRowIndex(buffer);
+  const renderedHeading = headingIndex.byOrdinal.get(heading.ordinal);
+  if (
+    !renderedHeading
+    || renderedHeading.id !== heading.id
+    || !Array.isArray(buffer?.lines)
+  ) return null;
 
-  const tuiHeadings = _tuiHeadingLines(buffer);
-  const visibleOrdinal = _headingVisibleOrdinal(buffer, heading);
-  const nextHeading = tuiHeadings[visibleOrdinal + 1];
-  const endLine = nextHeading?.line ?? buffer.lines.length + 1;
+  const headingLine = renderedHeading.row + 1;
+  const nextHeading = headingIndex.entries[renderedHeading.position + 1];
+  const endLine = Math.min(
+    nextHeading?.row ?? buffer.lines.length,
+    _tuiHeadingContainerEndRow(buffer, renderedHeading),
+  );
+  const quoteDepth = _tuiRenderedContainerPrefix(
+    renderedHeading.prefix,
+  ).quoteDepth;
   let first = -1;
   let indent = "";
 
-  for (let y = headingLine; y < endLine - 1; y++) {
-    const checkbox = String(buffer.lines[y] ?? "").match(/^(\s*)[☐☒](?:\s+|$)/);
+  for (let y = headingLine; y < endLine; y++) {
+    const checkbox = _tuiRenderedTaskCheckbox(buffer.lines[y], quoteDepth);
     if (!checkbox) continue;
     first = y;
-    indent = checkbox[1];
+    indent = checkbox.prefix;
     break;
   }
   if (first < 0) return null;
 
-  let end = endLine - 1;
+  let end = endLine;
   let pendingBlank = -1;
-  for (let y = first + 1; y < endLine - 1; y++) {
+  for (let y = first + 1; y < endLine; y++) {
     const line = String(buffer.lines[y] ?? "");
-    if (line.trim() === "") {
+    const containerPrefix = _tuiRenderedContainerPrefix(line);
+    if (containerPrefix.empty) {
       if (pendingBlank < 0) pendingBlank = y;
       continue;
     }
-    const leading = line.match(/^\s*/)?.[0].length ?? 0;
-    const checkbox = line.match(/^(\s*)[☐☒](?:\s+|$)/);
-    if (checkbox || leading > indent.length) {
+    const checkbox = _tuiRenderedTaskCheckbox(line, quoteDepth);
+    if (checkbox || containerPrefix.contentColumn > indent.length) {
       pendingBlank = -1;
       continue;
     }
     end = pendingBlank >= 0 ? pendingBlank : y;
     break;
   }
-  if (end === endLine - 1 && pendingBlank >= 0) end = pendingBlank;
+  if (end === endLine && pendingBlank >= 0) end = pendingBlank;
 
   const items = [];
   for (let y = first; y < end; y++) {
-    const checkbox = String(buffer.lines[y] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)(.*)$/);
-    if (checkbox && checkbox[1] === indent) {
+    const checkbox = _tuiRenderedTaskCheckbox(buffer.lines[y], quoteDepth);
+    if (checkbox?.prefix === indent) {
       items.push({
         start: y,
         end,
-        value: checkbox[3].trim(),
+        value: checkbox.value.trim(),
       });
     }
   }
   for (let index = 0; index < items.length - 1; index++)
     items[index].end = items[index + 1].start;
 
-  return { first, end, indent, items };
+  return { first, end, indent, items, quoteDepth };
 }
 
 function _normalizedSpliceRange(length, argumentCount, start, deleteCount) {
@@ -1240,16 +1478,36 @@ function _normalizedSpliceRange(length, argumentCount, start, deleteCount) {
   };
 }
 
+function _normalizedTuiTaskItem(input) {
+  const item = input && typeof input === "object"
+    ? { value: input.value ?? input.label ?? "", checked: Boolean(input.checked) }
+    : { value: input ?? "", checked: false };
+  return {
+    value: String(item.value).replace(/\r?\n/g, " "),
+    checked: item.checked,
+  };
+}
+
+function _snapshotTuiHeadingListMutationArgs(method, args) {
+  let snapshot;
+  if (method === "splice") {
+    snapshot = [];
+    if (args.length > 0) snapshot.push(Number(args[0]));
+    if (args.length > 1) snapshot.push(Number(args[1]));
+    snapshot.push(...args.slice(2).map(_normalizedTuiTaskItem));
+  } else if (method === "push" || method === "unshift") {
+    snapshot = args.map(_normalizedTuiTaskItem);
+  } else {
+    snapshot = [];
+  }
+  for (const item of snapshot) {
+    if (item && typeof item === "object") Object.freeze(item);
+  }
+  return Object.freeze(snapshot);
+}
+
 function _tuiTaskItemReplacement(indent, inputs) {
-  const normalized = inputs.map((input) => {
-    const item = input && typeof input === "object"
-      ? { value: input.value ?? input.label ?? "", checked: Boolean(input.checked) }
-      : { value: input ?? "", checked: false };
-    return {
-      value: String(item.value).replace(/\r?\n/g, " "),
-      checked: item.checked,
-    };
-  });
+  const normalized = inputs.map(_normalizedTuiTaskItem);
   return {
     lines: normalized.map((item) =>
       `${indent}${item.checked ? "☒" : "☐"} ${item.value}`,
@@ -1268,8 +1526,8 @@ function _tuiTaskItemReplacement(indent, inputs) {
   };
 }
 
-function _mutateTuiHeadingList(buffer, heading, method, args) {
-  const list = _tuiHeadingTaskList(buffer, heading);
+function _mutateTuiHeadingList(buffer, heading, method, args, resolvedList = null) {
+  const list = resolvedList ?? _tuiHeadingTaskList(buffer, heading);
   if (!list) {
     if (method === "push" || method === "unshift") return 0;
     if (method === "splice") return [];
@@ -1326,17 +1584,14 @@ function _mutateTuiHeadingList(buffer, heading, method, args) {
 
 function _recordTuiHeadingListMutation(buffer, selector, method, args) {
   if (!buffer || buffer._mdcuiReplayingMutations) return;
-  try {
-    const argsJson = JSON.stringify(args);
-    if (typeof argsJson !== "string") return;
-    if (!Array.isArray(buffer._mdcuiMutationMacros))
-      buffer._mdcuiMutationMacros = [];
-    buffer._mdcuiMutationMacros.push({
-      selector: String(selector),
-      method,
-      argsJson,
-    });
-  } catch {}
+  if (!Array.isArray(args)) return;
+  if (!Array.isArray(buffer._mdcuiMutationMacros))
+    buffer._mdcuiMutationMacros = [];
+  buffer._mdcuiMutationMacros.push({
+    selector: String(selector),
+    method,
+    args,
+  });
 }
 
 function _mutateAndRecordTuiHeadingList(buffer, heading, selector, method, args, failureValue) {
@@ -1346,11 +1601,14 @@ function _mutateAndRecordTuiHeadingList(buffer, heading, selector, method, args,
     _tuiIdStore(buffer).get(heading.id)?.headingVisibility?.hidden
   )
     return failureValue;
+  const list = _tuiHeadingTaskList(buffer, heading);
+  if (!list) return failureValue;
+  const snapshotArgs = _snapshotTuiHeadingListMutationArgs(method, args);
   const before = Array.isArray(buffer.lines) ? buffer.lines.join("\n") : "";
-  const result = _mutateTuiHeadingList(buffer, heading, method, args);
+  const result = _mutateTuiHeadingList(buffer, heading, method, snapshotArgs, list);
   const after = Array.isArray(buffer.lines) ? buffer.lines.join("\n") : "";
   if (after !== before)
-    _recordTuiHeadingListMutation(buffer, selector, method, args);
+    _recordTuiHeadingListMutation(buffer, selector, method, snapshotArgs);
   return result;
 }
 
@@ -1362,10 +1620,13 @@ export function replayTuiMutationMacros(buffer) {
       if (!macro || !["push", "pop", "shift", "unshift", "splice"].includes(macro.method))
         continue;
       let args;
-      try {
-        args = JSON.parse(macro.argsJson);
-      } catch {
-        continue;
+      if (Array.isArray(macro.args)) args = macro.args;
+      else {
+        try {
+          args = JSON.parse(macro.argsJson);
+        } catch {
+          continue;
+        }
       }
       if (!Array.isArray(args)) continue;
       const heading = _findHeading(buffer, macro.selector);
@@ -1437,8 +1698,14 @@ function _tuiCheckboxRows(buffer) {
     while (blocks[blockIndex] && y >= blocks[blockIndex].end) blockIndex++;
     const block = blocks[blockIndex];
     if (block && y > block.start && y < block.end) continue;
-    const match = String(buffer.lines[y] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)/);
-    if (match) rows.push({ y, x: match[1].length, checked: match[2] === "☒" });
+    const checkbox = _tuiRenderedTaskCheckbox(buffer.lines[y]);
+    if (checkbox) {
+      rows.push({
+        y,
+        x: checkbox.column,
+        checked: checkbox.checked,
+      });
+    }
   }
   return rows;
 }
@@ -1521,6 +1788,9 @@ export function restoreTuiHiddenHeadings(buffer, hiddenHeadings) {
 
 export function spliceTuiBufferLines(buffer, start, deleteCount, replacement, replacementMeta = {}) {
   const oldCursor = buffer.cursor ? { ...buffer.cursor } : null;
+  const headingIndex = _cachedTuiHeadingRowIndex(buffer);
+  const oldEnd = start + deleteCount;
+  const delta = replacement.length - deleteCount;
   buffer._mdcuiFenceBlockIndex = null;
   buffer._mdcuiControlBlockIndex = null;
   buffer.lines.splice(start, deleteCount, ...replacement);
@@ -1540,23 +1810,37 @@ export function spliceTuiBufferLines(buffer, start, deleteCount, replacement, re
     buffer._mdcuiAnsiText = ansiLines.join("\n");
   }
   if (Array.isArray(buffer._mdcuiImages)) {
-    const delta = replacement.length - deleteCount;
     buffer._mdcuiImages = buffer._mdcuiImages
       .filter((image) => image.line < start || image.line >= start + deleteCount)
       .map((image) => image.line >= start + deleteCount ? { ...image, line: image.line + delta } : image);
   }
   if (buffer._mdcuiHeadingTaskListAnchors instanceof Map) {
-    const oldEnd = start + deleteCount;
-    const delta = replacement.length - deleteCount;
     for (const anchor of buffer._mdcuiHeadingTaskListAnchors.values()) {
       if (anchor.index >= oldEnd) anchor.index += delta;
       else if (anchor.index >= start) anchor.index = start;
     }
   }
+  if (headingIndex) {
+    const entries = headingIndex.entries
+      .filter((heading) => heading.row < start || heading.row >= oldEnd)
+      .map((heading) => heading.row >= oldEnd
+        ? { ...heading, row: heading.row + delta }
+        : heading
+      );
+    for (const heading of replacementMeta.headings ?? []) {
+      if (
+        !heading
+        || !Number.isInteger(heading.row)
+        || heading.row < 0
+        || heading.row >= replacement.length
+      ) continue;
+      entries.push({ ...heading, row: start + heading.row });
+    }
+    _replaceTuiHeadingRowEntries(buffer, headingIndex, entries);
+  }
 
   buffer.invalidateHighlightFrom?.(start, { force: replacement.length !== deleteCount });
   if (oldCursor) {
-    const oldEnd = start + deleteCount;
     if (oldCursor.y >= oldEnd) {
       buffer.cursor.y = oldCursor.y + replacement.length - deleteCount;
     } else if (oldCursor.y >= start) {
@@ -1844,7 +2128,12 @@ export function createTuiSelector(getBuffer) {
           if (!list) return [];
           return list.items.map((item) => ({
             value: item.value,
-            checked: String(buffer.lines[item.start] ?? "").match(/^(\s*)([☐☒])(?:\s+|$)/)?.[2] === "☒",
+            checked: Boolean(
+              _tuiRenderedTaskCheckbox(
+                buffer.lines[item.start],
+                list.quoteDepth,
+              )?.checked,
+            ),
           })).slice(...args);
         } catch {
           return [];

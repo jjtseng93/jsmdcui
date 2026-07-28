@@ -4,6 +4,7 @@ import {
   captureTuiRerenderState,
   clearTuiSourceDependentState,
   createTuiSelector,
+  indexTuiHeadingRows,
   restoreTuiRerenderState,
   spliceTuiBufferLines,
   toggleTuiHeadingAt,
@@ -19,6 +20,7 @@ function tuiSelector(markdown) {
     ensureCursor() {},
     invalidateHighlightFrom() {},
   };
+  indexTuiHeadingRows(buffer);
   return { $: createTuiSelector(() => buffer), buffer };
 }
 
@@ -67,6 +69,127 @@ describe("TUI heading task-list Array methods", () => {
     expect(features.pop()).toBeUndefined();
     expect(features.push({ value: "Again", checked: true })).toBe(1);
     expect(features.val()).toEqual(["Again"]);
+  });
+
+  test("an empty child list keeps its position across block resizing and ancestor visibility", () => {
+    const scenarios = [
+      { tag: "text", value: "one\ntwo\nthree\nfour", label: "After growing text" },
+      { tag: "textarea", value: "one", label: "After shrinking textarea" },
+    ];
+
+    for (const scenario of scenarios) {
+      const source = `# Parent
+
+\`\`\`${scenario.tag}#editor
+one
+two
+\`\`\`
+
+## Child
+
+- [ ] Only child item
+
+## Later
+
+Later body.
+
+# End
+`;
+      const { $, buffer } = tuiSelector(source);
+      const child = $("#child");
+
+      expect(child.pop()).toBe("Only child item");
+      $(`${scenario.tag}#editor`).val(scenario.value);
+      $("#parent").hide().show();
+
+      expect(child.push(scenario.label)).toBe(1);
+
+      const childHeading = buffer.lines.findIndex((line) => line.trim() === "Child");
+      const inserted = buffer.lines.findIndex((line) => line.includes(scenario.label));
+      const laterHeading = buffer.lines.findIndex((line) => line.trim() === "Later");
+      expect(inserted).toBeGreaterThan(childHeading);
+      expect(inserted).toBeLessThan(laterHeading);
+      expect(child.slice()).toEqual([{ value: scenario.label, checked: false }]);
+    }
+  });
+
+  test("a hidden section keeps relative empty-list anchors when a preceding block grows", () => {
+    const source = `\`\`\`text#before
+one
+\`\`\`
+
+# Parent
+
+## Child
+
+- [ ] Only child item
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    const child = $("#child");
+
+    expect(child.pop()).toBe("Only child item");
+    $("#parent").hide();
+    $("text#before").val("one\ntwo\nthree\nfour");
+    $("#parent").show();
+    expect(child.push("After hidden growth")).toBe(1);
+
+    const childHeading = buffer.lines.findIndex((line) => line.trim() === "Child");
+    const inserted = buffer.lines.findIndex((line) => line.includes("After hidden growth"));
+    const endHeading = buffer.lines.findIndex((line) => line.trim() === "End");
+    expect(inserted).toBeGreaterThan(childHeading);
+    expect(inserted).toBeLessThan(endHeading);
+    expect(child.slice()).toEqual([{ value: "After hidden growth", checked: false }]);
+  });
+
+  test("nested hidden sections restore every empty-list anchor independently", () => {
+    const source = `# Parent
+
+## Alpha
+
+- [ ] Only alpha
+
+### Deep
+
+- [ ] Only deep
+
+## Beta
+
+- [ ] Only beta
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    const alpha = $("#alpha");
+    const deep = $("#deep");
+    const beta = $("#beta");
+
+    expect(alpha.pop()).toBe("Only alpha");
+    expect(deep.pop()).toBe("Only deep");
+    expect(beta.pop()).toBe("Only beta");
+
+    alpha.hide();
+    $("#parent").hide().show();
+    alpha.show();
+
+    expect(alpha.push("Restored alpha")).toBe(1);
+    expect(deep.push("Restored deep")).toBe(1);
+    expect(beta.push("Restored beta")).toBe(1);
+    expect(alpha.slice()).toEqual([{ value: "Restored alpha", checked: false }]);
+    expect(deep.slice()).toEqual([{ value: "Restored deep", checked: false }]);
+    expect(beta.slice()).toEqual([{ value: "Restored beta", checked: false }]);
+
+    const positions = Object.fromEntries(
+      ["Alpha", "Restored alpha", "Deep", "Restored deep", "Beta", "Restored beta", "End"]
+        .map((text) => [text, buffer.lines.findIndex((line) => line.includes(text))]),
+    );
+    expect(positions.Alpha).toBeLessThan(positions["Restored alpha"]);
+    expect(positions["Restored alpha"]).toBeLessThan(positions.Deep);
+    expect(positions.Deep).toBeLessThan(positions["Restored deep"]);
+    expect(positions["Restored deep"]).toBeLessThan(positions.Beta);
+    expect(positions.Beta).toBeLessThan(positions["Restored beta"]);
+    expect(positions["Restored beta"]).toBeLessThan(positions.End);
   });
 
   test("val and mutations stop at the first rendered task list", () => {
@@ -138,6 +261,89 @@ Paragraph after the list.
     expect($("#empty").pop()).toBeUndefined();
     expect($("#empty").shift()).toBeUndefined();
     expect(buffer._mdcuiMutationMacros).toBeUndefined();
+  });
+
+  test("does not borrow a task list from outside the heading's Markdown container", () => {
+    const scenarios = [
+      {
+        source: `> ## Quoted
+>
+> Inside quote.
+
+- [x] Outside quote
+`,
+        id: "quoted",
+        outside: "Outside quote",
+      },
+      {
+        source: `- Item
+
+    ## Listed
+
+    Inside list item.
+
+- [x] Outside list item
+`,
+        id: "listed",
+        outside: "Outside list item",
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { $, buffer } = tuiSelector(scenario.source);
+      const heading = $(`#${scenario.id}`);
+
+      expect(heading.val()).toEqual([]);
+      expect(heading.slice()).toEqual([]);
+      expect(heading.push("Must stay absent")).toBe(0);
+      expect(buffer.lines.some(line => line.includes(scenario.outside)))
+        .toBe(true);
+      expect(buffer.lines.some(line => line.includes("Must stay absent")))
+        .toBe(false);
+    }
+  });
+
+  test("uses and mutates a direct task list inside a blockquote", () => {
+    const source = `> ## Quoted
+>
+> - [x] Inside checked
+> - [ ] Inside unchecked
+
+- [x] Outside quote
+`;
+    const { $, buffer } = tuiSelector(source);
+    const quoted = $("#quoted");
+
+    expect(quoted.val()).toEqual(["Inside checked"]);
+    expect(quoted.slice()).toEqual([
+      { value: "Inside checked", checked: true },
+      { value: "Inside unchecked", checked: false },
+    ]);
+    expect(quoted.push({ value: "Inside added", checked: true })).toBe(3);
+    expect(quoted.val()).toEqual(["Inside checked", "Inside added"]);
+    expect(buffer.lines.some(line =>
+      line.startsWith("│") && line.includes("Inside added")
+    )).toBe(true);
+    expect(buffer.lines.some(line =>
+      line.includes("Outside quote") && line.includes("☒")
+    )).toBe(true);
+  });
+
+  test("does not mistake a blockquote table cell for a task-list item", () => {
+    const source = `> ## Quoted
+>
+> | Value |
+> | --- |
+> | ☒ Not a task |
+>
+> - [x] Real task
+`;
+    const { $ } = tuiSelector(source);
+
+    expect($("#quoted").val()).toEqual(["Real task"]);
+    expect($("#quoted").slice()).toEqual([
+      { value: "Real task", checked: true },
+    ]);
   });
 
   test("mutations against a hidden heading fail without recording a macro", () => {
@@ -385,9 +591,304 @@ Second body.
 
     expect(toggleTuiHeadingAt(buffer, headingRow, firstCharacter + 1)).toBe(false);
     expect(toggleTuiHeadingAt(buffer, headingRow, firstCharacter)).toBe(true);
+    const headingRows = buffer._mdcuiHeadingRowIndex;
+    expect(headingRows.byRow.get(headingRow).id).toBe("child");
+    expect(headingRows.entries.some((heading) => heading.id === "grandchild")).toBe(false);
     expect(buffer.lines.some(line => line.includes("Child body."))).toBe(false);
     expect(toggleTuiHeadingAt(buffer, headingRow, firstCharacter)).toBe(true);
+    expect(buffer._mdcuiHeadingRowIndex).toBe(headingRows);
+    expect(headingRows.entries.some((heading) => heading.id === "grandchild")).toBe(true);
     expect(buffer.lines.some(line => line.includes("Child body."))).toBe(true);
+  });
+
+  test("a normalized Chinese heading ID restores first-character toggling", () => {
+    const source = `# 中文 設定！
+
+Chinese body.
+
+# 結束
+
+End body.
+`;
+    const { $, buffer } = tuiSelector(source);
+    const headingRow = buffer.lines.findIndex(line =>
+      line.trim() === "中文 設定！"
+    );
+    const firstCharacter = buffer.lines[headingRow].search(/\S/);
+    const heading = buffer._mdcuiHeadingRowIndex.byRow.get(headingRow);
+
+    expect(heading).toMatchObject({
+      id: "中文-設定",
+      level: 1,
+      ordinal: 0,
+    });
+    const selection = $("#中文-設定");
+    const nested = $($({ id: "中文-設定", value: "decoy" }));
+    expect(selection.id).toBe("中文-設定");
+    expect(nested.id).toBe("中文-設定");
+    expect(nested.text()).toBe("中文 設定！");
+    expect(nested.data()).toBe(selection.data());
+
+    expect(toggleTuiHeadingAt(buffer, headingRow, firstCharacter)).toBe(true);
+    expect(buffer.lines.some(line => line.includes("Chinese body."))).toBe(false);
+    expect(buffer.lines.some(line => line.trim() === "結束")).toBe(true);
+    expect(toggleTuiHeadingAt(buffer, headingRow, firstCharacter)).toBe(true);
+    expect(buffer.lines.some(line => line.includes("Chinese body."))).toBe(true);
+  });
+
+  test("blockquote and list headings keep the TUI row index valid", () => {
+    const source = `# Top
+
+> ## 引用標題
+>
+> Quoted body.
+
+- ## 清單標題
+
+  List body.
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    const quotedRow = $("#引用標題").line() - 1;
+    const listRow = $("#清單標題").line() - 1;
+    const topRow = $("#top").line() - 1;
+
+    expect(buffer._mdcuiHeadingRowIndex.valid).toBe(true);
+    expect(buffer._mdcuiHeadingRowIndex.entries).toHaveLength(4);
+    expect(buffer._mdcuiHeadingRowIndex.byRow.get(quotedRow)?.column)
+      .toBe(buffer.lines[quotedRow].indexOf("引"));
+    expect(buffer._mdcuiHeadingRowIndex.byRow.get(listRow)?.column)
+      .toBe(buffer.lines[listRow].indexOf("清"));
+
+    expect(toggleTuiHeadingAt(
+      buffer,
+      quotedRow,
+      buffer.lines[quotedRow].search(/\S/),
+    )).toBe(false);
+    expect(toggleTuiHeadingAt(
+      buffer,
+      quotedRow,
+      buffer.lines[quotedRow].indexOf("引"),
+    )).toBe(true);
+    expect(buffer.lines.some(line => line.includes("Quoted body."))).toBe(false);
+    expect(buffer.lines.some(line => line.includes("清單標題"))).toBe(true);
+    expect(toggleTuiHeadingAt(
+      buffer,
+      topRow,
+      buffer.lines[topRow].indexOf("Top"),
+    )).toBe(true);
+  });
+
+  test("nested heading sections stop at their Markdown container boundary", () => {
+    const scenarios = [
+      {
+        source: `> ## Quoted
+>
+> Inside quote.
+
+Outside quote.
+
+### Outside lower
+
+Outside heading body.
+`,
+        id: "quoted",
+        inside: "Inside quote.",
+        outside: "Outside quote.",
+      },
+      {
+        source: `- Item
+
+    ## Listed
+
+    Inside list.
+
+Outside list.
+
+### Outside lower
+
+Outside heading body.
+`,
+        id: "listed",
+        inside: "Inside list.",
+        outside: "Outside list.",
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { $, buffer } = tuiSelector(scenario.source);
+      const heading = $(`#${scenario.id}`);
+
+      expect(heading.hide()).toBe(heading);
+      expect(buffer.lines.some(line => line.includes(scenario.inside)))
+        .toBe(false);
+      expect(buffer.lines.some(line => line.includes(scenario.outside)))
+        .toBe(true);
+      expect(buffer.lines.some(line => line.includes("Outside lower")))
+        .toBe(true);
+
+      heading.show();
+      expect(buffer.lines.some(line => line.includes(scenario.inside)))
+        .toBe(true);
+    }
+  });
+
+  test("blockquote visibility stops before a following top-level list", () => {
+    const source = `> ## Quoted
+>
+> Inside quote.
+
+- Outside list item
+`;
+    const { $, buffer } = tuiSelector(source);
+    const original = buffer.lines.slice();
+    const quoted = $("#quoted");
+
+    quoted.hide();
+    expect(buffer.lines.some(line => line.includes("Inside quote."))).toBe(false);
+    expect(buffer.lines.some(line => line.includes("Outside list item"))).toBe(true);
+
+    quoted.show();
+    expect(buffer.lines).toEqual(original);
+  });
+
+  test("double-blockquote visibility crosses compact quote marker rows only", () => {
+    const source = `> > ## Deep
+> >
+> > Deep body.
+>
+> Outer body.
+
+Outside body.
+`;
+    const { $, buffer } = tuiSelector(source);
+    const original = buffer.lines.slice();
+    const deep = $("#deep");
+
+    expect(buffer.lines.some(line => line === "││")).toBe(true);
+    deep.hide();
+    expect(buffer.lines.some(line => line.includes("Deep body."))).toBe(false);
+    expect(buffer.lines.some(line => line.includes("Outer body."))).toBe(true);
+    expect(buffer.lines.some(line => line.includes("Outside body."))).toBe(true);
+
+    deep.show();
+    expect(buffer.lines).toEqual(original);
+  });
+
+  test("a large document resolves the cursor row without rebuilding per heading", () => {
+    const headingCount = 2000;
+    const source = Array.from(
+      { length: headingCount },
+      (_, index) => `## Topic ${index}\n\nBody ${index}.`,
+    ).join("\n\n");
+    const { buffer } = tuiSelector(source);
+    const lastRow = buffer.lines.findLastIndex((line) =>
+      line.trim() === `Topic ${headingCount - 1}`
+    );
+    const firstCharacter = buffer.lines[lastRow].search(/\S/);
+    const headingRows = buffer._mdcuiHeadingRowIndex;
+
+    expect(toggleTuiHeadingAt(buffer, lastRow, firstCharacter)).toBe(true);
+    expect(buffer._mdcuiHeadingRowIndex).toBe(headingRows);
+    expect(headingRows.valid).toBe(true);
+    expect(headingRows.entries).toHaveLength(headingCount);
+    expect(headingRows.byRow.get(lastRow)).toMatchObject({
+      id: `topic-${headingCount - 1}`,
+      ordinal: headingCount - 1,
+      level: 2,
+    });
+
+    expect(toggleTuiHeadingAt(buffer, lastRow, firstCharacter)).toBe(true);
+    expect(buffer._mdcuiHeadingRowIndex).toBe(headingRows);
+    const bodyRow = buffer.lines.findIndex((line) =>
+      line.trim() === `Body ${headingCount - 1}.`
+    );
+    expect(toggleTuiHeadingAt(buffer, bodyRow, buffer.lines[bodyRow].search(/\S/))).toBe(false);
+    expect(buffer._mdcuiHeadingRowIndex).toBe(headingRows);
+  });
+
+  test("text block row-count changes move cached heading rows in place", () => {
+    const source = `# Parent
+
+\`\`\`text#editor
+one
+\`\`\`
+
+## Child
+
+Child body.
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    const parentRow = buffer.lines.findIndex((line) => line.trim() === "Parent");
+    const parentColumn = buffer.lines[parentRow].search(/\S/);
+    expect(toggleTuiHeadingAt(buffer, parentRow, parentColumn)).toBe(true);
+    expect(toggleTuiHeadingAt(buffer, parentRow, parentColumn)).toBe(true);
+    const headingRows = buffer._mdcuiHeadingRowIndex;
+    const oldChildRow = headingRows.entries.find((heading) => heading.id === "child").row;
+
+    $("text#editor").val("one\ntwo\nthree\nfour");
+
+    const child = headingRows.entries.find((heading) => heading.id === "child");
+    expect(buffer._mdcuiHeadingRowIndex).toBe(headingRows);
+    expect(child.row).toBeGreaterThan(oldChildRow);
+    expect(headingRows.byRow.has(oldChildRow)).toBe(false);
+    expect(headingRows.byRow.get(child.row)?.id).toBe("child");
+    expect(toggleTuiHeadingAt(
+      buffer,
+      child.row,
+      buffer.lines[child.row].search(/\S/),
+    )).toBe(true);
+    expect(buffer.lines.some((line) => line.includes("Child body."))).toBe(false);
+  });
+
+  test("a direct rerender invalidates row metadata and mismatches fail closed", () => {
+    const source = `# First
+
+This paragraph is deliberately long enough to wrap at a narrow render width.
+
+## Child
+
+Child body.
+`;
+    const { buffer } = tuiSelector(source);
+    const firstRow = buffer.lines.findIndex((line) => line.trim() === "First");
+    const firstColumn = buffer.lines[firstRow].search(/\S/);
+    expect(toggleTuiHeadingAt(buffer, firstRow, firstColumn)).toBe(true);
+    expect(toggleTuiHeadingAt(buffer, firstRow, firstColumn)).toBe(true);
+    const wideHeadingRows = buffer._mdcuiHeadingRowIndex;
+
+    const narrowAnsi = String(Bun.markdown.ansi(
+      source,
+      { hyperlinks: true, columns: 20 },
+    ));
+    buffer.lines = Bun.stripANSI(narrowAnsi).split("\n");
+    buffer._mdcuiAnsiText = narrowAnsi;
+    const childRow = buffer.lines.findIndex((line) => line.trim() === "Child");
+    expect(toggleTuiHeadingAt(
+      buffer,
+      childRow,
+      buffer.lines[childRow].search(/\S/),
+    )).toBe(true);
+    expect(buffer._mdcuiHeadingRowIndex).not.toBe(wideHeadingRows);
+    expect(buffer._mdcuiHeadingRowIndex.byRow.get(childRow)?.id).toBe("child");
+
+    const mismatched = tuiSelector("# First\n\n# Second\n").buffer;
+    const oneHeadingAnsi = String(Bun.markdown.ansi(
+      "# First\n",
+      { hyperlinks: true, columns: 80 },
+    ));
+    mismatched.lines = Bun.stripANSI(oneHeadingAnsi).split("\n");
+    mismatched._mdcuiAnsiText = oneHeadingAnsi;
+    const row = mismatched.lines.findIndex((line) => line.trim() === "First");
+    const column = mismatched.lines[row].search(/\S/);
+    expect(toggleTuiHeadingAt(mismatched, row, column)).toBe(false);
+    const failedIndex = mismatched._mdcuiHeadingRowIndex;
+    expect(failedIndex.valid).toBe(false);
+    expect(toggleTuiHeadingAt(mismatched, row, column)).toBe(false);
+    expect(mismatched._mdcuiHeadingRowIndex).toBe(failedIndex);
   });
 });
 
@@ -453,6 +954,19 @@ describe("TUI id-centered user data", () => {
     nested.hide();
     expect(buffer._mdcuiIdStore.get("features").headingVisibility.hidden).toBe(true);
   });
+
+  test("Unicode and numeric heading IDs remain canonical through object wrapping", () => {
+    const { $ } = tuiSelector("# 中文\n\nBody.\n\n# 2026 中文\n\nLater.\n");
+
+    for (const id of ["中文", "2026"]) {
+      const direct = $(`#${id}`);
+      let nested = $({ id, value: "decoy" });
+      for (let depth = 0; depth < 4; depth++) nested = $(nested);
+      expect(nested.id).toBe(id);
+      expect(nested.text()).toBe(direct.text());
+      expect(nested.data()).toBe(direct.data());
+    }
+  });
 });
 
 describe("TUI source-dependent state reset", () => {
@@ -505,6 +1019,8 @@ NEW BODY
     expect(buffer._mdcuiRerenderMismatch).toBeNull();
     expect(buffer._mdcuiFenceBlockIndex).toBeNull();
     expect(buffer._mdcuiControlBlockIndex).toBeNull();
+    expect(buffer._mdcuiSourceHeadingIndex).toBeNull();
+    expect(buffer._mdcuiHeadingRowIndex).toBeNull();
 
     topic.show();
     expect(buffer.lines.some(line => line.includes("OLD BODY"))).toBe(false);
@@ -569,7 +1085,7 @@ describe("TUI object target wrapper", () => {
   test("invalid object ids stay generic while missing legal ids do not", () => {
     const { $ } = tuiSelector("## Features\n\nBody.\n");
     const invalidTargets = [
-      { id: "9invalid", value: "numeric" },
+      { id: "-invalid", value: "leading punctuation" },
       { id: "invalid id", value: "spaced" },
     ];
     const missing = { id: "missing", value: "decoy", textContent: "decoy" };
@@ -609,6 +1125,35 @@ describe("TUI heading text getter", () => {
 });
 
 describe("TUI resize state restoration", () => {
+  test("preserves direct checkbox state inside a blockquote", () => {
+    const source = `> ## Quoted
+>
+> - [ ] Inside quote
+
+- [ ] Outside quote
+`;
+    const { $, buffer } = tuiSelector(source);
+    const inside = buffer.lines.findIndex(line => line.includes("Inside quote"));
+    buffer.lines[inside] = buffer.lines[inside].replace("☐", "☒");
+
+    const snapshot = captureTuiRerenderState(buffer);
+    const narrowAnsi = String(Bun.markdown.ansi(
+      source,
+      { hyperlinks: true, columns: 24 },
+    ));
+    buffer.lines = Bun.stripANSI(narrowAnsi).split("\n");
+    buffer._mdcuiAnsiText = narrowAnsi;
+    buffer._ansiStyleLines = null;
+    buffer._mdcuiHeadingTaskListAnchors = null;
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect($("#quoted").val()).toEqual(["Inside quote"]);
+    expect(buffer.lines.some(line =>
+      line.includes("Outside quote") && line.includes("☐")
+    )).toBe(true);
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
+  });
+
   test("replays a mutation recorded through arbitrarily nested id selections", () => {
     const source = "## Features\n\n- [ ] Original\n";
     const { $, buffer } = tuiSelector(source);
@@ -640,6 +1185,48 @@ describe("TUI resize state restoration", () => {
       .toHaveLength(1);
     expect(buffer._mdcuiRerenderMismatch).toBeNull();
     expect(objectTarget.value).toBe("DECOY");
+  });
+
+  test("replays Infinity, NaN, BigInt, and cyclic list mutation arguments", () => {
+    const source = `## Features
+
+- [ ] Original A
+- [x] Original B
+`;
+    const { $, buffer } = tuiSelector(source);
+    const features = $("#features");
+    const cyclic = { value: "Cyclic item", checked: false };
+    const bigintItem = { value: 9007199254740993n, checked: true };
+    cyclic.self = cyclic;
+
+    expect(features.splice(0, Infinity)).toEqual(["Original A", "Original B"]);
+    expect(features.push(bigintItem)).toBe(1);
+    expect(features.splice(NaN, 0, cyclic)).toEqual([]);
+    expect(features.slice()).toEqual([
+      { value: "Cyclic item", checked: false },
+      { value: "9007199254740993", checked: true },
+    ]);
+    cyclic.value = "Mutated cyclic item";
+    cyclic.checked = true;
+    bigintItem.value = 0n;
+    bigintItem.checked = false;
+
+    const snapshot = captureTuiRerenderState(buffer);
+    const narrowAnsi = String(Bun.markdown.ansi(
+      source,
+      { hyperlinks: true, columns: 24 },
+    ));
+    buffer.lines = Bun.stripANSI(narrowAnsi).split("\n");
+    buffer._mdcuiAnsiText = narrowAnsi;
+    buffer._ansiStyleLines = null;
+    buffer._mdcuiHeadingTaskListAnchors = null;
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect(features.slice()).toEqual([
+      { value: "Cyclic item", checked: false },
+      { value: "9007199254740993", checked: true },
+    ]);
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
   });
 
   test("preserves a deep visibility change made through hidden ancestors", () => {
@@ -1164,6 +1751,22 @@ describe("WUI id-centered user data", () => {
     expect(nested.push({ value: "Nested addition", checked: true })).toBe(4);
     expect(nested.val()).toEqual(["Search", "Offline", "Nested addition"]);
   });
+
+  test("Unicode and numeric element IDs remain canonical through object wrapping", () => {
+    const { $, heading } = webSelector();
+    heading.classList.add("field");
+
+    for (const id of ["中文-設定", "2026"]) {
+      heading.id = id;
+      let nested = $({ id, value: "decoy" });
+      for (let depth = 0; depth < 4; depth++) nested = $(nested);
+      expect(nested.id).toBe(id);
+      expect(nested.text()).toBe("Features");
+      expect(nested.data()).toBe($(`#${id}`).data());
+      expect($(`h2#${id}.field`).text()).toBe("Features");
+      expect($(`#${id}.field`).text()).toBe("Features");
+    }
+  });
 });
 
 describe("WUI object target wrapper", () => {
@@ -1220,7 +1823,7 @@ describe("WUI object target wrapper", () => {
   test("invalid object ids stay generic while missing legal ids do not", () => {
     const { $ } = webSelector();
     const invalidTargets = [
-      { id: "9invalid", value: "numeric" },
+      { id: "-invalid", value: "leading punctuation" },
       { id: "invalid id", value: "spaced" },
     ];
     const missing = { id: "missing", value: "decoy", textContent: "decoy" };
@@ -1254,5 +1857,21 @@ describe("WUI object target wrapper", () => {
     expect($("#feature:item").text()).toBe("Punctuation ID");
     expect($({ id: "feature:item", textContent: "DECOY" }).text())
       .toBe("Punctuation ID");
+  });
+
+  test("a missing literal colon ID cannot fall through to a CSS pseudo-selector", () => {
+    const documentObject = new TestDocument();
+    const section = documentObject.createElement("section");
+    const heading = documentObject.createElement("h2");
+    heading.id = "feature";
+    heading.append(documentObject.createTextNode("Wrong CSS match"));
+    section.append(heading);
+    documentObject.root.append(section);
+    documentObject.querySelector = selector =>
+      selector === "#feature:first-child" ? heading : null;
+    const $ = createWebDollar(documentObject);
+
+    expect($("#feature:first-child").id).toBe("feature:first-child");
+    expect($("#feature:first-child").text()).toBe("");
   });
 });

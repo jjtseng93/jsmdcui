@@ -4,6 +4,11 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readInternalAssetText } from './single-exe/assetsHelper.js'
 import { fenceEventMap } from './src/cui/fence-events.mjs'
+import {
+  readLeadingHtmlCharacterReference,
+  renderMarkdownWithHeadingIds,
+} from './src/cui/heading-ids.mjs'
+import { parseMdcuiIdentity } from './src/cui/identity.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -257,13 +262,10 @@ export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
 
 function parseWuiControlIdentity(info)
 {
-  const match = String(info ?? "").match(/^([A-Za-z_][\w:-]*)(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
-  if (!match || !["text", "textarea"].includes(match[1])) return null;
-  return {
-    tag: match[1],
-    id: match[2] || "",
-    classes: match[3] ? match[3].slice(1).split(".") : [],
-  };
+  const identity = parseMdcuiIdentity(info);
+  return ["text", "textarea"].includes(identity?.tag)
+    ? { ...identity, id: identity.id ?? "" }
+    : null;
 }
 
 function escapeHtmlAttribute(value)
@@ -413,6 +415,32 @@ function wuiHtmlTagAt(input, start)
       source: input.slice(start, commentEnd < 0 ? input.length : commentEnd + 3),
     };
   }
+  if (input.startsWith("<![CDATA[", start)) {
+    const close = input.indexOf("]]>", start + 9);
+    const end = close < 0 ? input.length : close + 3;
+    return {
+      kind: "comment",
+      start,
+      end,
+      name: null,
+      closing: false,
+      selfClosing: false,
+      source: input.slice(start, end),
+    };
+  }
+  if (input.startsWith("<?", start)) {
+    const close = input.indexOf("?>", start + 2);
+    const end = close < 0 ? input.length : close + 2;
+    return {
+      kind: "comment",
+      start,
+      end,
+      name: null,
+      closing: false,
+      selfClosing: false,
+      source: input.slice(start, end),
+    };
+  }
 
   let quote = null;
   let end = -1;
@@ -483,37 +511,148 @@ function matchingWuiHtmlClose(input, opening)
 }
 
 const WUI_HEADING_OPAQUE_TAGS = new Set([
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
   "script",
   "style",
-  "pre",
   "textarea",
   "template",
+  "title",
+  "xmp",
 ]);
 const WUI_RAW_TEXT_TAGS = new Set([
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
   "script",
   "style",
   "textarea",
+  "title",
+  "xmp",
 ]);
+const WUI_HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
+function analyzeWuiHeadingHtml(value)
+{
+  const input = String(value);
+  let headingAttribute = "data-mdcui-active-heading";
+  while (input.toLowerCase().includes(headingAttribute))
+    headingAttribute = "_" + headingAttribute;
+  let foreignAttribute = "data-mdcui-foreign-opaque";
+  while (
+    input.toLowerCase().includes(foreignAttribute)
+    || foreignAttribute === headingAttribute
+  ) foreignAttribute = "_" + foreignAttribute;
+
+  try {
+    let rewriter = new HTMLRewriter();
+    for (let level = 1; level <= 6; level++) {
+      rewriter = rewriter.on(`h${level}`, {
+        element(element) {
+          element.setAttribute(headingAttribute, "");
+        },
+      });
+    }
+    for (const tag of WUI_HEADING_OPAQUE_TAGS) {
+      rewriter = rewriter.on(tag, {
+        element(element) {
+          if (element.namespaceURI !== WUI_HTML_NAMESPACE)
+            element.setAttribute(foreignAttribute, "");
+        },
+      });
+    }
+    const transformed = rewriter.transform(new Response(input)).text();
+    const html = Bun.peek(transformed);
+    if (typeof html === "string") {
+      return {
+        html,
+        headingAttribute,
+        foreignAttribute,
+        ok: true,
+      };
+    }
+  } catch {}
+  return {
+    html: input,
+    headingAttribute,
+    foreignAttribute,
+    ok: false,
+  };
+}
+
+function stripWuiAnalysisAttributes(value, analysis)
+{
+  let output = String(value);
+  if (!analysis?.ok) return output;
+  for (const attribute of [
+    analysis.headingAttribute,
+    analysis.foreignAttribute,
+  ]) {
+    output = output.replace(
+      new RegExp(`[\\t\\n\\f\\r ]+${attribute}=""`, "giu"),
+      "",
+    );
+  }
+  return output;
+}
+
+function wuiTokenHasAnalysisAttribute(token, attribute)
+{
+  return Boolean(
+    token?.kind === "tag"
+    && token.source.toLowerCase().includes(` ${attribute.toLowerCase()}=""`),
+  );
+}
 
 function closingWuiOpaqueTag(input, opening)
 {
+  if (opening?.name === "plaintext") return null;
   if (!WUI_RAW_TEXT_TAGS.has(opening?.name))
     return matchingWuiHtmlClose(input, opening);
 
-  let scan = opening.end;
-  let token;
-  while ((token = nextWuiHtmlTag(input, scan))) {
-    scan = token.end;
-    if (
-      token.kind === "tag"
-      && token.closing
-      && token.name === opening.name
-    ) return token;
+  const closingPattern = new RegExp(
+    `</${opening.name}(?=[\\s>])`,
+    "ig",
+  );
+  closingPattern.lastIndex = opening.end;
+  let match;
+  while ((match = closingPattern.exec(input)) !== null) {
+    const token = wuiHtmlTagAt(input, match.index);
+    if (token?.kind === "tag" && token.closing)
+      return token;
+    closingPattern.lastIndex = match.index + 2;
   }
   return null;
 }
 
-function wuiDocumentBodyBoundary(input)
+function wuiOpaqueRange(input, token, analysis)
+{
+  const closing = token.selfClosing
+    ? token
+    : closingWuiOpaqueTag(input, token);
+  const end = closing?.end ?? input.length;
+  const foreign = wuiTokenHasAnalysisAttribute(
+    token,
+    analysis?.foreignAttribute,
+  );
+  const containsActiveHeading = analysis?.ok
+    && input.slice(token.end, end).toLowerCase().includes(
+      ` ${analysis.headingAttribute.toLowerCase()}=""`,
+    );
+  return {
+    end,
+    protect: token.name === "template"
+      ? !foreign
+      : !foreign && !containsActiveHeading,
+  };
+}
+
+function wuiDocumentBodyBoundary(input, analysis)
 {
   const bodyOpaqueTags = new Set([...WUI_HEADING_OPAQUE_TAGS, "code"]);
   let opening = null;
@@ -523,12 +662,22 @@ function wuiDocumentBodyBoundary(input)
     scan = token.end;
     if (token.kind !== "tag") continue;
 
-    if (!token.closing && bodyOpaqueTags.has(token.name)) {
-      if (!token.selfClosing) {
-        const closing = closingWuiOpaqueTag(input, token);
-        scan = closing?.end ?? input.length;
+    if (
+      !token.closing
+      && bodyOpaqueTags.has(token.name)
+    ) {
+      if (!WUI_HEADING_OPAQUE_TAGS.has(token.name)) {
+        if (!token.selfClosing) {
+          const closing = closingWuiOpaqueTag(input, token);
+          scan = closing?.end ?? input.length;
+        }
+        continue;
       }
-      continue;
+      const opaque = wuiOpaqueRange(input, token, analysis);
+      if (opaque.protect) {
+        scan = opaque.end;
+        continue;
+      }
     }
     if (!opening && !token.closing && token.name === "body") {
       opening = token;
@@ -540,7 +689,11 @@ function wuiDocumentBodyBoundary(input)
   return null;
 }
 
-function protectWuiHeadingOpaqueHtml(input, markerPrefix)
+function protectWuiHeadingOpaqueHtml(
+  input,
+  markerPrefix,
+  analysis,
+)
 {
   const opaqueHtml = [];
   let searchable = "";
@@ -558,10 +711,8 @@ function protectWuiHeadingOpaqueHtml(input, markerPrefix)
       && !token.closing
       && WUI_HEADING_OPAQUE_TAGS.has(token.name)
     ) {
-      const closing = token.selfClosing
-        ? token
-        : closingWuiOpaqueTag(input, token);
-      end = closing?.end ?? input.length;
+      const opaque = wuiOpaqueRange(input, token, analysis);
+      if (opaque.protect) end = opaque.end;
     }
     if (end == null) continue;
 
@@ -576,39 +727,46 @@ function protectWuiHeadingOpaqueHtml(input, markerPrefix)
   return { searchable, opaqueHtml };
 }
 
-function wuiHtmlTagHasAttribute(token, expectedName)
+function wuiHtmlTagAttributeValue(token, expectedName)
 {
-  if (token?.kind !== "tag" || token.closing) return false;
+  if (token?.kind !== "tag" || token.closing) return undefined;
   const input = token.source;
   const opening = input.match(/^<[^\s/>]+/);
-  if (!opening) return false;
+  if (!opening) return undefined;
   let index = opening[0].length;
 
   while (index < input.length) {
     while (/\s/u.test(input[index] ?? "")) index++;
     if (input[index] === ">" || input[index] === "/" || index >= input.length)
-      return false;
+      return undefined;
 
     const start = index;
     while (index < input.length && !/[\s=/>]/u.test(input[index])) index++;
     const name = input.slice(start, index).toLowerCase();
     while (/\s/u.test(input[index] ?? "")) index++;
-    if (name === expectedName.toLowerCase()) return true;
 
-    if (input[index] !== "=") continue;
+    if (input[index] !== "=") {
+      if (name === expectedName.toLowerCase()) return "";
+      continue;
+    }
     index++;
     while (/\s/u.test(input[index] ?? "")) index++;
     const quote = input[index] === '"' || input[index] === "'"
       ? input[index++]
       : null;
+    const valueStart = index;
     if (quote) {
       while (index < input.length && input[index] !== quote) index++;
+      const value = input.slice(valueStart, index);
       if (input[index] === quote) index++;
+      if (name === expectedName.toLowerCase()) return value;
     } else {
       while (index < input.length && !/[\s>]/u.test(input[index])) index++;
+      if (name === expectedName.toLowerCase())
+        return input.slice(valueStart, index);
     }
   }
-  return false;
+  return undefined;
 }
 
 function wrapWuiHeadingToggleCharacter(headingHtml)
@@ -619,7 +777,7 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
     opening?.kind !== "tag"
     || opening.closing
     || !/^h[1-6]$/.test(opening.name ?? "")
-    || !wuiHtmlTagHasAttribute(opening, "id")
+    || !wuiHtmlTagAttributeValue(opening, "id")
   ) return input;
 
   let index = opening.end;
@@ -647,8 +805,14 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
 
     let end;
     if (input[index] === "&") {
-      const entityEnd = input.indexOf(";", index + 1);
-      end = entityEnd >= 0 ? entityEnd + 1 : index + 1;
+      const reference = readLeadingHtmlCharacterReference(
+        input.slice(index),
+      );
+      if (reference && /^\s+$/u.test(reference.decoded)) {
+        index += reference.source.length;
+        continue;
+      }
+      end = index + (reference?.source.length ?? 1);
     } else {
       const grapheme = firstWuiGraphemeCluster(input.slice(index));
       end = index + grapheme.length;
@@ -664,78 +828,140 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
 
 export function wrapWuiHeadingSections(html)
 {
-  const input = String(html);
-  const body = wuiDocumentBodyBoundary(input);
+  const analysis = analyzeWuiHeadingHtml(html);
+  const input = analysis.html;
+  const body = wuiDocumentBodyBoundary(input, analysis);
   if (body) {
     const contentStart = body.opening.end;
     const contentEnd = body.closing.start;
-    return input.slice(0, contentStart) +
+    return stripWuiAnalysisAttributes(
+      input.slice(0, contentStart) +
       wrapWuiHeadingSections(input.slice(contentStart, contentEnd)) +
-      input.slice(contentEnd);
+      input.slice(contentEnd),
+      analysis,
+    );
   }
 
   let markerPrefix = "MDCUI_HEADING_OPAQUE_";
   while (input.includes(markerPrefix)) markerPrefix = "_" + markerPrefix;
   const { searchable, opaqueHtml } =
-    protectWuiHeadingOpaqueHtml(input, markerPrefix);
+    protectWuiHeadingOpaqueHtml(
+      input,
+      markerPrefix,
+      analysis,
+    );
 
-  const openLevels = [];
+  const voidTags = new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+  ]);
+  const containers = [{ name: null, openLevels: [] }];
   let output = "";
   let cursor = 0;
   let scan = 0;
   let codeDepth = 0;
   let token;
 
+  const closeContainerSections = (container, position) => {
+    if (!container?.openLevels.length) return;
+    output += searchable.slice(cursor, position);
+    cursor = position;
+    while (container.openLevels.length) {
+      output += "</section>\n";
+      container.openLevels.pop();
+    }
+  };
+
   while ((token = nextWuiHtmlTag(searchable, scan))) {
     scan = token.end;
     if (token.kind !== "tag") continue;
-    if (token.name === "code") {
-      if (token.closing) codeDepth = Math.max(0, codeDepth - 1);
-      else if (!token.selfClosing) codeDepth++;
+
+    if (token.closing) {
+      let match = -1;
+      for (let index = containers.length - 1; index > 0; index--) {
+        if (containers[index].name === token.name) {
+          match = index;
+          break;
+        }
+      }
+      if (match >= 0) {
+        for (let index = containers.length - 1; index >= match; index--)
+          closeContainerSections(containers[index], token.start);
+        containers.length = match;
+      }
+      if (token.name === "code")
+        codeDepth = Math.max(0, codeDepth - 1);
       continue;
     }
-    const headingMatch = !token.closing && codeDepth === 0
+
+    const headingMatch = (
+      codeDepth === 0
+      && (
+        !analysis.ok
+        || wuiTokenHasAnalysisAttribute(
+          token,
+          analysis.headingAttribute,
+        )
+      )
+    )
       ? token.name?.match(/^h([1-6])$/)
       : null;
-    if (!headingMatch) continue;
-    const closing = matchingWuiHtmlClose(searchable, token);
-    if (!closing) continue;
+    if (headingMatch) {
+      const closing = matchingWuiHtmlClose(searchable, token);
+      if (!closing) continue;
 
-    const level = Number(headingMatch[1]);
-    const headingHtml = wrapWuiHeadingToggleCharacter(
-      searchable.slice(token.start, closing.end),
-    );
-    output += searchable.slice(cursor, token.start);
-    while (openLevels.length && openLevels.at(-1) >= level) {
-      output += "</section>\n";
-      openLevels.pop();
+      const level = Number(headingMatch[1]);
+      const headingHtml = wrapWuiHeadingToggleCharacter(
+        searchable.slice(token.start, closing.end),
+      );
+      const container = containers.at(-1);
+      output += searchable.slice(cursor, token.start);
+      while (
+        container.openLevels.length
+        && container.openLevels.at(-1) >= level
+      ) {
+        output += "</section>\n";
+        container.openLevels.pop();
+      }
+      output += `<section>\n${headingHtml}`;
+      container.openLevels.push(level);
+      cursor = closing.end;
+      scan = closing.end;
+      continue;
     }
-    output += `<section>\n${headingHtml}`;
-    openLevels.push(level);
-    cursor = closing.end;
-    scan = closing.end;
+
+    if (token.name === "code" && !token.selfClosing) codeDepth++;
+    if (!token.selfClosing && !voidTags.has(token.name)) {
+      containers.push({ name: token.name, openLevels: [] });
+    }
   }
 
+  for (let index = containers.length - 1; index >= 0; index--)
+    closeContainerSections(containers[index], searchable.length);
   output += searchable.slice(cursor);
-  while (openLevels.length) {
-    output += "</section>\n";
-    openLevels.pop();
-  }
   for (const opaque of opaqueHtml) {
     output = output.replace(opaque.marker, opaque.html);
   }
-  return output;
+  return stripWuiAnalysisAttributes(output, analysis);
 }
 
 export async function createWui(md,mdpath,{ bundling = false } = {}) // HTML
 {
   const eventsById = fenceEventMap(md)
   
-  const opts = {
-    headings: { ids: true }
-  }
-  
-  md = (Bun?.markdown?.html?.(md,opts) || md)+'' ;
+  md = renderMarkdownWithHeadingIds(md).html;
   
   // Restore single quotes
   let reHrefs = /href="[^"]*?"/g  //  "

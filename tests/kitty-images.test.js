@@ -95,6 +95,50 @@ test("remote Kitty images require allowUrl and use the configured HTTP byte fetc
   expect(allowed.images[0].path).toBe(imageUrl);
 });
 
+test("an unresponsive remote Kitty image cannot block rerender forever", async () => {
+  const imageUrl = "https://example.test/assets/stalled.png";
+  const ansi = Bun.markdown.ansi(`![stalled](${imageUrl})`, {
+    hyperlinks: true,
+    columns: 40,
+  });
+  const result = await prepareKittyImages(ansi, "/tmp/app.md", 40, {
+    allowUrl: true,
+    remoteTimeoutMs: 5,
+    fetchHttpBytes: (url, { signal }) => new Promise(() => {
+      expect(url).toBe(imageUrl);
+      signal.addEventListener("abort", () => {}, { once: true });
+    }),
+  });
+
+  expect(result.rendered).toBe(ansi);
+  expect(result.images).toEqual([]);
+});
+
+test("remote Kitty images share one rerender timeout budget", async () => {
+  const urls = [1, 2, 3].map(
+    number => `https://example.test/assets/stalled-${number}.png`,
+  );
+  const ansi = Bun.markdown.ansi(
+    urls.map(url => `![stalled](${url})`).join("\n\n"),
+    { hyperlinks: true, columns: 40 },
+  );
+  const signals = [];
+  const started = performance.now();
+  const result = await prepareKittyImages(ansi, "/tmp/app.md", 40, {
+    allowUrl: true,
+    remoteTimeoutMs: 20,
+    fetchHttpBytes: (url, { signal }) => {
+      signals.push({ url, signal });
+      return new Promise(() => {});
+    },
+  });
+
+  expect(performance.now() - started).toBeLessThan(100);
+  expect(signals).toHaveLength(1);
+  expect(signals[0].signal.aborted).toBe(true);
+  expect(result.images).toEqual([]);
+});
+
 test("remote Markdown resolves relative Kitty image URLs against its source URL", async () => {
   const ansi = Bun.markdown.ansi("![pixel](../images/pixel.png?size=1)", {
     hyperlinks: true,

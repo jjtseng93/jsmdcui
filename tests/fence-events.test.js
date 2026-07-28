@@ -34,6 +34,65 @@ test("fenced text controls retain quoted inline keydown code after the identity"
   });
 });
 
+test("fence discovery follows Markdown container and raw HTML boundaries", () => {
+  const markdown = `> \`\`\`text#quote
+> value
+> \`\`\`
+
+- \`\`\`textarea#list
+  value
+  \`\`\`
+
+<div>
+\`\`\`text#raw-div
+value
+\`\`\`
+</div>
+
+<!--
+\`\`\`text#comment
+value
+\`\`\`
+-->
+`;
+  expect(
+    parseFenceDeclarations(markdown).map(({ id, line }) => ({ id, line })),
+  ).toEqual([
+    { id: "quote", line: 1 },
+    { id: "list", line: 5 },
+  ]);
+});
+
+test("Unicode fenced-control IDs work in declarations, WUI output, and TUI selectors", () => {
+  const markdown = '```text#中文-欄位.field @keydown.prevent="guard(event)"\nvalue\n```\n';
+  const declarations = parseFenceDeclarations(markdown);
+  expect(declarations).toHaveLength(1);
+  expect(declarations[0]).toMatchObject({
+    tag: "text",
+    id: "中文-欄位",
+    classes: ["field"],
+  });
+  expect(declarations[0].events.get("keydown")).toEqual({
+    code: "guard(event)",
+    modifiers: ["prevent"],
+  });
+
+  const html = convertWuiTextareas(
+    Bun.markdown.html(markdown),
+    fenceEventMap(markdown),
+  );
+  expect(html).toContain('id="中文-欄位"');
+  expect(html).toContain("event.preventDefault();guard(event)");
+
+  const buffer = {
+    lines: ["┌─ text#中文-欄位.field", "│ value", "└─"],
+  };
+  const $ = createTuiSelector(() => buffer);
+  expect($("#中文-欄位").id).toBe("中文-欄位");
+  expect($("#中文-欄位").val()).toBe("value");
+  expect($({ id: "中文-欄位" }).val()).toBe("value");
+});
+
 test("prevent modifier prepends preventDefault to inline event code", () => {
   const markdown = '```text#myid @keydown.prevent="submit(event)"\nvalue\n```\n';
   const handler = fenceEventMap(markdown).get("myid").events.get("keydown");
@@ -323,6 +382,33 @@ test("front evaluation binds link this and event targets to the same object", as
   });
 });
 
+test("front evaluation ignores module exports that cannot be local bindings", async () => {
+  const result = await evalFront(
+    {
+      default: "ignored",
+      "not-valid": "ignored",
+      await: "ignored",
+      inspect() { return "called"; },
+    },
+    "javascript:inspect()",
+  );
+
+  expect(result).toBe("called");
+});
+
+test("front evaluation preserves raw percent sequences outside the WUI href boundary", async () => {
+  const inspect = value => value;
+
+  expect(await evalFront(
+    { inspect },
+    'javascript:inspect("hello%20world")',
+  )).toBe("hello%20world");
+  expect(await evalFront(
+    { inspect },
+    "javascript:inspect(100%25)",
+  )).toBe(0);
+});
+
 test("WUI javascript href interception injects the registered front module, this, and event", async () => {
   let clickListener;
   let seen;
@@ -389,6 +475,159 @@ test("WUI javascript href interception injects the registered front module, this
   expect(preventDefaultCalls).toBe(2);
 });
 
+test("WUI decodes Bun-encoded quotes but preserves valid raw modulo source", async () => {
+  const html = Bun.markdown.html('[Inspect](javascript:inspect("hello"))');
+  const href = html.match(/href="([^"]+)"/)?.[1] ?? "";
+  expect(href).toBe("javascript:inspect(%22hello%22)");
+  const moduloHtml = Bun.markdown.html("[Inspect](javascript:inspect(100%25))");
+  const moduloHref = moduloHtml.match(/href="([^"]+)"/)?.[1] ?? "";
+  expect(moduloHref).toBe("javascript:inspect(100%25)");
+
+  let clickListener;
+  const seen = [];
+  const anchor = {
+    href,
+    getAttribute(name) {
+      return name === "href" ? this.href : null;
+    },
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  };
+  const documentObject = {
+    readyState: "complete",
+    addEventListener(name, listener) {
+      if (name === "click") clickListener = listener;
+    },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  installWebDollar({
+    document: documentObject,
+    addEventListener() {},
+    __mdcuiFrontModule: {
+      inspect(value) { seen.push(value); },
+    },
+  });
+  const nativeEvent = {
+    type: "click",
+    target: anchor,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+
+  await clickListener(nativeEvent);
+  anchor.href = moduloHref;
+  nativeEvent.defaultPrevented = false;
+  await clickListener(nativeEvent);
+
+  expect(seen).toEqual(["hello", 0]);
+  expect(nativeEvent.defaultPrevented).toBeTrue();
+});
+
+test("WUI reports javascript link evaluation failures to its console", async () => {
+  let clickListener;
+  const errors = [];
+  const anchor = {
+    href: "javascript:fail()",
+    getAttribute(name) {
+      return name === "href" ? this.href : null;
+    },
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  };
+  const documentObject = {
+    readyState: "complete",
+    addEventListener(name, listener) {
+      if (name === "click") clickListener = listener;
+    },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  installWebDollar({
+    document: documentObject,
+    addEventListener() {},
+    console: {
+      error(...args) { errors.push(args); },
+    },
+    __mdcuiFrontModule: {
+      fail() { throw new Error("link failed"); },
+    },
+  });
+  const nativeEvent = {
+    type: "click",
+    target: anchor,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+
+  await clickListener(nativeEvent);
+
+  expect(nativeEvent.defaultPrevented).toBeTrue();
+  expect(errors).toHaveLength(1);
+  expect(errors[0].join(" ")).toContain("[mdcui] javascript link: Error: link failed");
+});
+
+test("WUI reports exported function failures discarded by statement handlers", async () => {
+  let clickListener;
+  const errors = [];
+  const anchor = {
+    href: "javascript:fail();",
+    getAttribute(name) {
+      return name === "href" ? this.href : null;
+    },
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  };
+  const documentObject = {
+    readyState: "complete",
+    addEventListener(name, listener) {
+      if (name === "click") clickListener = listener;
+    },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  installWebDollar({
+    document: documentObject,
+    addEventListener() {},
+    console: {
+      error(...args) { errors.push(args); },
+    },
+    __mdcuiFrontModule: {
+      fail() { throw new Error("sync statement failed"); },
+      async failAsync() {
+        await Promise.resolve();
+        throw new Error("async statement failed");
+      },
+    },
+  });
+  const nativeEvent = {
+    type: "click",
+    target: anchor,
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+  };
+
+  await clickListener(nativeEvent);
+  anchor.href = "javascript:failAsync();";
+  nativeEvent.defaultPrevented = false;
+  await clickListener(nativeEvent);
+  await Promise.resolve();
+
+  expect(nativeEvent.defaultPrevented).toBeTrue();
+  expect(errors).toHaveLength(2);
+  expect(errors[0].join(" ")).toContain("sync statement failed");
+  expect(errors[1].join(" ")).toContain("async statement failed");
+});
+
 test("WUI javascript href interception honors an earlier preventDefault", async () => {
   let clickListener;
   let calls = 0;
@@ -443,6 +682,78 @@ test("WUI wraps only the first visible heading character as a toggle target", ()
   );
 });
 
+test("WUI heading toggles preserve complete HTML character references", () => {
+  for (const reference of [
+    "&copy",
+    "&copy;",
+    "&#169",
+    "&#xA9",
+  ]) {
+    const html = wrapWuiHeadingSections(
+      `<h2 id="entity">${reference} raw</h2>`,
+    );
+    expect(html).toContain(
+      '<span class="mdcui-heading-toggle" role="button" tabindex="0" '
+      + `aria-expanded="true">${reference}</span> raw`,
+    );
+  }
+
+  const bogus = wrapWuiHeadingSections(
+    '<h2 id="bogus">&bogus <em>x;</em> rest</h2>',
+  );
+  expect(bogus).toContain(
+    '<span class="mdcui-heading-toggle" role="button" tabindex="0" '
+    + 'aria-expanded="true">&</span>bogus <em>x;</em> rest',
+  );
+  expect(bogus).not.toContain("</span></em>");
+
+  for (const whitespace of ["&nbsp;", "&#x20;"]) {
+    const html = wrapWuiHeadingSections(
+      `<h2 id="space">${whitespace}A</h2>`,
+    );
+    expect(html).toContain(
+      `${whitespace}<span class="mdcui-heading-toggle" role="button" `
+      + 'tabindex="0" aria-expanded="true">A</span>',
+    );
+  }
+});
+
+test("WUI closes nested heading sections inside their Markdown containers", () => {
+  const rendered = Bun.markdown.html(`> ## Quoted
+>
+> Body
+
+- ## Listed
+
+  Body
+
+# Top
+`, { headings: { ids: true } });
+  const html = wrapWuiHeadingSections(rendered);
+
+  expect(html).toContain(
+    "<blockquote>\n<section>\n<h2 id=\"quoted\">",
+  );
+  expect(html).toContain("</section>\n</blockquote>");
+  expect(html).toContain("<li>\n<section>\n<h2 id=\"listed\">");
+  expect(html).toContain("</section>\n</li>");
+  expect(html).not.toContain("</blockquote>\n</section>");
+  expect(html).not.toContain("</li>\n</section>");
+});
+
+test("raw empty-ID WUI headings fail closed before Markdown normalization", () => {
+  const rendered = Bun.markdown.html("# 中文\n", {
+    headings: { ids: true },
+  });
+  expect(rendered).toContain('<h1 id="">中文</h1>');
+
+  const html = wrapWuiHeadingSections(rendered);
+  expect(html).toContain('<h1 id="">中文</h1>');
+  expect(html).not.toContain("mdcui-heading-toggle");
+  expect(html).not.toContain('role="button"');
+  expect(html).not.toContain('tabindex="0"');
+});
+
 test("WUI heading toggles preserve quoted greater-than signs in HTML attributes", () => {
   const html = wrapWuiHeadingSections(
     '<!doctype html><body title="body > value">'
@@ -492,6 +803,15 @@ test("WUI heading toggles preserve inline code and opaque block markers", () => 
   expect(protectedBlock).not.toContain("MDCUI_HEADING_OPAQUE_");
   expect(protectedBlock.match(/<section>/g)).toHaveLength(1);
 
+  const rawPreHeading = wrapWuiHeadingSections(
+    '<pre><h2 id="inside-pre">Inside pre</h2></pre>',
+  );
+  expect(rawPreHeading).toContain(
+    '<h2 id="inside-pre"><span class="mdcui-heading-toggle" '
+    + 'role="button" tabindex="0" aria-expanded="true">I</span>nside pre</h2>',
+  );
+  expect(rawPreHeading.match(/<section>/g)).toHaveLength(1);
+
   const standaloneCode = wrapWuiHeadingSections(
     '<CODE data-note="standalone > code"><h2 id="fake">Fake</h2></CODE>'
     + '<h2 id="real">Real</h2><p>Body</p>',
@@ -524,6 +844,30 @@ test("WUI heading toggles preserve inline code and opaque block markers", () => 
     '<template><template>Inner</template><h2 id="fake">Fake</h2></template>',
   );
   expect(nestedTemplate.match(/<section>/g)).toHaveLength(1);
+
+  for (const tag of ["template", "title", "textarea", "script", "style"]) {
+    const foreignOpaque = wrapWuiHeadingSections(
+      `<svg><${tag}><h2 id="foreign">Foreign</h2></${tag}></svg>`
+      + '<h2 id="real">Real</h2>',
+    );
+    expect(foreignOpaque).toContain(
+      `<${tag}><section>\n<h2 id="foreign">`
+      + '<span class="mdcui-heading-toggle"',
+    );
+    expect(foreignOpaque.match(/<section>/g)).toHaveLength(2);
+  }
+
+  const htmlIntegrationTemplate = wrapWuiHeadingSections(
+    '<svg><foreignObject><template><h2 id="inert">Inert</h2></template>'
+    + '</foreignObject></svg><h2 id="real">Real</h2>',
+  );
+  expect(htmlIntegrationTemplate).toContain(
+    '<template><h2 id="inert">Inert</h2></template>',
+  );
+  expect(htmlIntegrationTemplate).not.toContain(
+    '<h2 id="inert"><span class="mdcui-heading-toggle"',
+  );
+  expect(htmlIntegrationTemplate.match(/<section>/g)).toHaveLength(1);
 
   const unclosedScript = wrapWuiHeadingSections(
     '<script><h2 id="fake">Fake</h2>',

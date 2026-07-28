@@ -96,17 +96,27 @@ import { dirname, basename, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { toggleTaskCheckboxBeforeColumn, updateAnsiTaskCheckbox } from "./cui/task-checkbox.mjs";
 import { fenceEventMap, inlineFenceEventCode } from "./cui/fence-events.mjs";
-import { checkMarkdownIdCollisions, formatMarkdownIdCheckAnsi } from "./cui/id-collision.mjs";
+import {
+  checkMarkdownIdCollisions,
+  formatMarkdownIdCheckAnsi,
+  formatMarkdownOutline,
+} from "./cui/id-collision.mjs";
 import { fitKittyImageToWidth, prepareKittyImages } from "./cui/kitty-images.mjs";
 import { kittyModeFromEnvironment } from "./cui/kitty-mode.mjs";
 import { logKittyPlacement } from "./cui/kitty-debug.mjs";
+import {
+  enqueueMdcuiRerender,
+  waitForMdcuiRerenders,
+} from "./cui/rerender-queue.mjs";
+import { resizeMdcuiTextBlock } from "./cui/text-block-resize.mjs";
+import { indexedTuiLinkAtPosition, refreshTuiLinkIndex, tuiLinkActivationContext } from "./cui/tui-links.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -542,36 +552,6 @@ function toHex2(value) {
   return ((value ?? 0) & 0xff).toString(16).padStart(2, "0");
 }
 
-function parseOsc8Link(ansiText) {
-  const input = String(ansiText ?? "");
-  const re = /\x1b]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-  let match;
-  while ((match = re.exec(input)) !== null) {
-    const uri = match[1] ?? "";
-    if (uri) return uri;
-  }
-  return null;
-}
-
-function osc8LinkSpanAtColumn(ansiText, column) {
-  const input = String(ansiText ?? "");
-  const re = /\x1b]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)([\s\S]*?)\x1b]8;;(?:\x07|\x1b\\)/g;
-  let match;
-  while ((match = re.exec(input)) !== null) {
-    const before = Bun.stripANSI(input.slice(0, match.index));
-    const textContent = Bun.stripANSI(match[2]);
-    const start = displayWidth(before);
-    const end = start + displayWidth(textContent);
-    if (column >= start && column < end) {
-      return {
-        href: match[1],
-        textContent,
-      };
-    }
-  }
-  return null;
-}
-
 function localModuleUrl(filePath) {
   const absPath = resolve(filePath);
   let href = pathToFileURL(absPath).href;
@@ -591,112 +571,17 @@ function mdcuiCellPayload(buf, y, x, trigger = "unknown") {
   const ansi = typeof Bun?.sliceAnsi === "function"
     ? Bun.sliceAnsi(ansiLine, col - 1, col)
     : line.slice(charIdx, charIdx + 1);
-  const linkSpan = osc8LinkSpanAtColumn(ansiLine, col - 1);
+  const linkSpan = indexedTuiLinkAtPosition(buf, rowIdx, charIdx);
   return {
     trigger,
     row: rowIdx + 1,
     col,
     ansi,
-    link: linkSpan?.href ?? parseOsc8Link(ansi),
+    link: linkSpan?.href ?? null,
     linkText: linkSpan?.textContent ?? "",
+    linkHtml: linkSpan?.innerHTML ?? null,
     line,
   };
-}
-
-function tuiLinkActivationContext(payload) {
-  const target = {
-    tagName: "A",
-    href: payload.link,
-    textContent: payload.linkText,
-    innerHTML: payload.linkText,
-  };
-  let defaultPrevented = false;
-  let propagationStopped = false;
-  const event = {
-    type: payload.trigger === "mouse" ? "click" : "keydown",
-    key: payload.trigger === "enter"
-      ? "Enter"
-      : payload.trigger === "space"
-        ? " "
-        : undefined,
-    target,
-    currentTarget: target,
-    get defaultPrevented() { return defaultPrevented; },
-    get propagationStopped() { return propagationStopped; },
-    preventDefault() { defaultPrevented = true; },
-    stopPropagation() { propagationStopped = true; },
-  };
-  return { event, target };
-}
-
-function resizeMdcuiTextBlock(buf, y, x) {
-  if (!buf || !isMdcuiEncoding(buf.encoding) || x !== 0) return null;
-  const line = String(buf.lines?.[y] ?? "");
-  const top = line.match(/^(\s*)(┌─|╭─|\+-)\s*text(?:[#.][A-Za-z_][\w:.-]*)*\s*$/);
-  const bottom = line.match(/^(\s*)(└─|╰─|\+-)\s*$/);
-  if (!top && !bottom) return null;
-
-  let insertAt = -1;
-  let removeAt = -1;
-  let bodyLine = "";
-
-  if (bottom) {
-    for (let row = y - 1; row >= 0; row--) {
-      const header = String(buf.lines[row] ?? "").match(/^(\s*)(┌─|╭─|\+-)\s*text(?:[#.][A-Za-z_][\w:.-]*)*\s*$/);
-      if (!header || header[1] !== bottom[1]) continue;
-      const marker = header[2] === "+-" ? "|" : "│";
-      insertAt = y;
-      bodyLine = header[1] + marker + " ";
-      break;
-    }
-  } else if (top) {
-    const marker = top[2] === "+-" ? "|" : "│";
-    for (let row = y + 1; row < buf.lines.length; row++) {
-      const rest = String(buf.lines[row] ?? "").slice(top[1].length);
-      if (/^(?:└─|╰─|\+-)\s*$/.test(rest)) {
-        const candidate = row - 1;
-        if (candidate > y && String(buf.lines[candidate] ?? "") === top[1] + marker + " ")
-          removeAt = candidate;
-        break;
-      }
-    }
-  }
-
-  if (insertAt < 0 && removeAt < 0) return "unchanged";
-  buf.pushUndo?.(true);
-
-  const row = insertAt >= 0 ? insertAt : removeAt;
-  const deleteCount = removeAt >= 0 ? 1 : 0;
-  const replacement = insertAt >= 0 ? [bodyLine] : [];
-  buf.lines.splice(row, deleteCount, ...replacement);
-
-  if (Array.isArray(buf._ansiStyleLines)) {
-    const template = buf._ansiStyleLines[Math.max(0, row - 1)] ?? null;
-    buf._ansiStyleLines.splice(row, deleteCount, ...replacement.map(() => template));
-  }
-  if (typeof buf._mdcuiAnsiText === "string") {
-    const ansiLines = buf._mdcuiAnsiText.split("\n");
-    ansiLines.splice(row, deleteCount, ...replacement);
-    buf._mdcuiAnsiText = ansiLines.join("\n");
-  }
-  if (Array.isArray(buf._mdcuiImages)) {
-    const delta = replacement.length - deleteCount;
-    buf._mdcuiImages = buf._mdcuiImages
-      .filter((image) => image.line < row || image.line >= row + deleteCount)
-      .map((image) => image.line >= row + deleteCount ? { ...image, line: image.line + delta } : image);
-  }
-
-  if (insertAt >= 0) {
-    if (buf.cursor.y >= insertAt) buf.cursor.y++;
-  } else if (buf.cursor.y > removeAt) {
-    buf.cursor.y--;
-  } else if (buf.cursor.y === removeAt) {
-    buf.cursor.y = Math.max(0, removeAt - 1);
-  }
-  buf.invalidateHighlightFrom?.(row, { force: true });
-  buf.modified = true;
-  buf.ensureCursor?.();
-  return insertAt >= 0 ? "added" : "removed";
 }
 
 function detectFileFormat(text, fallback = DEFAULT_SETTINGS.fileformat) {
@@ -1154,6 +1039,7 @@ function parseArgs(argv) {
     help: false,
     clean: false,
     check: false,
+    outline: false,
     cat: false,
     wui: false,
     printUi: false,
@@ -1187,6 +1073,7 @@ function parseArgs(argv) {
     else if (arg === "-help" || arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "-clean") flags.clean = true;
     else if (arg === "--check") flags.check = true;
+    else if (arg === "--outline") flags.outline = true;
     else if (arg === "--cat" || arg === "-cat" || arg === "--ccat" || arg === "-ccat" || arg === "--bat" || arg === "-bat" || arg === "--glow" || arg === "-glow") flags.cat = true;
     else if (arg === "--wui") flags.wui = true;
     else if (arg === "--print-ui") flags.printUi = true;
@@ -1292,6 +1179,7 @@ Execute .md:
 Develop .md:
   ${pkg.name} --edit [FILE.md]
   ${pkg.name} --check <FILE.md>
+  ${pkg.name} --outline <FILE.md>
 
 Modes:
   --tui, --mdcui, -encoding mdcui
@@ -1336,6 +1224,10 @@ Modes:
   --check <FILE.md>
     Check heading and fenced-block IDs for collisions, print details, and exit
     Exits 0 when IDs are unique, 1 on collisions, and 2 on usage/read errors
+
+  --outline <FILE.md>
+    Print every selectable ID and exit
+    Headings use an indented "-" tree; fenced blocks use a top-level "+"
       
   --cat, --ccat, --bat, --glow
       Render file(s) and write to stdout, then exit (.md uses mdcui/createTui)
@@ -1484,6 +1376,10 @@ class BufferModel {
     this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(sourceText ?? tuiSourceText ?? text) : new Map();
     this._mdcuiImages = isMdcuiEncoding(this.encoding) ? (mdcuiImages ?? []) : [];
     this._mdcuiRenderWidth = Math.trunc(Number(mdcuiRenderWidth) || 0);
+    if (isMdcuiEncoding(this.encoding)) {
+      indexTuiHeadingRows(this);
+      refreshTuiLinkIndex(this, { resetCatalog: true });
+    }
     this._useBundledMdcuiModules = false;
     this.cursor = { x: 0, y: 0 };
     this.scroll = { x: 0, y: 0, row: 0 };
@@ -2036,6 +1932,10 @@ class BufferModel {
       this.lines = normalizeBufferText(text).split("\n");
       if (this.lines.length === 0) this.lines = [""];
       clearTuiSourceDependentState(this);
+      if (isMdcuiEncoding(this.encoding)) {
+        indexTuiHeadingRows(this);
+        refreshTuiLinkIndex(this, { resetCatalog: true });
+      }
       this.modTimeMs = null;
       this.readonly = readonly;
       this.Settings.readonly = readonly;
@@ -2070,6 +1970,10 @@ class BufferModel {
     this.lines = normalizeBufferText(text).split("\n");
     if (this.lines.length === 0) this.lines = [""];
     clearTuiSourceDependentState(this);
+    if (isMdcuiEncoding(this.encoding)) {
+      indexTuiHeadingRows(this);
+      refreshTuiLinkIndex(this, { resetCatalog: true });
+    }
     this.modTimeMs = info.mtimeMs;
     this.readonly = !canWritePath(this.path) || isMdcuiEncoding(this.encoding);
     this.Settings.readonly = this.readonly;
@@ -2085,7 +1989,10 @@ class BufferModel {
     this.ensureCursor();
     attachSyntax(this, context, this.path, text);
   }
-  async rerenderMdcui(width) {
+  rerenderMdcui(width) {
+    return enqueueMdcuiRerender(this, () => this._rerenderMdcuiNow(width));
+  }
+  async _rerenderMdcuiNow(width) {
     if (!isMdcuiEncoding(this.encoding) || this._mdcuiTuiSourceText == null) return false;
     const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
     if (renderWidth === this._mdcuiRenderWidth) return false;
@@ -2105,6 +2012,8 @@ class BufferModel {
     this._mdcuiAnsiText = rendered;
     this._mdcuiImages = images;
     this._mdcuiHeadingTaskListAnchors = null;
+    indexTuiHeadingRows(this);
+    refreshTuiLinkIndex(this, { resetCatalog: true });
     restoreTuiRerenderState(this, snapshot);
     this._mdcuiRenderWidth = renderWidth;
     this.fileformat = detectFileFormat(styled.text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
@@ -2788,6 +2697,8 @@ class App {
     this._messageRowY = null;
     this._messageRowClickZone = null;
     this._resizeRenderSeq = 0;
+    this._inputQueue = Promise.resolve();
+    this._inputGeneration = 0;
     this._mdcuiExitNotified = new WeakSet();
   }
 
@@ -2808,6 +2719,67 @@ class App {
       if (pane) return pane;
     }
     return null;
+  }
+
+  _enqueueInput(operation) {
+    const pending = this._inputQueue.catch(() => {}).then(async () => {
+      await Promise.all(this.buffers.map(waitForMdcuiRerenders));
+      if (this.running) await operation();
+    });
+    this._inputQueue = pending;
+    void pending.catch(() => {});
+    return pending;
+  }
+
+  _acceptTerminalInput(rawData) {
+    const generation = this._inputGeneration;
+    const data = Uint8Array.from(
+      rawData instanceof Uint8Array ? rawData : new Uint8Array(rawData),
+    );
+    if (this._escBuf !== null) {
+      clearTimeout(this._escTimer);
+      this._escTimer = null;
+      const merged = new Uint8Array(this._escBuf.length + data.length);
+      merged.set(this._escBuf);
+      merged.set(data, this._escBuf.length);
+      this._escBuf = null;
+      void this._enqueueInput(() => {
+        if (generation !== this._inputGeneration) return;
+        return this.handleInput(merged);
+      });
+      return;
+    }
+
+    if (
+      data.length === 1
+      && data[0] === 0x1b
+      && this.pane?.type !== "term"
+    ) {
+      this._escBuf = data;
+      this._escTimer = setTimeout(() => {
+        if (this._escBuf !== data) return;
+        this._escBuf = null;
+        this._escTimer = null;
+        void this._enqueueInput(async () => {
+          if (generation !== this._inputGeneration) return;
+          await this._dispatchInput(data);
+          this.render();
+        });
+      }, 150);
+      return;
+    }
+
+    void this._enqueueInput(() => {
+      if (generation !== this._inputGeneration) return;
+      return this.handleInput(data);
+    });
+  }
+
+  _invalidatePendingEditorInput() {
+    this._inputGeneration++;
+    if (this._escTimer !== null) clearTimeout(this._escTimer);
+    this._escTimer = null;
+    this._escBuf = null;
   }
 
   formatCursorLocation(buffer = this.buffer, pane = null) {
@@ -2839,7 +2811,9 @@ class App {
     this._ttyStream.resume();
     const clipSetting = this.context?.config?.getGlobalOption("clipboard") ?? "external";
     await this.reinitializeClipboard(clipSetting);
-    this._inputHandler = (data) => this.handleInput(data);
+    this._inputHandler = (data) => {
+      this._acceptTerminalInput(data);
+    };
     this._ttyStream.on("data", this._inputHandler);
     process.stdout.on("resize", async () => {
       const seq = ++this._resizeRenderSeq;
@@ -2850,6 +2824,8 @@ class App {
       for (const tab of this.tabs)
         for (const p of tab.panes())
           if (p.type === "term") p.terminal?.resize(p.w, Math.max(4, p.h - 1));
+      await this._inputQueue.catch(() => {});
+      if (seq !== this._resizeRenderSeq) return;
       await this.rerenderMdcuiBuffersForLayout();
       if (seq !== this._resizeRenderSeq) return;
       if (!this.shellRunning && !this._alertRunning) this.render();
@@ -2861,6 +2837,7 @@ class App {
     if (this.context._termPrompt) {
       this.context._termPrompt = async (msg) => {
         const tty = this._ttyStream ?? process.stdin;
+        this._invalidatePendingEditorInput();
         if (this._inputHandler) tty.removeListener("data", this._inputHandler);
         tty.setRawMode?.(false);
         this.screen.fini();
@@ -3016,6 +2993,7 @@ class App {
 
     try {
       this._alertRunning = true;
+      this._invalidatePendingEditorInput();
       // Do not let the editor's flowing-mode data listener race the blocking
       // prompt for bytes from the same terminal.
       if (listenerAttached) tty.removeListener("data", inputHandler);
@@ -4021,37 +3999,9 @@ class App {
       return;
     }
 
-    // ESC buffering: if a lone \x1b arrived earlier, combine it with this new chunk
-    // so that Alt+key combos sent as two separate chunks are reassembled.
-    let data = rawData instanceof Uint8Array ? rawData : new Uint8Array(rawData);
-    if (this._escBuf !== null) {
-      clearTimeout(this._escTimer);
-      this._escTimer = null;
-      const merged = new Uint8Array(this._escBuf.length + data.length);
-      merged.set(this._escBuf);
-      merged.set(data, this._escBuf.length);
-      this._escBuf = null;
-      data = merged;
-    }
-
-    const text = decoder.decode(data);
-
-    // If this chunk is exactly a lone ESC, hold it briefly — the next chunk
-    // may be a letter that forms an Alt+key sequence.
-    // Skip buffering when a terminal pane is active so ESC closes it instantly.
-    if (text === "\x1b" && this.pane?.type !== "term") {
-      this._escBuf = data;
-      this._escTimer = setTimeout(async () => {
-        if (this._escBuf === null) return;
-        const d = this._escBuf;
-        this._escBuf = null;
-        this._escTimer = null;
-        await this._dispatchInput(d);
-        this.render();
-      }, 150);
-      return;
-    }
-
+    const data = rawData instanceof Uint8Array
+      ? rawData
+      : new Uint8Array(rawData);
     await this._dispatchInput(data);
   }
 
@@ -5780,7 +5730,13 @@ class App {
 
   async runInteractiveShell(cmdLine) {
     this.shellRunning = true;
+    this._invalidatePendingEditorInput();
     const tty = this._ttyStream ?? process.stdin;
+    const inputHandler = this._inputHandler;
+    const listenerAttached = Boolean(
+      inputHandler && tty.listeners?.("data").includes(inputHandler),
+    );
+    if (listenerAttached) tty.removeListener("data", inputHandler);
     tty.setRawMode?.(false);
     this.screen.fini();
     this.screen.previous = null;
@@ -5821,13 +5777,21 @@ class App {
       this.screen.previous = null;
       this.screen.init();
       this.shellRunning = false;
+      if (listenerAttached && this.running)
+        tty.on("data", inputHandler);
       this.render();
     }
   }
 
   async runAlert(msg) {
     this._alertRunning = true;
+    this._invalidatePendingEditorInput();
     const tty = this._ttyStream ?? process.stdin;
+    const inputHandler = this._inputHandler;
+    const listenerAttached = Boolean(
+      inputHandler && tty.listeners?.("data").includes(inputHandler),
+    );
+    if (listenerAttached) tty.removeListener("data", inputHandler);
     tty.setRawMode?.(false);
     this.screen.fini();
     this.screen.previous = null;
@@ -5855,6 +5819,8 @@ class App {
       this.screen.previous = null;
       this.screen.init();
       this._alertRunning = false;
+      if (listenerAttached && this.running)
+        tty.on("data", inputHandler);
       this.render();
     }
   }
@@ -8520,6 +8486,24 @@ async function main() {
       if (result.collisions.length) process.exitCode = 1;
     } catch (error) {
       console.error(`Cannot check ${checkPath}: ${error?.message || error}`);
+      process.exitCode = 2;
+    }
+    return;
+  }
+  if (flags.outline) {
+    if (rawFiles.length !== 1) {
+      console.error("Usage: jsmdcui --outline FILE.md");
+      process.exitCode = 2;
+      return;
+    }
+    const outlinePath = resolve(rawFiles[0]);
+    try {
+      const file = Bun.file(outlinePath);
+      if (!(await file.exists())) throw new Error("file not found");
+      const result = checkMarkdownIdCollisions(await file.text());
+      process.stdout.write(formatMarkdownOutline(result));
+    } catch (error) {
+      console.error(`Cannot outline ${outlinePath}: ${error?.message || error}`);
       process.exitCode = 2;
     }
     return;

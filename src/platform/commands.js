@@ -16,21 +16,60 @@ export async function fetchHttp(url) {
   return decoder.decode(await fetchHttpBytes(url));
 }
 
-export async function fetchHttpBytes(url) {
+export async function fetchHttpBytes(url, options = {}) {
   const b = detectHttpBackend();
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.trunc(options.timeoutMs))
+    : null;
+  const timeoutSeconds = timeoutMs == null
+    ? null
+    : String(Math.max(1, Math.ceil(timeoutMs / 1000)));
   if (b === "curl") {
-    const r = await runBytes(["curl", "-kL", "--silent", "--fail", url], { allowFailure: true });
+    const command = ["curl", "-kL", "--silent", "--fail"];
+    if (timeoutSeconds != null)
+      command.push("--connect-timeout", timeoutSeconds, "--max-time", timeoutSeconds);
+    command.push(url);
+    const r = await runBytes(command, {
+      allowFailure: true,
+      timeout: timeoutMs,
+      signal: options.signal,
+    });
     if (!r.ok) throw new Error(`curl: ${r.stderr.trim() || "failed"} (${url})`);
     return r.stdout;
   }
   if (b === "wget") {
-    const r = await runBytes(["wget", "--no-check-certificate", "-q", "-O", "-", url], { allowFailure: true });
+    const command = ["wget", "--no-check-certificate", "-q", "-O", "-"];
+    if (timeoutSeconds != null)
+      command.push(`--timeout=${timeoutSeconds}`, "--tries=1");
+    command.push(url);
+    const r = await runBytes(command, {
+      allowFailure: true,
+      timeout: timeoutMs,
+      signal: options.signal,
+    });
     if (!r.ok) throw new Error(`wget: ${r.stderr.trim() || "failed"} (${url})`);
     return r.stdout;
   }
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`);
-  return new Uint8Array(await resp.arrayBuffer());
+  const controller = timeoutMs == null && !options.signal
+    ? null
+    : new AbortController();
+  const abort = () => controller?.abort(options.signal?.reason);
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener("abort", abort, { once: true });
+  const timeout = timeoutMs != null
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+  try {
+    const resp = await fetch(
+      url,
+      controller ? { signal: controller.signal } : undefined,
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${url}`);
+    return new Uint8Array(await resp.arrayBuffer());
+  } finally {
+    if (timeout != null) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abort);
+  }
 }
 
 export async function downloadFile(url, outPath) {
@@ -100,17 +139,62 @@ export async function run(command, options = {}) {
 }
 
 export async function runBytes(command, options = {}) {
+  const failure = (message, code = -1) => {
+    const result = {
+      ok: false,
+      code,
+      stdout: new Uint8Array(),
+      stderr: message,
+    };
+    if (!options.allowFailure) throw new Error(message);
+    return result;
+  };
+  if (options.signal?.aborted)
+    return failure(`${command[0]} aborted`);
+
   const proc = Bun.spawn(command, {
     stdio: [stdioInput(options.stdin), options.stdout ?? "pipe", options.stderr ?? "pipe"],
     env: options.env ?? process.env,
     cwd: options.cwd,
   });
-  const [stdoutBuf, stderr, code] = await Promise.all([
-    proc.stdout ? new Response(proc.stdout).arrayBuffer() : Promise.resolve(new ArrayBuffer(0)),
-    proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
-    proc.exited,
-  ]);
+  const timeoutMs = Number.isFinite(options.timeout)
+    ? Math.max(1, Math.trunc(options.timeout))
+    : null;
+  let interrupted = "";
+  const interrupt = message => {
+    if (interrupted) return;
+    interrupted = message;
+    try { proc.kill(); } catch {}
+  };
+  const abort = () => interrupt(`${command[0]} aborted`);
+  options.signal?.addEventListener("abort", abort, { once: true });
+  const timeout = timeoutMs == null
+    ? null
+    : setTimeout(
+      () => interrupt(`${command[0]} timed out after ${timeoutMs}ms`),
+      timeoutMs,
+    );
+  let stdoutBuf;
+  let stderr;
+  let code;
+  try {
+    [stdoutBuf, stderr, code] = await Promise.all([
+      proc.stdout ? new Response(proc.stdout).arrayBuffer() : Promise.resolve(new ArrayBuffer(0)),
+      proc.stderr ? new Response(proc.stderr).text() : Promise.resolve(""),
+      proc.exited,
+    ]);
+  } finally {
+    if (timeout != null) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abort);
+  }
   const stdout = new Uint8Array(stdoutBuf);
+  if (interrupted) {
+    const message = stderr.trim()
+      ? `${interrupted}: ${stderr.trim()}`
+      : interrupted;
+    if (!options.allowFailure) throw new Error(message);
+    return { ok: false, code, stdout, stderr: message };
+  }
   if (code !== 0 && !options.allowFailure) {
     throw new Error(`${command[0]} exited with ${code}: ${stderr || decoder.decode(stdout)}`);
   }

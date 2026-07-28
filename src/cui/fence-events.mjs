@@ -1,13 +1,7 @@
-const IDENTITY_RE = /^([A-Za-z_][\w:-]*)(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/;
+import { parseMdcuiIdentity } from "./identity.mjs";
 
 function parseIdentity(value) {
-  const match = String(value ?? "").match(IDENTITY_RE);
-  if (!match) return null;
-  return {
-    tag: match[1],
-    id: match[2] || null,
-    classes: match[3] ? match[3].slice(1).split(".") : [],
-  };
+  return parseMdcuiIdentity(value);
 }
 
 function parseEventAttributes(text) {
@@ -51,38 +45,82 @@ function parseEventAttributes(text) {
 }
 
 export function parseFenceDeclarations(markdown) {
-  const lines = String(markdown ?? "").split(/\r?\n/);
-  const declarations = [];
-  let fence = null;
+  const source = String(markdown ?? "");
+  const lines = source.split(/\r\n?|\n/);
+  let marker = "mdcui-fence-source";
+  let markerSuffix = 0;
+  while (source.toLowerCase().includes(marker))
+    marker = `mdcui-fence-source-${++markerSuffix}`;
 
+  const contentOffset = (line) => {
+    let offset = 0;
+    const skipWhitespace = () => {
+      while (line[offset] === " " || line[offset] === "\t") offset++;
+    };
+    skipWhitespace();
+    while (offset < line.length) {
+      if (line[offset] === ">") {
+        offset++;
+        skipWhitespace();
+        continue;
+      }
+      const listMarker = line.slice(offset).match(
+        /^(?:[-+*]|\d{1,9}[.)])(?=[ \t])/u,
+      );
+      if (!listMarker) break;
+      offset += listMarker[0].length;
+      skipWhitespace();
+    }
+    return offset;
+  };
+
+  const candidates = [];
+  const markedLines = lines.slice();
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (fence) {
-      const closing = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
-      if (closing && closing[1][0] === fence.marker && closing[1].length >= fence.length)
-        fence = null;
-      continue;
-    }
-
-    const opening = line.match(/^ {0,3}(`{3,}|~{3,})([^]*)$/);
+    const offset = contentOffset(line);
+    const opening = line.slice(offset).match(/^(`{3,}|~{3,})([^]*)$/u);
     if (!opening) continue;
-    fence = { marker: opening[1][0], length: opening[1].length };
-    const info = String(opening[2] ?? "").trim();
-    const firstSpace = info.search(/\s/);
-    const identityText = firstSpace < 0 ? info : info.slice(0, firstSpace);
-    const attributesText = firstSpace < 0 ? "" : info.slice(firstSpace);
+
+    const info = String(opening[2] ?? "");
+    const leadingWhitespace = info.match(/^\s*/u)?.[0].length ?? 0;
+    const infoText = info.slice(leadingWhitespace);
+    const firstSpace = infoText.search(/\s/u);
+    const identityText =
+      firstSpace < 0 ? infoText : infoText.slice(0, firstSpace);
+    const attributesText =
+      firstSpace < 0 ? "" : infoText.slice(firstSpace);
     const identity = parseIdentity(identityText);
     if (!identity) continue;
-    declarations.push({
+
+    const identityStart =
+      offset + opening[1].length + leadingWhitespace;
+    const ordinal = candidates.length;
+    candidates.push({
       ...identity,
       identity: identityText,
       events: parseEventAttributes(attributesText),
       line: index + 1,
       source: line.trim(),
     });
+    markedLines[index] =
+      line.slice(0, identityStart)
+      + `${marker}-${ordinal}`
+      + line.slice(identityStart + identityText.length);
   }
+  if (candidates.length === 0) return [];
 
-  return declarations;
+  const declarations = [];
+  const languagePattern = new RegExp(`^${marker}-(\\d+)$`, "u");
+  Bun.markdown.render(markedLines.join("\n"), {
+    code(children, meta) {
+      const match = String(meta?.language ?? "").match(languagePattern);
+      const candidate = match ? candidates[Number(match[1])] : null;
+      if (candidate) declarations.push(candidate);
+      return "";
+    },
+  });
+  return declarations.sort((left, right) => left.line - right.line);
 }
 
 export function fenceEventMap(markdown) {

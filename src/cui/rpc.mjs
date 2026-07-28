@@ -9,10 +9,17 @@ let apilist = new Map()
 
 export const jss = JSON.stringify
 
+const webMdcuiIdSource = String.raw`[_\p{L}\p{N}][_\p{L}\p{M}\p{N}:-]*`;
+const webMdcuiIdPattern = new RegExp(`^${webMdcuiIdSource}$`, "u");
+const webDollarIdentityPattern = new RegExp(
+  `^([A-Za-z_][\\w:-]*)?(?:#(${webMdcuiIdSource}))?((?:\\.[A-Za-z_][\\w:-]*)*)$`,
+  "u",
+);
+
 function parseDollarIdentity(input, { selector = false } = {})
 {
   const text = String(input ?? "").trim();
-  const match = text.match(/^([A-Za-z_][\w:-]*)?(?:#([A-Za-z_][\w:-]*))?((?:\.[A-Za-z_][\w:-]*)*)$/);
+  const match = text.match(webDollarIdentityPattern);
   if (!match || (!match[1] && !match[2] && !match[3])) return null;
   if (!selector && !match[1]) return null;
   return {
@@ -26,7 +33,7 @@ function webDollarObjectId(input)
 {
   if (input === null || typeof input !== "object") return null;
   const id = String(input.id ?? "");
-  return /^[A-Za-z_][\w:-]*$/.test(id) ? id : null;
+  return webMdcuiIdPattern.test(id) ? id : null;
 }
 
 function matchesDollarIdentity(identity, selector)
@@ -50,15 +57,26 @@ function findMarkdownCodeElement(documentObject, selector)
 
 function findWebDollarElement(documentObject, selectorText, selector)
 {
-  if (selector?.id && !selector.tag && selector.classes.length === 0) {
+  if (selector?.id) {
     const byId = documentObject?.getElementById?.(selector.id);
-    if (byId) return byId;
+    if (byId) {
+      const identity = {
+        tag: byId.getAttribute?.("data-mdcui-tag")
+          || String(byId.tagName ?? "").toLowerCase()
+          || null,
+        id: byId.id || null,
+        classes: [...(byId.classList ?? [])],
+      };
+      if (matchesDollarIdentity(identity, selector)) return byId;
+    }
   }
 
-  try {
-    const direct = documentObject?.querySelector?.(String(selectorText));
-    if (direct) return direct;
-  } catch {}
+  if (!selector?.id) {
+    try {
+      const direct = documentObject?.querySelector?.(String(selectorText));
+      if (direct) return direct;
+    } catch {}
+  }
 
   for (const element of documentObject?.querySelectorAll?.("[data-mdcui-tag]") ?? []) {
     const identity = {
@@ -485,6 +503,16 @@ function webLinkActivationEvent(nativeEvent, anchor)
   };
 }
 
+function reportWebLinkEvaluationError(target, result)
+{
+  const message = String(result?.error ?? "Unknown error");
+  try {
+    (target?.console ?? globalThis.console)?.error?.(
+      `[mdcui] javascript link: ${message}`,
+    );
+  } catch {}
+}
+
 function installWebLinkContext(target)
 {
   const documentObject = target?.document;
@@ -497,12 +525,21 @@ function installWebLinkContext(target)
     if (!/^javascript:/i.test(href)) return;
     const event = webLinkActivationEvent(nativeEvent, anchor);
     nativeEvent.preventDefault?.();
-    await evalFront(
+    const reportedFailures = new Set();
+    const reportFailure = result => {
+      if (!result || typeof result !== "object" || result.ok !== false) return;
+      if (reportedFailures.has(result)) return;
+      reportedFailures.add(result);
+      reportWebLinkEvaluationError(target, result);
+    };
+    const result = await evalFront(
       target.__mdcuiFrontModule ?? {},
-      href,
+      decodeJavascriptUrlSource(href),
       { event, target: anchor },
       anchor,
+      reportFailure,
     );
+    reportFailure(result);
   });
 }
 
@@ -801,6 +838,8 @@ else
 
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+const frontBindingNamePattern = /^[$_\p{ID_Start}][$\u200C\u200D_\p{ID_Continue}]*$/u;
+const frontBindingNameValidity = new Map();
 
 function safeFrontError(e)
 {
@@ -810,35 +849,118 @@ function safeFrontError(e)
   };
 }
 
-function safeFrontValue(value)
+function isValidFrontBindingName(name)
+{
+  if (frontBindingNameValidity.has(name))
+    return frontBindingNameValidity.get(name);
+  let valid = frontBindingNamePattern.test(name);
+  if (valid) {
+    try {
+      new AsyncFunction(name, "");
+    } catch {
+      valid = false;
+    }
+  }
+  frontBindingNameValidity.set(name, valid);
+  return valid;
+}
+
+function isValidFrontSourceSyntax(source)
+{
+  try {
+    new AsyncFunction(`return await (${source})`);
+    return true;
+  } catch(error) {
+    if (!(error instanceof SyntaxError)) return false;
+  }
+  try {
+    new AsyncFunction(source);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function decodeJavascriptUrlSource(text)
+{
+  const input = String(text ?? "");
+  const scheme = input.match(/^javascript:/i);
+  if (!scheme) return input;
+
+  const source = input.slice(scheme[0].length);
+  const encoded = new TextEncoder().encode(source);
+  const decoded = [];
+  const hexValue = value => {
+    if (value >= 48 && value <= 57) return value - 48;
+    if (value >= 65 && value <= 70) return value - 55;
+    if (value >= 97 && value <= 102) return value - 87;
+    return -1;
+  };
+  for (let index = 0; index < encoded.length; index++) {
+    if (encoded[index] === 37 && index + 2 < encoded.length) {
+      const high = hexValue(encoded[index + 1]);
+      const low = hexValue(encoded[index + 2]);
+      if (high >= 0 && low >= 0) {
+        decoded.push(high * 16 + low);
+        index += 2;
+        continue;
+      }
+    }
+    decoded.push(encoded[index]);
+  }
+  const decodedSource = new TextDecoder().decode(Uint8Array.from(decoded));
+  if (decodedSource === source || isValidFrontSourceSyntax(source))
+    return source;
+  return isValidFrontSourceSyntax(decodedSource) ? decodedSource : source;
+}
+
+function reportSafeFrontError(error, reportError)
+{
+  const result = safeFrontError(error);
+  try {
+    reportError?.(result);
+  } catch {}
+  return result;
+}
+
+function safeFrontValue(value, reportError)
 {
   if (typeof value !== "function") return value;
   return function(...args) {
     try {
       const result = value.apply(this, args);
       if (result && typeof result.then === "function")
-        return result.catch(safeFrontError);
+        return Promise.resolve(result).catch(error => reportSafeFrontError(error, reportError));
       return result;
     } catch(e) {
-      return safeFrontError(e);
+      return reportSafeFrontError(e, reportError);
     }
   };
 }
 
-export async function evalFront(mod, text, scope = {}, thisArg = undefined)
+export async function evalFront(
+  mod,
+  text,
+  scope = {},
+  thisArg = undefined,
+  reportError = undefined,
+)
 {
 try{
 
-    text = text.replace(/^javascript:/, "");
+    text = String(text ?? "").replace(/^javascript:/i, "");
 
-    const entryMap = new Map(Object.entries(mod).filter(([name]) => name !== "$"));
+    const entryMap = new Map(
+      Object.entries(mod).filter(([name]) => name !== "$" && isValidFrontBindingName(name)),
+    );
     if (typeof globalThis.$ === "function")
       entryMap.set("$", globalThis.$);
     for (const [name, value] of Object.entries(scope))
-      entryMap.set(name, value);
+      if (isValidFrontBindingName(name))
+        entryMap.set(name, value);
     const entries = [...entryMap];
     const names = entries.map(([name]) => name);
-    const values = entries.map(([, value]) => safeFrontValue(value));
+    const values = entries.map(([, value]) => safeFrontValue(value, reportError));
 
     try {
       return await new AsyncFunction(...names, `return await (${text})`).call(thisArg, ...values);
@@ -850,7 +972,7 @@ try{
 
 }catch(e)
 {
-  return safeFrontError(e);
+  return reportSafeFrontError(e, reportError);
 }
     
 }
