@@ -968,10 +968,21 @@ export function wrapWuiHeadingSections(html)
 export function convertWuiTableCheckboxes(html)
 {
   return String(html ?? "").replace(
-    /(<t[dh]\b[^>]*>)(\s*)\[( |x|X)\]/giu,
-    (whole, opening, whitespace, state) =>
-      `${opening}${whitespace}<input type="checkbox"`
-      + `${state === " " ? "" : " checked"}>`,
+    /<table\b[^>]*>[\s\S]*?<\/table>/giu,
+    table => table
+      .replace(
+        /^<table\b([^>]*)>/iu,
+        (opening, attributes) =>
+          /\bcontenteditable\s*=/iu.test(attributes)
+            ? opening
+            : `<table${attributes} contenteditable="true">`,
+      )
+      .replace(
+        /(<t[dh]\b[^>]*>)(\s*)\[( |x|X)\]/giu,
+        (whole, opening, whitespace, state) =>
+          `${opening}${whitespace}<input type="checkbox"`
+          + `${state === " " ? "" : " checked"}>`,
+      ),
   );
 }
 

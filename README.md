@@ -518,7 +518,8 @@ unchecked and checked controls. The TUI displays `☐` or `☒` without changing
 the row layout and colors checked `☒` green like Bun task lists; the WUI
 creates a native `<input type="checkbox">`. The same text elsewhere in a cell
 is left unchanged. Use `.cell(row, col).val()` when application code needs the
-checked state.
+checked state. WUI table cells are directly editable; programmatic changes can
+still use `.cell(row, col).text(value)`.
 
 Every `$()` selection exposes its resolved `.id`. Passing an object with a
 legal MDCUI ID immediately canonicalizes it to the same path as `$('#id')`.

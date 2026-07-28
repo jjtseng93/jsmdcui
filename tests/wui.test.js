@@ -16,10 +16,26 @@ test("WUI table cell prefixes become interactive checkbox inputs", () => {
     "<table><tr><th> [ ] Header</th><td>[x] checked</td>"
     + "<td>text [ ] unchanged</td><td>[X] upper</td></tr></table>";
   expect(convertWuiTableCheckboxes(html)).toBe(
-    '<table><tr><th> <input type="checkbox"> Header</th>'
+    '<table contenteditable="true"><tr><th> <input type="checkbox"> Header</th>'
     + '<td><input type="checkbox" checked> checked</td>'
     + "<td>text [ ] unchanged</td>"
     + '<td><input type="checkbox" checked> upper</td></tr></table>',
+  );
+});
+
+test("WUI tables become editable once without changing outside HTML cells", () => {
+  const html =
+    '<td>outside</td><table><tr><td class="value">inside</td>'
+    + '<th contenteditable="false">fixed</th></tr></table>';
+  expect(convertWuiTableCheckboxes(html)).toBe(
+    '<td>outside</td><table contenteditable="true"><tr>'
+    + '<td class="value">inside</td>'
+    + '<th contenteditable="false">fixed</th></tr></table>',
+  );
+  expect(convertWuiTableCheckboxes(
+    '<table contenteditable="false"><tr><td>fixed</td></tr></table>',
+  )).toBe(
+    '<table contenteditable="false"><tr><td>fixed</td></tr></table>',
   );
 });
 
