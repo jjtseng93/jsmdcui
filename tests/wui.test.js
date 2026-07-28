@@ -2,10 +2,26 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readMarkdownInput, writeRuntimeFiles } from "../runmd.mjs";
+import {
+  convertWuiTableCheckboxes,
+  readMarkdownInput,
+  writeRuntimeFiles,
+} from "../runmd.mjs";
 
 const indexEntry = join(import.meta.dir, "..", "src", "index.js");
 const bunBin = Bun.which("bun") || process.argv0;
+
+test("WUI table cell prefixes become interactive checkbox inputs", () => {
+  const html =
+    "<table><tr><th> [ ] Header</th><td>[x] checked</td>"
+    + "<td>text [ ] unchanged</td><td>[X] upper</td></tr></table>";
+  expect(convertWuiTableCheckboxes(html)).toBe(
+    '<table><tr><th> <input type="checkbox"> Header</th>'
+    + '<td><input type="checkbox" checked> checked</td>'
+    + "<td>text [ ] unchanged</td>"
+    + '<td><input type="checkbox" checked> upper</td></tr></table>',
+  );
+});
 
 test("WUI writes the bundled testapp.md when it is missing", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-wui-"));

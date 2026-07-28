@@ -512,6 +512,12 @@ The available selector methods are:
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
 
+At the start of any Markdown table cell, `[ ]` and `[x]` (or `[X]`) become
+unchecked and checked controls. The TUI displays `☐` or `☒` without changing
+the table width and colors checked `☒` green like Bun task lists; the WUI
+creates a native `<input type="checkbox">`. The same text elsewhere in a cell
+is left unchanged.
+
 Every `$()` selection exposes its resolved `.id`. Passing an object with a
 legal MDCUI ID immediately canonicalizes it to the same path as `$('#id')`.
 The original object's other fields are not retained, so repeated wrapping
@@ -609,9 +615,11 @@ and heading visibility.
 ### TUI resize behavior
 
 Changing terminal or split width rerenders MDCUI while preserving heading
-visibility, task-list and table-cell changes made through the heading API,
-direct checkbox state, and fenced-control contents. Multiline `.val(value)`
-changes also update later heading positions.
+visibility, task-list changes, the current contents and ANSI/OSC 8 state of
+identified table cells (including direct edits), direct checkbox state, and
+fenced-control contents. Table-cell text is refitted to each new rectangle and
+truncated only when its new capacity is smaller. Multiline `.val(value)` changes
+also update later heading positions.
 
 State changed through public `$()` control and heading APIs is supported.
 Arbitrary screen-row edits made through low-level editor APIs are outside this

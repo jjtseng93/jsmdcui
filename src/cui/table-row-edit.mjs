@@ -199,3 +199,28 @@ export function replaceAnsiPlainRangePreservingControls(
   if (!inserted) controls += String(replacement ?? "");
   return input.slice(0, rawStart) + controls + input.slice(rawEnd);
 }
+
+export function colorAnsiPlainRange(
+  ansiLine,
+  start,
+  end,
+  text,
+  sgr = "\x1b[32m",
+) {
+  const input = String(ansiLine ?? "");
+  const rawStart = ansiRawOffset(input, start, true);
+  const active = [];
+  for (const match of input.slice(0, rawStart).matchAll(/\x1b\[([0-9;]*)m/gu)) {
+    const parameters = match[1].split(";").filter(Boolean).map(Number);
+    if (parameters.length === 0 || parameters.includes(0)) active.length = 0;
+    active.push(match[0]);
+  }
+  const replacement =
+    sgr + String(text ?? "") + "\x1b[0m" + active.join("");
+  return replaceAnsiPlainRangePreservingControls(
+    input,
+    start,
+    end,
+    replacement,
+  );
+}

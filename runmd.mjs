@@ -11,6 +11,7 @@ import {
 import { parseMdcuiIdentity } from './src/cui/identity.mjs'
 import {
   addTuiTableRowSeparators,
+  convertTuiTableCheckboxes,
   markHeadingTableRows,
 } from './src/cui/table-render.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
@@ -257,6 +258,7 @@ export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
           )
        || md  )+'' ;
   md = addTuiTableRowSeparators(md, tablePlan);
+  md = convertTuiTableCheckboxes(md);
        
   return md ;
        
@@ -963,6 +965,16 @@ export function wrapWuiHeadingSections(html)
   return stripWuiAnalysisAttributes(output, analysis);
 }
 
+export function convertWuiTableCheckboxes(html)
+{
+  return String(html ?? "").replace(
+    /(<t[dh]\b[^>]*>)(\s*)\[( |x|X)\]/giu,
+    (whole, opening, whitespace, state) =>
+      `${opening}${whitespace}<input type="checkbox"`
+      + `${state === " " ? "" : " checked"}>`,
+  );
+}
+
 export async function createWui(md,mdpath,{ bundling = false } = {}) // HTML
 {
   const eventsById = fenceEventMap(md)
@@ -980,6 +992,7 @@ export async function createWui(md,mdpath,{ bundling = false } = {}) // HTML
     'class="task-list-item-checkbox" disabled',
     'class="task-list-item-checkbox"'
   )
+  md = convertWuiTableCheckboxes(md)
 
   const taskItemStart = '(<li\\b(?=[^>]*\\bclass="[^"]*\\btask-list-item\\b[^"]*")[^>]*>\\s*)'
   const taskCheckbox = '(<input\\b(?=[^>]*\\btype="checkbox")[^>]*>)'

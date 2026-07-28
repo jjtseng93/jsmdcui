@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   addTuiTableRowSeparators,
+  convertTuiTableCheckboxes,
   markHeadingTableRows,
   markTuiTableStripeStyles,
   tuiTableStripeRows,
@@ -14,6 +15,26 @@ function renderHeadingTable(markdown, columns) {
   ));
   return addTuiTableRowSeparators(rendered, plan);
 }
+
+test("table checkbox prefixes are identified before narrow Bun wrapping", () => {
+  const markdown = `# Table
+
+| A very long heading | B |
+| --- | --- |
+| [x] checked | [ ] pending |
+`;
+  const plan = markHeadingTableRows(markdown);
+  expect(plan.markdown).toContain("☒ checked");
+  expect(plan.markdown).toContain("☐ pending");
+
+  const rendered = String(Bun.markdown.ansi(plan.markdown, { columns: 12 }));
+  const converted = convertTuiTableCheckboxes(
+    addTuiTableRowSeparators(rendered, plan),
+  );
+  expect(Bun.stripANSI(converted)).toContain("☒");
+  expect(Bun.stripANSI(converted)).toContain("☐");
+  expect(converted).toContain("\x1b[32m☒");
+});
 
 test("heading-associated TUI tables receive logical-row separators", () => {
   const markdown = `# Table
@@ -104,4 +125,26 @@ test("tables without an associated heading keep Bun's original separators", () =
   const plan = markHeadingTableRows(markdown);
   expect(plan.markers).toHaveLength(0);
   expect(addTuiTableRowSeparators(rendered, plan)).toBe(rendered);
+});
+
+test("TUI table cell prefixes become fixed-width checkbox glyphs", () => {
+  const markdown = `| [ ] Header | Other |
+| --- | --- |
+| [x] checked | text [ ] unchanged |
+| plain | [X] upper |
+`;
+  const rendered = String(Bun.markdown.ansi(markdown, { columns: 50 }));
+  const converted = convertTuiTableCheckboxes(rendered);
+  const before = Bun.stripANSI(rendered).split("\n");
+  const after = Bun.stripANSI(converted).split("\n");
+
+  expect(after.join("\n")).toContain("☐ Header");
+  expect(after.join("\n")).toContain("☒ checked");
+  expect(after.join("\n")).toContain("☒ upper");
+  expect(after.join("\n")).toContain("text [ ] unchanged");
+  expect(converted).toContain("\x1b[32m☒");
+  expect(converted).not.toContain("\x1b[32m☐");
+  expect(after.map(line => Bun.stringWidth(line))).toEqual(
+    before.map(line => Bun.stringWidth(line)),
+  );
 });

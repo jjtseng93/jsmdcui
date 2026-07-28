@@ -9,12 +9,14 @@ import {
   clearTuiSourceDependentState,
   createTuiSelector,
   indexTuiHeadingRows,
+  markTuiTableCellDirtyAtPosition,
   restoreTuiRerenderState,
   spliceTuiBufferLines,
   toggleTuiHeadingAt,
   tuiTableCellAtPosition,
   tuiCheckboxRerenderMismatchMessage,
 } from "../src/plugins/js-bridge.js";
+import { colorAnsiPlainRange } from "../src/cui/table-row-edit.mjs";
 
 function tuiSelector(markdown) {
   const ansi = String(Bun.markdown.ansi(markdown, { hyperlinks: true, columns: 80 }));
@@ -1226,13 +1228,7 @@ describe("TUI heading-associated table cells", () => {
     expect(buffer.lines.map(line => Bun.stringWidth(line))).toEqual(widths);
     expect(Bun.stripANSI(buffer._mdcuiAnsiText)).toBe(buffer.lines.join("\n"));
     expect(buffer.undoCount).toBe(1);
-    expect(buffer._mdcuiMutationMacros.at(-1)).toEqual({
-      selector: "#table-with-id",
-      method: "cellText",
-      row: 2,
-      col: 1,
-      value: "更新✅abcdef",
-    });
+    expect(buffer._mdcuiMutationMacros).toBeUndefined();
   });
 
   test("cell text replacement preserves every ANSI and OSC 8 control", () => {
@@ -1279,7 +1275,7 @@ describe("TUI heading-associated table cells", () => {
     expect(parent.text()).toBe("執行");
   });
 
-  test("cell replacements replay after a width rerender", () => {
+  test("cell snapshots restore API replacements after a width rerender", () => {
     const { $, buffer } = tuiTableSelector(tableMarkdown, 24);
     $("#table-with-id").cell(1, 0).text("replacement value");
     const snapshot = captureTuiRerenderState(buffer);
@@ -1293,6 +1289,42 @@ describe("TUI heading-associated table cells", () => {
 
     expect($("#table-with-id").cell(1, 0).text()).toBe("replacement value");
     expect(buffer.undoCount).toBe(1);
+  });
+
+  test("cell snapshots restore direct edits with ANSI after a width rerender", () => {
+    const { $, buffer } = tuiTableSelector(tableMarkdown, 24);
+    const y = buffer.lines.findIndex(line => line.includes("very long"));
+    const x = buffer.lines[y].indexOf("very");
+    markTuiTableCellDirtyAtPosition(buffer, y, x);
+    buffer.lines[y] =
+      buffer.lines[y].slice(0, x) + "USER" + buffer.lines[y].slice(x + 4);
+    const ansiLines = buffer._mdcuiAnsiText.split("\n");
+    ansiLines[y] = colorAnsiPlainRange(
+      ansiLines[y],
+      x,
+      x + 4,
+      "USER",
+      "\x1b[35m",
+    );
+    buffer._mdcuiAnsiText = ansiLines.join("\n");
+    for (let index = x; index < x + 4; index++)
+      buffer._ansiStyleLines[y][index] = { fg: "magenta" };
+    const snapshot = captureTuiRerenderState(buffer);
+
+    const rerendered = tuiTableSelector(tableMarkdown, 32).buffer;
+    buffer.lines = rerendered.lines;
+    buffer._mdcuiAnsiText = rerendered._mdcuiAnsiText;
+    buffer._ansiStyleLines = rerendered._ansiStyleLines;
+    buffer._mdcuiHeadingRowIndex = null;
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect($("#table-with-id").cell(1, 0).text())
+      .toBe("USER longcontenthere");
+    expect(buffer._mdcuiAnsiText).toContain("\x1b[35mUSER");
+    const restoredY = buffer.lines.findIndex(line => line.includes("USER"));
+    const restoredX = buffer.lines[restoredY].indexOf("USER");
+    expect(buffer._ansiStyleLines[restoredY][restoredX]?.fg).toBe("magenta");
+    expect(buffer.undoCount).toBeUndefined();
   });
 });
 

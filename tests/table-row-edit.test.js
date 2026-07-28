@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   backspaceMdcuiTableRow,
+  colorAnsiPlainRange,
   deleteMdcuiTableRow,
   isMdcuiTableRow,
   overwriteMdcuiTableRow,
@@ -123,4 +124,15 @@ test("text-only ANSI replacement retains controls inside the changed range", () 
     + "\x1b]8;;javascript:test()\x1b\\\x1b]8;;\x1b\\"
     + "\x1b[0m",
   );
+});
+
+test("ANSI range color restores the style active before the glyph", () => {
+  const ansi =
+    "\x1b[1mA\x1b[34mB\x1b]8;;javascript:test()\x1b\\C"
+    + "\x1b]8;;\x1b\\D\x1b[0m";
+  const colored = colorAnsiPlainRange(ansi, 2, 3, "☒");
+
+  expect(Bun.stripANSI(colored)).toBe("AB☒D");
+  expect(colored).toContain("\x1b[32m☒\x1b[0m\x1b[1m\x1b[34m");
+  expect(colored).toContain("javascript:test()");
 });

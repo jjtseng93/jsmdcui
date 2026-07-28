@@ -1,6 +1,10 @@
 import {
   collectMarkdownHeadingDeclarations,
 } from "./heading-ids.mjs";
+import {
+  colorAnsiPlainRange,
+  replaceAnsiPlainRangePreservingControls,
+} from "./table-row-edit.mjs";
 
 function tableTopRange(line) {
   const text = String(line ?? "");
@@ -69,6 +73,14 @@ function insertRowMarker(line, marker) {
   return text.slice(0, opening.length) + marker + text.slice(opening.length);
 }
 
+function markTableCheckboxPrefixes(line) {
+  return String(line ?? "").replace(
+    /(^|(?<!\\)\|)(\s*)\[( |x|X)\]/gu,
+    (_whole, boundary, whitespace, state) =>
+      `${boundary}${whitespace}${state === " " ? "☐" : "☒"}`,
+  );
+}
+
 export function markHeadingTableRows(markdown) {
   const source = String(markdown ?? "");
   const lines = source.split(/\r\n?|\n/u);
@@ -98,6 +110,7 @@ export function markHeadingTableRows(markdown) {
     if (rows.length < 2) continue;
 
     for (const [rowOrdinal, lineIndex] of rows.entries()) {
+      lines[lineIndex] = markTableCheckboxPrefixes(lines[lineIndex]);
       lines[lineIndex] = insertRowMarker(lines[lineIndex], token);
       markers.push({
         tableOrdinal,
@@ -149,6 +162,69 @@ export function addTuiTableRowSeparators(ansiText, plan) {
   }
 
   return output.join("\n");
+}
+
+export function convertTuiTableCheckboxes(ansiText) {
+  const ansiLines = String(ansiText ?? "").split("\n");
+  const plainLines = Bun.stripANSI(String(ansiText ?? "")).split("\n");
+  let activeRange = null;
+
+  for (let row = 0; row < plainLines.length; row++) {
+    const top = tableTopRange(plainLines[row]);
+    if (top) activeRange = top;
+    if (!activeRange) continue;
+    if (isTableBottom(plainLines[row], activeRange)) {
+      activeRange = null;
+      continue;
+    }
+    if (!isTableContentRow(plainLines[row], activeRange)) continue;
+
+    const separators = [];
+    for (let index = activeRange.start; index <= activeRange.end; index++) {
+      if (plainLines[row][index] === "│") separators.push(index);
+    }
+    for (let col = 0; col + 1 < separators.length; col++) {
+      const start = separators[col] + 1;
+      const end = separators[col + 1];
+      const source = plainLines[row].slice(start, end);
+      const match = /^(\s*)(?:\[( |x|X)\]|(☐|☒))/u.exec(source);
+      if (!match) continue;
+      const glyph = match[3] ?? (match[2] === " " ? "☐" : "☒");
+      let replacement = source;
+      if (!match[3]) {
+        replacement =
+          source.slice(0, match[1].length)
+          + glyph
+          + source.slice(match[0].length);
+        const missing = Bun.stringWidth(source) - Bun.stringWidth(replacement);
+        const trailing = replacement.match(/\s*$/u)?.[0].length ?? 0;
+        replacement =
+          replacement.slice(0, replacement.length - trailing)
+          + " ".repeat(Math.max(0, missing))
+          + replacement.slice(replacement.length - trailing);
+        ansiLines[row] = replaceAnsiPlainRangePreservingControls(
+          ansiLines[row],
+          start,
+          end,
+          replacement,
+        );
+      }
+      if (glyph === "☒") {
+        const checkboxAt = start + match[1].length;
+        ansiLines[row] = colorAnsiPlainRange(
+          ansiLines[row],
+          checkboxAt,
+          checkboxAt + glyph.length,
+          glyph,
+        );
+      }
+      plainLines[row] =
+        plainLines[row].slice(0, start)
+        + replacement
+        + plainLines[row].slice(end);
+    }
+  }
+  return ansiLines.join("\n");
 }
 
 export function tuiTableStripeRows(lines) {

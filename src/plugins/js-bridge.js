@@ -11,6 +11,7 @@ import { renderMarkdownWithHeadingIds } from "../cui/heading-ids.mjs";
 import { isMdcuiId, parseMdcuiIdentity, parseMdcuiIdSelector } from "../cui/identity.mjs";
 import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
 import {
+  replaceAnsiPlainRange,
   replaceAnsiPlainRangePreservingControls,
 } from "../cui/table-row-edit.mjs";
 
@@ -1243,6 +1244,7 @@ export function clearTuiSourceDependentState(buffer) {
   }
 
   delete buffer._mdcuiMutationMacros;
+  delete buffer._mdcuiDirtyTableCells;
   buffer._mdcuiReplayingMutations = false;
   buffer._mdcuiHeadingTaskListAnchors = null;
   buffer._mdcuiRerenderMismatch = null;
@@ -1708,6 +1710,11 @@ function _setTuiTableCell(buffer, heading, row, col, value) {
   }
   if (ansiLines) buffer._mdcuiAnsiText = ansiLines.join("\n");
   buffer._mdcuiLinkIndex = null;
+  if (!buffer._mdcuiReplayingMutations) {
+    if (!(buffer._mdcuiDirtyTableCells instanceof Set))
+      buffer._mdcuiDirtyTableCells = new Set();
+    buffer._mdcuiDirtyTableCells.add(`${heading.id}\0${row}\0${col}`);
+  }
   buffer.modified = true;
   return true;
 }
@@ -1869,19 +1876,6 @@ export function replayTuiMutationMacros(buffer) {
   buffer._mdcuiReplayingMutations = true;
   try {
     for (const macro of buffer._mdcuiMutationMacros) {
-      if (macro?.method === "cellText") {
-        const heading = _findHeading(buffer, macro.selector);
-        if (heading) {
-          _setTuiTableCell(
-            buffer,
-            heading,
-            macro.row,
-            macro.col,
-            macro.value,
-          );
-        }
-        continue;
-      }
       if (
         !macro
         || !["push", "pop", "shift", "unshift", "splice"].includes(macro.method)
@@ -2044,6 +2038,177 @@ export function tuiCheckboxRerenderMismatchMessage(buffer) {
   return `Checkbox state restore skipped${location}: count changed from ${mismatch.before} to ${mismatch.after}`;
 }
 
+function _captureTuiTables(buffer) {
+  const snapshots = [];
+  const dirty = buffer?._mdcuiDirtyTableCells;
+  if (!(dirty instanceof Set) || dirty.size === 0) return snapshots;
+  const ansiLines = typeof buffer?._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  for (const heading of _tuiSourceHeadings(buffer)) {
+    const table = _tuiHeadingTable(buffer, heading);
+    if (!table) continue;
+    snapshots.push({
+      id: heading.id,
+      cells: table.rows.map((visualLines, row) => {
+        const columns = visualLines[0]?.separators?.length - 1;
+        return Array.from(
+          { length: Math.max(0, columns) },
+          (_, col) => {
+            if (!dirty.has(`${heading.id}\0${row}\0${col}`)) return null;
+            const ansi = [];
+            const styles = [];
+            for (const { y, separators } of visualLines) {
+              const start = separators[col] + 2;
+              const end = separators[col + 1] - 1;
+              const content = String(buffer.lines[y] ?? "")
+                .slice(start, end).trimEnd();
+              const width = _tuiStringWidth(content);
+              if (
+                width > 0
+                && ansiLines
+                && typeof globalThis.Bun?.sliceAnsi === "function"
+              ) {
+                const displayStart = _tuiStringWidth(
+                  String(buffer.lines[y] ?? "").slice(0, start),
+                );
+                ansi.push(Bun.sliceAnsi(
+                  ansiLines[y] ?? "",
+                  displayStart,
+                  displayStart + width,
+                ));
+              } else {
+                ansi.push(content);
+              }
+              if (Array.isArray(buffer._ansiStyleLines?.[y])) {
+                styles.push(
+                  ...buffer._ansiStyleLines[y]
+                    .slice(start, start + content.length)
+                    .map(style => style ? { ...style } : null),
+                );
+              } else {
+                styles.push(...Array.from(
+                  { length: content.length },
+                  () => null,
+                ));
+              }
+            }
+            return {
+              text: _tuiTableCellText(buffer, table, row, col),
+              ansi: ansi.join(""),
+              styles,
+            };
+          },
+        );
+      }),
+    });
+  }
+  return snapshots;
+}
+
+function _restoreTuiTableCellAnsi(buffer, table, row, col, state) {
+  if (!state || typeof state !== "object") return;
+  const cell = _tuiTableCell(table, row, col);
+  if (!cell) return;
+  const ansiLines = typeof buffer._mdcuiAnsiText === "string"
+    ? buffer._mdcuiAnsiText.split("\n")
+    : null;
+  let displayOffset = 0;
+  let characterOffset = 0;
+
+  for (const { y, separators } of cell.visualLines) {
+    const start = separators[col] + 2;
+    const end = separators[col + 1] - 1;
+    const content = String(buffer.lines[y] ?? "")
+      .slice(start, end).trimEnd();
+    const width = _tuiStringWidth(content);
+    if (
+      ansiLines
+      && typeof state.ansi === "string"
+      && typeof globalThis.Bun?.sliceAnsi === "function"
+    ) {
+      ansiLines[y] = replaceAnsiPlainRange(
+        ansiLines[y] ?? "",
+        start,
+        start + content.length,
+        Bun.sliceAnsi(
+          state.ansi,
+          displayOffset,
+          displayOffset + width,
+        ),
+      );
+    }
+    const styleLine = buffer._ansiStyleLines?.[y];
+    if (Array.isArray(styleLine) && Array.isArray(state.styles)) {
+      styleLine.splice(
+        start,
+        content.length,
+        ...state.styles
+          .slice(characterOffset, characterOffset + content.length)
+          .map(style => style ? { ...style } : null),
+      );
+    }
+    displayOffset += width;
+    characterOffset += content.length;
+  }
+  if (ansiLines) buffer._mdcuiAnsiText = ansiLines.join("\n");
+}
+
+function _restoreTuiTables(buffer, snapshots) {
+  if (!Array.isArray(snapshots)) return;
+  const headings = new Map(
+    _tuiSourceHeadings(buffer).map(heading => [heading.id, heading]),
+  );
+  const resolved = snapshots.map((snapshot) => {
+    const heading = headings.get(snapshot.id);
+    const table = _tuiHeadingTable(buffer, heading);
+    return { snapshot, heading, table };
+  });
+  const mismatch = resolved.some(({ snapshot, table }) =>
+    !table
+    || table.rows.length !== snapshot.cells.length
+    || snapshot.cells.some((cells, row) =>
+      (table.rows[row]?.[0]?.separators?.length - 1) !== cells.length
+    )
+  );
+  if (mismatch) {
+    buffer._mdcuiRerenderMismatch = {
+      ...(buffer._mdcuiRerenderMismatch ?? {}),
+      tableCells: {
+        before: snapshots.length,
+        after: resolved.filter(item => item.table).length,
+      },
+    };
+    return;
+  }
+
+  const replaying = buffer._mdcuiReplayingMutations;
+  buffer._mdcuiReplayingMutations = true;
+  try {
+    for (const { snapshot, heading } of resolved) {
+      for (let row = 0; row < snapshot.cells.length; row++) {
+        for (let col = 0; col < snapshot.cells[row].length; col++) {
+          const state = snapshot.cells[row][col];
+          if (state == null) continue;
+          _setTuiTableCell(
+            buffer,
+            heading,
+            row,
+            col,
+            typeof state === "object" && state !== null
+              ? state.text
+              : state,
+          );
+          const table = _tuiHeadingTable(buffer, heading);
+          _restoreTuiTableCellAnsi(buffer, table, row, col, state);
+        }
+      }
+    }
+  } finally {
+    buffer._mdcuiReplayingMutations = replaying;
+  }
+}
+
 export function captureTuiRerenderState(buffer) {
   const headings = new Map(_tuiSourceHeadings(buffer).map((heading) => [heading.id, heading]));
   const hiddenHeadings = [];
@@ -2064,6 +2229,7 @@ export function captureTuiRerenderState(buffer) {
 
   return {
     hiddenHeadings,
+    tableCells: _captureTuiTables(buffer),
     checkboxStates: _tuiCheckboxRows(buffer).map(({ checked, style, ansi }) => ({
       checked,
       style,
@@ -2077,6 +2243,7 @@ export function restoreTuiRerenderState(buffer, snapshot) {
   if (!buffer || !snapshot) return;
   buffer._mdcuiRerenderMismatch = null;
   replayTuiMutationMacros(buffer);
+  _restoreTuiTables(buffer, snapshot.tableCells);
   _restoreTuiFenceBlocks(buffer, snapshot.fenceBlocks);
   _restoreTuiCheckboxStates(buffer, snapshot.checkboxStates ?? []);
 
@@ -2311,42 +2478,13 @@ export function createTuiSelector(getBuffer) {
                     normalizedCol,
                   );
                 }
-                const before = _tuiTableCellText(
-                  buffer,
-                  table,
-                  normalizedRow,
-                  normalizedCol,
-                );
-                const found = _setTuiTableCell(
+                _setTuiTableCell(
                   buffer,
                   heading,
                   normalizedRow,
                   normalizedCol,
                   args[0],
                 );
-                const afterTable = _tuiHeadingTable(buffer, heading);
-                const after = _tuiTableCellText(
-                  buffer,
-                  afterTable,
-                  normalizedRow,
-                  normalizedCol,
-                );
-                if (
-                  found
-                  && before !== after
-                  && buffer
-                  && !buffer._mdcuiReplayingMutations
-                ) {
-                  if (!Array.isArray(buffer._mdcuiMutationMacros))
-                    buffer._mdcuiMutationMacros = [];
-                  buffer._mdcuiMutationMacros.push({
-                    selector: String(selector),
-                    method: "cellText",
-                    row: normalizedRow,
-                    col: normalizedCol,
-                    value: String(args[0] ?? ""),
-                  });
-                }
               } catch {}
               return args.length > 0 ? cellSelection : "";
             },
@@ -2609,6 +2747,29 @@ export function tuiTableCellAtPosition(buffer, lineIndex, characterIndex) {
     }
   }
   return null;
+}
+
+export function markTuiTableCellDirtyAtPosition(buffer, lineIndex, characterIndex) {
+  const row = Math.trunc(Number(lineIndex));
+  const column = Math.trunc(Number(characterIndex));
+  if (!Array.isArray(buffer?.lines) || row < 0 || column < 0) return false;
+  for (const heading of _tuiSourceHeadings(buffer)) {
+    const table = _tuiHeadingTable(buffer, heading);
+    if (!table || row <= table.top || row >= table.bottom) continue;
+    for (let rowIndex = 0; rowIndex < table.rows.length; rowIndex++) {
+      const visual = table.rows[rowIndex].find(item => item.y === row);
+      if (!visual) continue;
+      for (let colIndex = 0; colIndex + 1 < visual.separators.length; colIndex++) {
+        if (column <= visual.separators[colIndex] || column >= visual.separators[colIndex + 1])
+          continue;
+        if (!(buffer._mdcuiDirtyTableCells instanceof Set))
+          buffer._mdcuiDirtyTableCells = new Set();
+        buffer._mdcuiDirtyTableCells.add(`${heading.id}\0${rowIndex}\0${colIndex}`);
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // ── micro global object ───────────────────────────────────────────────────────

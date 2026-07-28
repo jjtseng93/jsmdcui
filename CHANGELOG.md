@@ -6,6 +6,9 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ### Added
 
+- Convert a leading `[ ]`, `[x]`, or `[X]` in every Markdown table cell into
+  a fixed-width `☐`/green `☒` TUI control or a native WUI checkbox, while
+  leaving matching text elsewhere in the cell unchanged.
 - Add cross-interface `$('#heading-id').cell(row, col).text()` and
   `.text(value)` for reading or replacing zero-based cells in the
   heading-associated table. TUI wrapped cell lines are joined on read; writes
@@ -19,6 +22,10 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ### Fixed
 
+- Preserve the actual text, ANSI styles, and OSC 8 data inside every identified
+  TUI table cell across width rerenders, including direct cursor edits. Restore
+  snapshots into the newly sized rectangles instead of replaying only
+  `.cell().text()` calls.
 - Let TUI table overwrite mode accept double-width IME input such as Chinese
   by consuming adjacent editable columns without crossing cell padding.
 - Render a full-width divider between logical TUI table rows associated with
