@@ -2,6 +2,18 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.13.1] - 2026-07-29
+
+### Fixed
+
+- Rerender MDCUI buffers at their new pane width immediately after `vsplit`
+  and after a split pane closes.
+- Show a TUI message when checkbox state restoration is skipped because a
+  width rerender changed the number of checkboxes.
+- Restore every rendered `☐` and `☒`, including its exact ANSI style, by
+  full-text order across ordinary text, tables, and fenced blocks when their
+  total count remains unchanged.
+
 ## [0.13.0] - 2026-07-28
 
 ### Added
@@ -79,13 +91,6 @@ All notable user-visible changes to jsmdcui are documented here.
   with an adjacent or differently nested frame.
 - Coalesce overlapping TUI width rerenders and preserve terminal-input order,
   including split `Alt` key sequences.
-- Rerender MDCUI buffers at their new pane width immediately after `vsplit`
-  and after a split pane closes.
-- Show a TUI message when checkbox state restoration is skipped because a
-  width rerender changed the number of checkboxes.
-- Restore every rendered `☐` and `☒`, including its exact ANSI style, by
-  full-text order across ordinary text, tables, and fenced blocks when their
-  total count remains unchanged.
 - Prevent the key used to dismiss an alert, prompt, or shell pause from being
   replayed into the editor afterward.
 - Apply one shared timeout budget to remote Kitty images in a TUI render,
