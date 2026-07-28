@@ -22,10 +22,10 @@ demo.jpg
 | --- | --- | --- |
 | 寬度 | 800 | [−100](javascript:adjustCell(this,-100,1)) · [+100](javascript:adjustCell(this,100,1)) |
 | 高度 | 自動 | [自動 / 600 / 1080](javascript:cycleCell(this,['自動','600','1080'])) |
-| 維持長寬比 | [x] 啟用 | 切換勾選框 |
+| 維持長寬比 | [x] 啟用 | [切換](javascript:toggleCell(this)) |
 | 旋轉 | 0 | [下個 90°](javascript:cycleCell(this,['0','90','180','270'])) |
-| 不放大小圖 | [x] 啟用 | 切換勾選框 |
-| 自動校正方向 | [x] 啟用 | 切換勾選框 |
+| 不放大小圖 | [x] 啟用 | [切換](javascript:toggleCell(this)) |
+| 自動校正方向 | [x] 啟用 | [切換](javascript:toggleCell(this)) |
 
 ## 進階選項
 
@@ -34,8 +34,8 @@ demo.jpg
 | 濾鏡 | lanczos3 | [下一個](javascript:cycleCell(this,['lanczos3','lanczos2','mitchell','cubic','mks2013','mks2021','bilinear','linear','box','nearest'])) |
 | 亮度 | 1 | [−0.1](javascript:adjustCell(this,-0.1,0)) · [+0.1](javascript:adjustCell(this,0.1,0)) |
 | 飽和度 | 1 | [−0.1](javascript:adjustCell(this,-0.1,0)) · [+0.1](javascript:adjustCell(this,0.1,0)) |
-| 上下翻轉 | [ ] 啟用 | 切換勾選框 |
-| 左右翻轉 | [ ] 啟用 | 切換勾選框 |
+| 上下翻轉 | [ ] 啟用 | [切換](javascript:toggleCell(this)) |
+| 左右翻轉 | [ ] 啟用 | [切換](javascript:toggleCell(this)) |
 
 ## 輸出選項
 
@@ -43,11 +43,11 @@ demo.jpg
 | --- | --- | --- |
 | 格式 | JPEG | [JPEG / PNG](javascript:cycleCell(this,['JPEG','PNG'])) |
 | JPEG 品質 | 80 | [−5](javascript:adjustCell(this,-5,1,100)) · [+5](javascript:adjustCell(this,5,1,100)) |
-| 漸進式 JPEG | [ ] 啟用 | 切換勾選框 |
+| 漸進式 JPEG | [ ] 啟用 | [切換](javascript:toggleCell(this)) |
 | PNG 壓縮 | 6 | [−1](javascript:adjustCell(this,-1,0,9)) · [+1](javascript:adjustCell(this,1,0,9)) |
-| PNG 調色盤 | [ ] 啟用 | 切換勾選框 |
+| PNG 調色盤 | [ ] 啟用 | [切換](javascript:toggleCell(this)) |
 | 調色盤色數 | 256 | [−16](javascript:adjustCell(this,-16,2,256)) · [+16](javascript:adjustCell(this,16,2,256)) |
-| PNG 抖色 | [x] 啟用 | 切換勾選框 |
+| PNG 抖色 | [x] 啟用 | [切換](javascript:toggleCell(this)) |
 
 ## 最後一步
 - [跳到頂端](#bunimage-processor)
@@ -71,6 +71,11 @@ function optionChecked(tableId, row) {
 
 function valueCell(target) {
   return $(target).parent()?.lt() ?? null;
+}
+
+export function toggleCell(target) {
+  const cell = valueCell(target);
+  if (cell) cell.val(!cell.val());
 }
 
 export function cycleCell(target, values) {

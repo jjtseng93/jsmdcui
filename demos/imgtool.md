@@ -22,10 +22,10 @@ Metadata has not been read
 | --- | --- | --- |
 | Width | 800 | [−100](javascript:adjustCell(this,-100,1)) · [+100](javascript:adjustCell(this,100,1)) |
 | Height | auto | [Auto / 600 / 1080](javascript:cycleCell(this,['auto','600','1080'])) |
-| Preserve aspect ratio | [x] Enabled | Toggle the checkbox |
+| Preserve aspect ratio | [x] Enabled | [Toggle](javascript:toggleCell(this)) |
 | Rotate | 0 | [Next 90°](javascript:cycleCell(this,['0','90','180','270'])) |
-| Do not enlarge | [x] Enabled | Toggle the checkbox |
-| Auto orient | [x] Enabled | Toggle the checkbox |
+| Do not enlarge | [x] Enabled | [Toggle](javascript:toggleCell(this)) |
+| Auto orient | [x] Enabled | [Toggle](javascript:toggleCell(this)) |
 
 ## Advanced Options
 
@@ -34,8 +34,8 @@ Metadata has not been read
 | Filter | lanczos3 | [Next](javascript:cycleCell(this,['lanczos3','lanczos2','mitchell','cubic','mks2013','mks2021','bilinear','linear','box','nearest'])) |
 | Brightness | 1 | [−0.1](javascript:adjustCell(this,-0.1,0)) · [+0.1](javascript:adjustCell(this,0.1,0)) |
 | Saturation | 1 | [−0.1](javascript:adjustCell(this,-0.1,0)) · [+0.1](javascript:adjustCell(this,0.1,0)) |
-| Flip vertically | [ ] Enabled | Toggle the checkbox |
-| Flip horizontally | [ ] Enabled | Toggle the checkbox |
+| Flip vertically | [ ] Enabled | [Toggle](javascript:toggleCell(this)) |
+| Flip horizontally | [ ] Enabled | [Toggle](javascript:toggleCell(this)) |
 
 ## Output Options
 
@@ -43,11 +43,11 @@ Metadata has not been read
 | --- | --- | --- |
 | Format | JPEG | [JPEG / PNG](javascript:cycleCell(this,['JPEG','PNG'])) |
 | JPEG quality | 80 | [−5](javascript:adjustCell(this,-5,1,100)) · [+5](javascript:adjustCell(this,5,1,100)) |
-| Progressive JPEG | [ ] Enabled | Toggle the checkbox |
+| Progressive JPEG | [ ] Enabled | [Toggle](javascript:toggleCell(this)) |
 | PNG compression | 6 | [−1](javascript:adjustCell(this,-1,0,9)) · [+1](javascript:adjustCell(this,1,0,9)) |
-| PNG palette | [ ] Enabled | Toggle the checkbox |
+| PNG palette | [ ] Enabled | [Toggle](javascript:toggleCell(this)) |
 | Palette colors | 256 | [−16](javascript:adjustCell(this,-16,2,256)) · [+16](javascript:adjustCell(this,16,2,256)) |
-| PNG dither | [x] Enabled | Toggle the checkbox |
+| PNG dither | [x] Enabled | [Toggle](javascript:toggleCell(this)) |
 
 ## Final step
 - [Jump to Top](#bunimage-processor)
@@ -71,6 +71,11 @@ function optionChecked(tableId, row) {
 
 function valueCell(target) {
   return $(target).parent()?.lt() ?? null;
+}
+
+export function toggleCell(target) {
+  const cell = valueCell(target);
+  if (cell) cell.val(!cell.val());
 }
 
 export function cycleCell(target, values) {

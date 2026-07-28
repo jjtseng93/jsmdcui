@@ -377,6 +377,7 @@ test("--demo-imgtool uses generic discovery for the table image processor", asyn
     expect(written).toContain("# Bun.Image Processor");
     expect(written).toContain("javascript:readMetadata()");
     expect(written).toContain("optionText('common-options'");
+    expect(written).toContain("cell.val(!cell.val())");
     expect(Bun.stripANSI(result.stdout.toString())).toContain("Bun.Image Processor");
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -416,6 +417,7 @@ test("--demo-imgtool-zh uses generic discovery for the table image processor", a
     expect(written).toContain("先把本機圖片路徑貼到下方");
     expect(written).toContain("javascript:readMetadata()");
     expect(written).toContain("optionText('常用選項'");
+    expect(written).toContain("cell.val(!cell.val())");
     expect(Bun.stripANSI(result.stdout.toString())).toContain("先把本機圖片路徑貼到下方");
   } finally {
     await rm(dir, { recursive: true, force: true });
