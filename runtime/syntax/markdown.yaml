@@ -59,4 +59,6 @@ rules:
 # email url tel number range color
 # date time datetime-local month week 
 # checkbox radio file hidden image button submit reset
-
+# event.preventDefault
+# onMdcuiExit removeData
+# push pop shift unshift splice slice
