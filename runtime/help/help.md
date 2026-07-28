@@ -506,7 +506,8 @@ The available selector methods are:
 | `★★ .splice(start, deleteCount, ...items)` | Remove and insert direct task items; return the removed labels as an array. | Same. |
 | `★★ .slice(start, end)` | Return `{ value, checked }` snapshots without changing the direct task items. | Same. |
 | `.cell(row, col).text()` | Read a heading-associated table cell using zero-based coordinates. Wrapped visual lines are joined without a separator. | Not available. |
-| `.cell(row, col).text(value)` | Replace text inside the cell's existing rendered rectangle; excess text is truncated and table borders stay fixed. | Not available. |
+| `.cell(row, col).text(value)` | Replace only visible text inside the cell's existing rendered rectangle; excess text is truncated while table borders, ANSI styles, and OSC 8 links stay intact. | Not available. |
+| `.cell(...).row`, `.col`, `.left()`, `.right()`, `.up()`, `.down()` | Inspect zero-based cell coordinates or move to a physical neighbor. `.lt()`, `.rt()`, and `.dn()` are aliases. Moving outside the table returns `null`. | Not available. |
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
 

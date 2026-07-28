@@ -10,7 +10,9 @@ import { Loc } from "../buffer/loc.js";
 import { renderMarkdownWithHeadingIds } from "../cui/heading-ids.mjs";
 import { isMdcuiId, parseMdcuiIdentity, parseMdcuiIdSelector } from "../cui/identity.mjs";
 import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
-import { replaceAnsiPlainRange } from "../cui/table-row-edit.mjs";
+import {
+  replaceAnsiPlainRangePreservingControls,
+} from "../cui/table-row-edit.mjs";
 
 // ── Action registry ──────────────────────────────────────────────────────────
 
@@ -1599,6 +1601,37 @@ function _tuiStringWidth(value) {
     : Array.from(String(value ?? "")).length;
 }
 
+function _tuiReplacementStyles(line, styles, start, end, replacement) {
+  const source = String(line ?? "").slice(start, end);
+  const sourceStyles = Array.isArray(styles) ? styles.slice(start, end) : [];
+  const sourceGraphemes = _tableCellSegmenter
+    ? [..._tableCellSegmenter.segment(source)].map(item => ({
+      text: item.segment,
+      index: item.index,
+    }))
+    : Array.from(source).map((text, index) => ({ text, index }));
+  const styleByColumn = [];
+  for (const item of sourceGraphemes) {
+    const style = sourceStyles[item.index] ?? null;
+    const width = Math.max(1, _tuiStringWidth(item.text));
+    for (let column = 0; column < width; column++) styleByColumn.push(style);
+  }
+
+  const result = [];
+  let column = 0;
+  const replacementGraphemes = _tableCellSegmenter
+    ? [..._tableCellSegmenter.segment(replacement)].map(item => item.segment)
+    : Array.from(replacement);
+  for (const grapheme of replacementGraphemes) {
+    const style = styleByColumn[
+      Math.min(column, Math.max(0, styleByColumn.length - 1))
+    ] ?? null;
+    for (let index = 0; index < grapheme.length; index++) result.push(style);
+    column += Math.max(1, _tuiStringWidth(grapheme));
+  }
+  return result;
+}
+
 function _setTuiTableCell(buffer, heading, row, col, value) {
   const table = _tuiHeadingTable(buffer, heading);
   const cell = _tuiTableCell(table, row, col);
@@ -1647,15 +1680,20 @@ function _setTuiTableCell(buffer, heading, row, col, value) {
     const oldLine = String(buffer.lines[replacement.y] ?? "");
     const styleLine = buffer._ansiStyleLines?.[replacement.y];
     if (Array.isArray(styleLine)) {
-      const style = styleLine[replacement.start] ?? null;
       styleLine.splice(
         replacement.start,
         replacement.end - replacement.start,
-        ...Array.from({ length: replacement.text.length }, () => style),
+        ..._tuiReplacementStyles(
+          oldLine,
+          styleLine,
+          replacement.start,
+          replacement.end,
+          replacement.text,
+        ),
       );
     }
     if (ansiLines) {
-      ansiLines[replacement.y] = replaceAnsiPlainRange(
+      ansiLines[replacement.y] = replaceAnsiPlainRangePreservingControls(
         ansiLines[replacement.y] ?? "",
         replacement.start,
         replacement.end,
@@ -2241,45 +2279,118 @@ export function createTuiSelector(getBuffer) {
         }
       },
       cell(row, col) {
-        const cellSelection = {
-          text(...args) {
+        const makeCellSelection = (cellRow, cellCol) => {
+          const normalizedRow = Number(cellRow);
+          const normalizedCol = Number(cellCol);
+          const cellSelection = {
+            get row() {
+              return normalizedRow;
+            },
+            get col() {
+              return normalizedCol;
+            },
+            text(...args) {
+              try {
+                const buffer = getBuffer?.();
+                const heading = _findHeading(buffer, selector);
+                const table = _tuiHeadingTable(buffer, heading);
+                if (args.length === 0) {
+                  return _tuiTableCellText(
+                    buffer,
+                    table,
+                    normalizedRow,
+                    normalizedCol,
+                  );
+                }
+                const before = _tuiTableCellText(
+                  buffer,
+                  table,
+                  normalizedRow,
+                  normalizedCol,
+                );
+                const found = _setTuiTableCell(
+                  buffer,
+                  heading,
+                  normalizedRow,
+                  normalizedCol,
+                  args[0],
+                );
+                const afterTable = _tuiHeadingTable(buffer, heading);
+                const after = _tuiTableCellText(
+                  buffer,
+                  afterTable,
+                  normalizedRow,
+                  normalizedCol,
+                );
+                if (
+                  found
+                  && before !== after
+                  && buffer
+                  && !buffer._mdcuiReplayingMutations
+                ) {
+                  if (!Array.isArray(buffer._mdcuiMutationMacros))
+                    buffer._mdcuiMutationMacros = [];
+                  buffer._mdcuiMutationMacros.push({
+                    selector: String(selector),
+                    method: "cellText",
+                    row: normalizedRow,
+                    col: normalizedCol,
+                    value: String(args[0] ?? ""),
+                  });
+                }
+              } catch {}
+              return args.length > 0 ? cellSelection : "";
+            },
+            left() {
+              return neighborCell(0, -1);
+            },
+            lt() {
+              return neighborCell(0, -1);
+            },
+            right() {
+              return neighborCell(0, 1);
+            },
+            rt() {
+              return neighborCell(0, 1);
+            },
+            up() {
+              return neighborCell(-1, 0);
+            },
+            down() {
+              return neighborCell(1, 0);
+            },
+            dn() {
+              return neighborCell(1, 0);
+            },
+          };
+          const neighborCell = (rowDelta, colDelta) => {
             try {
               const buffer = getBuffer?.();
               const heading = _findHeading(buffer, selector);
               const table = _tuiHeadingTable(buffer, heading);
-              if (args.length === 0)
-                return _tuiTableCellText(buffer, table, row, col);
-              const before = _tuiTableCellText(buffer, table, row, col);
-              const found = _setTuiTableCell(
-                buffer,
-                heading,
-                row,
-                col,
-                args[0],
-              );
-              const afterTable = _tuiHeadingTable(buffer, heading);
-              const after = _tuiTableCellText(buffer, afterTable, row, col);
               if (
-                found
-                && before !== after
-                && buffer
-                && !buffer._mdcuiReplayingMutations
-              ) {
-                if (!Array.isArray(buffer._mdcuiMutationMacros))
-                  buffer._mdcuiMutationMacros = [];
-                buffer._mdcuiMutationMacros.push({
-                  selector: String(selector),
-                  method: "cellText",
-                  row: Number(row),
-                  col: Number(col),
-                  value: String(args[0] ?? ""),
-                });
-              }
-            } catch {}
-            return args.length > 0 ? cellSelection : "";
-          },
+                !_tuiTableCell(
+                  table,
+                  normalizedRow,
+                  normalizedCol,
+                )
+              ) return null;
+              const nextRow = normalizedRow + rowDelta;
+              if (nextRow < 0 || nextRow >= table.rows.length) return null;
+              const columnCount =
+                table.rows[nextRow]?.[0]?.separators?.length - 1;
+              if (!Number.isInteger(columnCount) || columnCount < 1)
+                return null;
+              const nextCol = normalizedCol + colDelta;
+              if (nextCol < 0 || nextCol >= columnCount) return null;
+              return makeCellSelection(nextRow, nextCol);
+            } catch {
+              return null;
+            }
+          };
+          return cellSelection;
         };
-        return cellSelection;
+        return makeCellSelection(row, col);
       },
       show() {
         try {

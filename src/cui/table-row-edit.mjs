@@ -168,3 +168,34 @@ export function replaceAnsiPlainRange(ansiLine, start, end, replacement) {
   const rawEnd = ansiRawOffset(input, end, false);
   return input.slice(0, rawStart) + replacement + input.slice(rawEnd);
 }
+
+export function replaceAnsiPlainRangePreservingControls(
+  ansiLine,
+  start,
+  end,
+  replacement,
+) {
+  const input = String(ansiLine ?? "");
+  const rawStart = ansiRawOffset(input, start, true);
+  const rawEnd = ansiRawOffset(input, end, false);
+  const segment = input.slice(rawStart, rawEnd);
+  let controls = "";
+  let inserted = false;
+
+  for (let raw = 0; raw < segment.length;) {
+    if (segment[raw] === "\x1b") {
+      const controlEnd = ansiControlEnd(segment, raw);
+      controls += segment.slice(raw, controlEnd);
+      raw = controlEnd;
+      continue;
+    }
+    if (!inserted) {
+      controls += String(replacement ?? "");
+      inserted = true;
+    }
+    const codePoint = segment.codePointAt(raw);
+    raw += codePoint > 0xffff ? 2 : 1;
+  }
+  if (!inserted) controls += String(replacement ?? "");
+  return input.slice(0, rawStart) + controls + input.slice(rawEnd);
+}

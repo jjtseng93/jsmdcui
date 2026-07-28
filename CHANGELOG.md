@@ -9,7 +9,11 @@ All notable user-visible changes to jsmdcui are documented here.
 - Add TUI `$('#heading-id').cell(row, col).text()` and `.text(value)` for
   reading or replacing zero-based cells in the heading-associated table.
   Wrapped cell lines are joined on read; writes remain inside the existing
-  rendered rectangle and survive width rerenders.
+  rendered rectangle, preserve ANSI styles and OSC 8 links, and survive width
+  rerenders. Cell selections expose
+  `.row` and `.col`, plus bounded `.left()`, `.right()`, `.up()`, and `.down()`
+  navigation that returns `null` outside the table, with `.lt()`, `.rt()`, and
+  `.dn()` convenience aliases.
 
 ### Fixed
 

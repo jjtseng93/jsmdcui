@@ -1190,6 +1190,30 @@ describe("TUI heading-associated table cells", () => {
     expect(table.cell(-1, 0).text("ignored")).toBeDefined();
   });
 
+  test("cell properties and physical neighbors stay inside the table", () => {
+    const { $ } = tuiTableSelector(tableMarkdown, 24);
+    const table = $("#table-with-id");
+    const cell = table.cell(1, 0);
+
+    expect(cell.row).toBe(1);
+    expect(cell.col).toBe(0);
+    expect(cell.right().text()).toBe("ready");
+    expect(cell.rt().text()).toBe("ready");
+    expect(cell.up().text()).toBe("Name");
+    expect(cell.down().text()).toBe("other");
+    expect(cell.dn().text()).toBe("other");
+    expect(cell.right().lt().text()).toBe("very longcontenthere");
+    expect(cell.right().down().text()).toBe("done");
+    expect(table.cell(0, 0).left()).toBeNull();
+    expect(table.cell(0, 0).lt()).toBeNull();
+    expect(table.cell(0, 0).up()).toBeNull();
+    expect(table.cell(2, 1).right()).toBeNull();
+    expect(table.cell(2, 1).rt()).toBeNull();
+    expect(table.cell(2, 1).down()).toBeNull();
+    expect(table.cell(2, 1).dn()).toBeNull();
+    expect(table.cell(99, 0).left()).toBeNull();
+  });
+
   test("cell text replacement stays inside its rectangle and updates ANSI", () => {
     const { $, buffer } = tuiTableSelector(tableMarkdown, 24);
     const cell = $("#table-with-id").cell(2, 1);
@@ -1208,6 +1232,26 @@ describe("TUI heading-associated table cells", () => {
       col: 1,
       value: "更新✅abcdef",
     });
+  });
+
+  test("cell text replacement preserves every ANSI and OSC 8 control", () => {
+    const linkedMarkdown = `## Linked Table
+
+| Name | Action |
+| --- | --- |
+| item | [open](javascript:run()) |
+`;
+    const { $, buffer } = tuiTableSelector(linkedMarkdown, 40);
+    const controls = value => String(value).match(
+      /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][\s\S]*?(?:\x07|\x1b\\))/gu,
+    ) ?? [];
+    const before = controls(buffer._mdcuiAnsiText);
+
+    $("#linked-table").cell(1, 1).text("執行");
+
+    expect($("#linked-table").cell(1, 1).text()).toBe("執行");
+    expect(controls(buffer._mdcuiAnsiText)).toEqual(before);
+    expect(buffer._mdcuiAnsiText).toContain("javascript:run()");
   });
 
   test("cell replacements replay after a width rerender", () => {

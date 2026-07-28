@@ -5,6 +5,7 @@ import {
   isMdcuiTableRow,
   overwriteMdcuiTableRow,
   replaceAnsiPlainRange,
+  replaceAnsiPlainRangePreservingControls,
 } from "../src/cui/table-row-edit.mjs";
 
 test("the minimal rendered table-row check requires both vertical edges", () => {
@@ -102,4 +103,24 @@ test("ANSI range replacement keeps one surrounding OSC 8 link", () => {
   expect(Bun.stripANSI(replaced)).toBe("  haha");
   expect(replaced.match(/\x1b]8;;javascript:test\(\)\x1b\\/g)).toHaveLength(1);
   expect(replaced.match(/\x1b]8;;\x1b\\/g)).toHaveLength(1);
+});
+
+test("text-only ANSI replacement retains controls inside the changed range", () => {
+  const ansi =
+    "\x1b[31mA\x1b[32mB"
+    + "\x1b]8;;javascript:test()\x1b\\C\x1b]8;;\x1b\\"
+    + "\x1b[0m";
+  const replaced = replaceAnsiPlainRangePreservingControls(
+    ansi,
+    0,
+    3,
+    "XYZ",
+  );
+
+  expect(Bun.stripANSI(replaced)).toBe("XYZ");
+  expect(replaced).toBe(
+    "\x1b[31mXYZ\x1b[32m"
+    + "\x1b]8;;javascript:test()\x1b\\\x1b]8;;\x1b\\"
+    + "\x1b[0m",
+  );
 });
