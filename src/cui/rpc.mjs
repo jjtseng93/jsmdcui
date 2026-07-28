@@ -683,10 +683,14 @@ function createWebCellSelection(table, row, col) {
       replaceWebTextNodes(cell, args[0]);
       return selection;
     },
-    val() {
+    val(...args) {
       const cell = resolveCell();
-      if (!cell) return "";
+      if (!cell) return args.length > 0 ? selection : "";
       const checkbox = cell.querySelector?.('input[type="checkbox"]');
+      if (args.length > 0) {
+        if (checkbox) checkbox.checked = Boolean(args[0]);
+        return selection;
+      }
       return checkbox ? Boolean(checkbox.checked) : String(cell.textContent ?? "");
     },
     left() { return neighbor(0, -1); },

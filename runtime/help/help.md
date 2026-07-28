@@ -508,6 +508,7 @@ The available selector methods are:
 | `★★ .cell(row, col).text()` | Read a heading-associated table cell using zero-based coordinates. Wrapped visual lines are joined without a separator. | Read the corresponding `th` or `td` text. |
 | `★★ .cell(row, col).text(value)` | Replace text within the cell's available space; excess text is truncated while table borders, formatting, and links stay intact. | Replace cell text while retaining existing elements such as links. |
 | `★★ .cell(row, col).val()` | Return `true` or `false` for the first `☒` or `☐` in the cell; if there is no checkbox, return the cell text. | Return the first checkbox input's checked state, or the cell text when none exists. |
+| `★★ .cell(row, col).val(checked)` | Set the first checkbox in the cell from a boolean value. A cell without a checkbox is unchanged. | Same. |
 | `★★ .cell(...).row`, `.col`, `.left()`, `.right()`, `.up()`, `.down()` | Inspect zero-based cell coordinates or move to a physical neighbor. `.lt()`, `.rt()`, and `.dn()` are aliases. Moving outside the table returns `null`. | Same. |
 | `★★ .parent()` | From a link event's `$(this)`, return its containing table cell, or `null`. | From an element inside `th` or `td`, return the same cell selection. |
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |

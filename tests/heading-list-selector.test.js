@@ -1225,13 +1225,19 @@ describe("TUI heading-associated table cells", () => {
 | plain | [x] checked |
 | empty | [ ] pending |
 `;
-    const { $ } = tuiTableSelector(markdown, 30);
+    const { $, buffer } = tuiTableSelector(markdown, 30);
     const table = $("#checks");
 
     expect(table.cell(0, 0).val()).toBe("Name");
     expect(table.cell(1, 0).val()).toBe("plain");
     expect(table.cell(1, 1).val()).toBe(true);
     expect(table.cell(2, 1).val()).toBe(false);
+    const uncheckedCell = table.cell(2, 1);
+    expect(uncheckedCell.val(true)).toBe(uncheckedCell);
+    expect(uncheckedCell.val()).toBe(true);
+    expect(table.cell(1, 1).val(false).val()).toBe(false);
+    expect(table.cell(1, 0).val(true).text()).toBe("plain");
+    expect(buffer._mdcuiAnsiText).toContain("\x1b[32m☒");
     expect(table.cell(99, 0).val()).toBe("");
   });
 
@@ -1917,6 +1923,10 @@ describe("WUI heading-associated table cells", () => {
     expect($("#table-with-id").cell(1, 1).val()).toBe(true);
     checkbox.checked = false;
     expect($("#table-with-id").cell(1, 1).val()).toBe(false);
+    const checkedCell = $("#table-with-id").cell(1, 1);
+    expect(checkedCell.val(true)).toBe(checkedCell);
+    expect(checkedCell.val()).toBe(true);
+    expect($("#table-with-id").cell(1, 0).val(false).text()).toBe("item");
     expect($("#table-with-id").cell(99, 0).val()).toBe("");
   });
 });

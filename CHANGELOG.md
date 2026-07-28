@@ -23,7 +23,8 @@ All notable user-visible changes to jsmdcui are documented here.
   containing cell in both interfaces.
 - Add cross-interface `.cell(row, col).val()`. It returns the first checkbox's
   checked state as `true` or `false`, or falls back to the cell text when the
-  cell has no checkbox.
+  cell has no checkbox. Passing a boolean updates the first checkbox in either
+  interface.
 - Make generated WUI tables directly editable while retaining embedded
   checkbox and link elements.
 

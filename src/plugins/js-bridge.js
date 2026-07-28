@@ -11,6 +11,7 @@ import { renderMarkdownWithHeadingIds } from "../cui/heading-ids.mjs";
 import { isMdcuiId, parseMdcuiIdentity, parseMdcuiIdSelector } from "../cui/identity.mjs";
 import { updateAnsiTaskCheckbox } from "../cui/task-checkbox.mjs";
 import {
+  colorAnsiPlainRange,
   replaceAnsiPlainRange,
   replaceAnsiPlainRangePreservingControls,
 } from "../cui/table-row-edit.mjs";
@@ -1586,6 +1587,62 @@ function _tuiTableCellText(buffer, table, row, col) {
   }).join("");
 }
 
+function _setTuiTableCellCheckbox(buffer, heading, row, col, checked) {
+  const table = _tuiHeadingTable(buffer, heading);
+  const cell = _tuiTableCell(table, row, col);
+  if (!cell) return false;
+  let target = null;
+  for (const { y, separators } of cell.visualLines) {
+    const start = separators[cell.columnIndex] + 2;
+    const end = separators[cell.columnIndex + 1] - 1;
+    const line = String(buffer.lines[y] ?? "");
+    const offset = line.slice(start, end).search(/[☐☒]/u);
+    if (offset >= 0) {
+      target = { y, x: start + offset };
+      break;
+    }
+  }
+  if (!target) return false;
+  const glyph = checked ? "☒" : "☐";
+  if (buffer.lines[target.y][target.x] === glyph) return true;
+  if (!buffer._mdcuiReplayingMutations) buffer.pushUndo?.(true);
+  buffer.lines[target.y] =
+    buffer.lines[target.y].slice(0, target.x)
+    + glyph
+    + buffer.lines[target.y].slice(target.x + 1);
+  if (typeof buffer._mdcuiAnsiText === "string") {
+    const ansiLines = buffer._mdcuiAnsiText.split("\n");
+    ansiLines[target.y] = updateAnsiTaskCheckbox(
+      ansiLines[target.y] ?? "",
+      target.x,
+      checked,
+    );
+    if (checked) {
+      ansiLines[target.y] = colorAnsiPlainRange(
+        ansiLines[target.y],
+        target.x,
+        target.x + 1,
+        "☒",
+      );
+    }
+    buffer._mdcuiAnsiText = ansiLines.join("\n");
+  }
+  const styles = buffer._ansiStyleLines?.[target.y];
+  if (Array.isArray(styles)) {
+    const base = styles[target.x + 1] ?? styles[target.x - 1] ?? null;
+    styles[target.x] = checked
+      ? { ...(base ?? {}), fg: "green" }
+      : (base ? { ...base } : null);
+  }
+  if (!(buffer._mdcuiDirtyTableCells instanceof Set))
+    buffer._mdcuiDirtyTableCells = new Set();
+  buffer._mdcuiDirtyTableCells.add(`${heading.id}\0${row}\0${col}`);
+  buffer._mdcuiLinkIndex = null;
+  buffer.invalidateHighlightFrom?.(target.y);
+  buffer.modified = true;
+  return true;
+}
+
 const _tableCellSegmenter = typeof Intl.Segmenter === "function"
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
   : null;
@@ -2488,10 +2545,20 @@ export function createTuiSelector(getBuffer) {
               } catch {}
               return args.length > 0 ? cellSelection : "";
             },
-            val() {
+            val(...args) {
               try {
                 const buffer = getBuffer?.();
                 const heading = _findHeading(buffer, selector);
+                if (args.length > 0) {
+                  _setTuiTableCellCheckbox(
+                    buffer,
+                    heading,
+                    normalizedRow,
+                    normalizedCol,
+                    Boolean(args[0]),
+                  );
+                  return cellSelection;
+                }
                 const table = _tuiHeadingTable(buffer, heading);
                 const text = _tuiTableCellText(
                   buffer,
@@ -2502,7 +2569,7 @@ export function createTuiSelector(getBuffer) {
                 const checkbox = /[☐☒]/u.exec(text)?.[0];
                 return checkbox ? checkbox === "☒" : text;
               } catch {
-                return "";
+                return args.length > 0 ? cellSelection : "";
               }
             },
             left() {
