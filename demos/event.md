@@ -1,5 +1,7 @@
 #!/usr/bin/env jsmdcui
 
+#### top
+
 # Event Context Demo
 
 This app demonstrates the same event-facing API in the TUI and WUI.
@@ -8,9 +10,9 @@ keyboard field to inspect key events.
 
 ## Link Events
 
-> Event output appears in the **Output Console at the bottom of this app**.
-> After activating an item, scroll to the bottom to inspect the result.
-
+- Outputs appear in the bottom console
+  * [**Jump to Output Console**](#output-console)
+- .
 - [Inspect this link](javascript:inspectLink(this,event))
 - [Inspect another link](javascript:inspectLink(this,event))
 - [**Inspect rich link content**](javascript:inspectLink(this,event))
@@ -30,6 +32,9 @@ event.currentTarget === this
 ```
 
 ## Keyboard Events
+
+- Outputs appear in the bottom console
+  * [**Jump to Output Console**](#output-console)
 
 ```text#event-keyboard @keydown.prevent="inspectKey(this,event)"
 Put the cursor here and press any key
@@ -61,11 +66,19 @@ You can also activate the first visible character of a heading with mouse,
 This content is controlled by `$('#details').show()`, `.hide()`, and `.toggle()`.
 The heading itself remains visible.
 
+- [**Jump to Top**](#top)
+- .
+- [Jump to key event](#keyboard-events)
+
 ## Output Console
 
 ```text#event-result
 No event yet
 ```
+
+
+
+
 
 ```js front
 const EVENT_HEADING_ID = 'event-context-demo';
