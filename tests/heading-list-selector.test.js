@@ -1217,6 +1217,24 @@ describe("TUI heading-associated table cells", () => {
     expect(table.cell(99, 0).left()).toBeNull();
   });
 
+  test("cell val returns the first checkbox state or falls back to text", () => {
+    const markdown = `## Checks
+
+| Name | State |
+| --- | --- |
+| plain | [x] checked |
+| empty | [ ] pending |
+`;
+    const { $ } = tuiTableSelector(markdown, 30);
+    const table = $("#checks");
+
+    expect(table.cell(0, 0).val()).toBe("Name");
+    expect(table.cell(1, 0).val()).toBe("plain");
+    expect(table.cell(1, 1).val()).toBe(true);
+    expect(table.cell(2, 1).val()).toBe(false);
+    expect(table.cell(99, 0).val()).toBe("");
+  });
+
   test("cell text replacement stays inside its rectangle and updates ANSI", () => {
     const { $, buffer } = tuiTableSelector(tableMarkdown, 24);
     const cell = $("#table-with-id").cell(2, 1);
@@ -1883,6 +1901,23 @@ describe("WUI heading-associated table cells", () => {
     expect(parent.text()).toBe("執行");
     expect(anchor.parentElement.textContent).toBe("執行");
     expect(anchor.parentElement.children[0]).toBe(anchor);
+  });
+
+  test("cell val returns the first checkbox state or falls back to text", () => {
+    const { $, documentObject, table } = webTableSelector();
+    const checkbox = documentObject.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    table.children[1].children[1].insertBefore(
+      checkbox,
+      table.children[1].children[1].children[0],
+    );
+
+    expect($("#table-with-id").cell(1, 0).val()).toBe("item");
+    expect($("#table-with-id").cell(1, 1).val()).toBe(true);
+    checkbox.checked = false;
+    expect($("#table-with-id").cell(1, 1).val()).toBe(false);
+    expect($("#table-with-id").cell(99, 0).val()).toBe("");
   });
 });
 

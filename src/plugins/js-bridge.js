@@ -2488,6 +2488,23 @@ export function createTuiSelector(getBuffer) {
               } catch {}
               return args.length > 0 ? cellSelection : "";
             },
+            val() {
+              try {
+                const buffer = getBuffer?.();
+                const heading = _findHeading(buffer, selector);
+                const table = _tuiHeadingTable(buffer, heading);
+                const text = _tuiTableCellText(
+                  buffer,
+                  table,
+                  normalizedRow,
+                  normalizedCol,
+                );
+                const checkbox = /[☐☒]/u.exec(text)?.[0];
+                return checkbox ? checkbox === "☒" : text;
+              } catch {
+                return "";
+              }
+            },
             left() {
               return neighborCell(0, -1);
             },
