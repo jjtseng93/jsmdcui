@@ -2,6 +2,60 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.13.0] - 2026-07-28
+
+### Added
+
+- Add cross-interface heading selection APIs for stable `.id` values,
+  `.text()`, `.show()`, `.hide()`, `.toggle()`, `.data()`, and
+  `.removeData()`.
+- Reserve the first visible grapheme of an identified heading as its section
+  toggle. It can be activated with a mouse click, `Enter`, or `Space`, while
+  the heading itself remains visible.
+- Give local `javascript:` links and fenced keyboard handlers matching `this`,
+  `event.target`, and `event.currentTarget` values in both interfaces,
+  including keyboard modifiers and cancellation state.
+- Add the `--demo-event` example for link and keyboard events, nested
+  selections, heading data, and heading visibility.
+- Preserve heading-list mutations, checkbox states, fenced-control contents,
+  and collapsed headings when a terminal-width change rerenders a TUI
+  document.
+
+### Changed
+
+- Canonicalize a `$()` object argument with a legal MDCUI ID immediately to
+  the corresponding `#id` selection. Other object fields are discarded,
+  wrapping may be nested to any depth, and objects without a legal ID retain
+  generic object-target behavior.
+- Wrap WUI heading ranges in nested `<section>` elements so their visibility
+  boundaries match the TUI.
+- Keep per-ID user data stable while headings are hidden, restored, or
+  replaced in the WUI DOM. `.removeData()` removes only user-owned data.
+- Return semantic heading HTML without exposing the internal first-grapheme
+  toggle wrapper.
+
+### Fixed
+
+- Prevent a heading concealed by an ancestor from resolving to an unrelated
+  visible heading or mutating that heading's task list.
+- Make `.show()`, `.hide()`, and `.toggle()` update nested headings correctly
+  while one or more ancestors remain collapsed.
+- Replay task-list mutations made through nested ID selections after a TUI
+  rerender.
+- Prevent content, collapsed sections, or runtime list mutations from the
+  previous source from reappearing after a document is reopened, while
+  retaining user data.
+- Let an earlier WUI click handler cancel a `javascript:` link and expose the
+  correct initial `event.defaultPrevented` state to the evaluated handler.
+- Resolve legal pure IDs reliably in the WUI when their characters have CSS
+  selector meaning.
+- Preserve quoted `>` characters in heading inline-HTML attributes when
+  adding the toggle target.
+- Keep standalone `<code>` elements opaque to WUI heading-section generation,
+  so heading-like content inside them cannot create broken sections.
+- Treat the first visible heading character as one complete grapheme cluster,
+  avoiding splits in combining-character and ZWJ emoji sequences.
+
 ## [0.12.0] - 2026-07-27
 
 This release makes Markdown images embedded by Bun's HTML bundler available to

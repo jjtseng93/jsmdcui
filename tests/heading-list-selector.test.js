@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createWebDollar } from "../src/cui/rpc.mjs";
 import {
   captureTuiRerenderState,
+  clearTuiSourceDependentState,
   createTuiSelector,
   restoreTuiRerenderState,
   spliceTuiBufferLines,
@@ -181,6 +182,41 @@ Parent has no list.
     expect($("#child").val()).toEqual(["Child checkbox"]);
     expect(buffer.lines.some((line) => line.includes("Must not reach child"))).toBe(false);
   });
+
+  test("a heading concealed by its parent cannot resolve to an earlier same-level heading", () => {
+    const source = `## Wrong
+
+- [x] Wrong item
+
+# Parent
+
+## Hidden
+
+- [x] Hidden item
+
+## Also hidden
+
+Body.
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    const hidden = $("#hidden");
+
+    $("#parent").hide();
+    expect(hidden.line()).toBe(0);
+    expect(hidden.text()).toBe("");
+    expect(hidden.val()).toEqual([]);
+    expect(hidden.slice()).toEqual([]);
+    expect(hidden.push("Must not reach Wrong")).toBe(0);
+    expect(hidden.pop()).toBeUndefined();
+    expect(hidden.shift()).toBeUndefined();
+    expect(hidden.unshift("Must not reach Wrong first")).toBe(0);
+    expect(hidden.splice(0, 1, "Must not replace Wrong")).toEqual([]);
+    expect($("#wrong").slice()).toEqual([{ value: "Wrong item", checked: true }]);
+    expect(buffer._mdcuiMutationMacros).toBeUndefined();
+    expect(buffer.lines.some((line) => line.includes("Must not"))).toBe(false);
+  });
 });
 
 describe("TUI heading section visibility", () => {
@@ -230,6 +266,63 @@ Second body.
     expect(buffer.lines.some(line => line.includes("Child body."))).toBe(false);
     child.toggle();
     expect(buffer.lines.some(line => line.includes("Child body."))).toBe(true);
+  });
+
+  test("show, hide, and toggle update a child while its parent is hidden", () => {
+    const scenarios = [
+      { initiallyHidden: false, method: "hide", visible: false },
+      { initiallyHidden: true, method: "show", visible: true },
+      { initiallyHidden: false, method: "toggle", visible: false },
+      { initiallyHidden: true, method: "toggle", visible: true },
+    ];
+
+    for (const scenario of scenarios) {
+      const { $, buffer } = tuiSelector(sectionMarkdown);
+      const first = $("#first");
+      const child = $("#child");
+      if (scenario.initiallyHidden) child.hide();
+      first.hide();
+
+      child[scenario.method]();
+
+      expect(buffer._mdcuiIdStore.get("first").headingVisibility.hidden).toBe(true);
+      expect(buffer.lines.some(line => line.includes("First body."))).toBe(false);
+      first.show();
+      expect(buffer.lines.some(line => line.includes("Child body.")))
+        .toBe(scenario.visible);
+      expect(Boolean(buffer._mdcuiIdStore.get("child")?.headingVisibility?.hidden))
+        .toBe(!scenario.visible);
+    }
+  });
+
+  test("a deep toggle crosses multiple hidden ancestors without exposing them", () => {
+    const { $, buffer } = tuiSelector(sectionMarkdown);
+    const first = $("#first");
+    const child = $("#child");
+    const grandchild = $("#grandchild");
+
+    $("#second").hide();
+    child.hide();
+    first.hide();
+    buffer.cursor = { x: 0, y: buffer.lines.length - 1 };
+    buffer.modified = false;
+    const cursor = { ...buffer.cursor };
+
+    grandchild.toggle();
+
+    expect(buffer.cursor).toEqual(cursor);
+    expect(buffer.modified).toBe(false);
+    expect(buffer._mdcuiIdStore.get("first").headingVisibility.hidden).toBe(true);
+    expect(buffer._mdcuiIdStore.get("child").headingVisibility.hidden).toBe(true);
+    expect(buffer._mdcuiIdStore.get("grandchild").headingVisibility.hidden).toBe(true);
+    expect(buffer._mdcuiIdStore.get("second").headingVisibility.hidden).toBe(true);
+
+    first.show();
+    child.show();
+    expect(buffer.lines.some(line => line.includes("Grandchild"))).toBe(true);
+    expect(buffer.lines.some(line => line.includes("Grandchild body."))).toBe(false);
+    grandchild.show();
+    expect(buffer.lines.some(line => line.includes("Grandchild body."))).toBe(true);
   });
 
   test("visibility changes do not mark the read-only rendered buffer modified", () => {
@@ -323,19 +416,121 @@ describe("TUI id-centered user data", () => {
     expect(buffer._mdcuiIdStore.get("features").data).toBeUndefined();
   });
 
-  test("object ids and nested selections retain the same heading identity", () => {
+  test("legal object ids discard the object and retain identity through arbitrary nesting", () => {
     const { $, buffer } = tuiSelector("## Features\n\n- [x] Search\n");
     const features = $("#features");
-    const nested = $($($(features)));
+    const objectTarget = {
+      id: "features",
+      innerHTML: "DECOY HTML",
+      textContent: "DECOY TEXT",
+      value: "DECOY VALUE",
+    };
+    const direct = $(objectTarget);
+    expect(direct.text()).toBe("Features");
+    expect(direct.val()).toEqual(["Search"]);
+    objectTarget.id = "missing";
+    let nested = direct;
+    for (let depth = 0; depth < 8; depth++) nested = $(nested);
 
     expect(features.id).toBe("features");
     expect(nested.id).toBe("features");
+    expect(nested.html()).toBe("Features");
+    expect(nested.text()).toBe("Features");
+    expect(nested.val()).toEqual(["Search"]);
+    expect(nested.text("Ignored")).toBe(nested);
+    expect(nested.val("Ignored")).toBe(nested);
+    expect(objectTarget).toEqual({
+      id: "missing",
+      innerHTML: "DECOY HTML",
+      textContent: "DECOY TEXT",
+      value: "DECOY VALUE",
+    });
     features.data("count", 1);
     expect($({ id: "features" }).data("count")).toBe(1);
     expect(nested.data()).toBe(features.data());
-    expect(nested.text()).toBe("Features");
+    expect(nested.push("Nested addition")).toBe(2);
+    expect(buffer._mdcuiMutationMacros.at(-1).selector).toBe("#features");
     nested.hide();
     expect(buffer._mdcuiIdStore.get("features").headingVisibility.hidden).toBe(true);
+  });
+});
+
+describe("TUI source-dependent state reset", () => {
+  test("reopen cache clearing drops old render state while preserving user data", () => {
+    const oldSource = `# Topic
+
+OLD BODY
+
+- [ ] Original
+
+# End
+`;
+    const { $, buffer } = tuiSelector(oldSource);
+    const topic = $("#topic");
+    const data = topic.data();
+    data.count = 1;
+    topic.push("Old runtime item");
+    topic.hide();
+    const record = buffer._mdcuiIdStore.get("topic");
+    record.customState = { keep: true };
+    buffer._mdcuiRerenderMismatch = { checkboxes: { before: 2, after: 1 } };
+    buffer._mdcuiFenceBlockIndex = [{ stale: true }];
+    buffer._mdcuiControlBlockIndex = [{ stale: true }];
+
+    const newSource = `# Topic
+
+NEW BODY
+
+- [ ] Fresh
+
+# End
+`;
+    const newAnsi = String(Bun.markdown.ansi(
+      newSource,
+      { hyperlinks: true, columns: 80 },
+    ));
+    buffer.lines = Bun.stripANSI(newAnsi).split("\n");
+    buffer._mdcuiTuiSourceText = newSource;
+    buffer._mdcuiAnsiText = newAnsi;
+    clearTuiSourceDependentState(buffer);
+
+    expect(buffer._mdcuiIdStore.get("topic")).toBe(record);
+    expect(topic.data()).toBe(data);
+    expect(topic.data("count")).toBe(1);
+    expect(record.customState).toEqual({ keep: true });
+    expect(record.headingVisibility).toBeUndefined();
+    expect(buffer._mdcuiMutationMacros).toBeUndefined();
+    expect(buffer._mdcuiReplayingMutations).toBe(false);
+    expect(buffer._mdcuiHeadingTaskListAnchors).toBeNull();
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
+    expect(buffer._mdcuiFenceBlockIndex).toBeNull();
+    expect(buffer._mdcuiControlBlockIndex).toBeNull();
+
+    topic.show();
+    expect(buffer.lines.some(line => line.includes("OLD BODY"))).toBe(false);
+    expect(buffer.lines.some(line => line.includes("Old runtime item"))).toBe(false);
+    expect(buffer.lines.some(line => line.includes("Original"))).toBe(false);
+    expect(buffer.lines.filter(line => line.includes("NEW BODY"))).toHaveLength(1);
+    expect(topic.slice()).toEqual([{ value: "Fresh", checked: false }]);
+  });
+
+  test("cache clearing prunes id records that contain only visibility state", () => {
+    const buffer = {
+      _mdcuiIdStore: new Map([
+        ["only-visibility", {
+          headingVisibility: {
+            hidden: true,
+            ordinal: 0,
+            headingCount: 0,
+            segment: { lines: [], images: [] },
+          },
+        }],
+      ]),
+    };
+
+    clearTuiSourceDependentState(buffer);
+
+    expect(buffer._mdcuiIdStore.has("only-visibility")).toBe(false);
   });
 });
 
@@ -370,6 +565,27 @@ describe("TUI object target wrapper", () => {
     expect($({ innerHTML: "<b>Body</b>" }).html()).toBe("<b>Body</b>");
     expect($({ value: 123 }).val()).toBe("123");
   });
+
+  test("invalid object ids stay generic while missing legal ids do not", () => {
+    const { $ } = tuiSelector("## Features\n\nBody.\n");
+    const invalidTargets = [
+      { id: "9invalid", value: "numeric" },
+      { id: "invalid id", value: "spaced" },
+    ];
+    const missing = { id: "missing", value: "decoy", textContent: "decoy" };
+
+    for (const target of invalidTargets) {
+      const wrapped = $(target);
+      expect(wrapped.id).toBe("");
+      expect(wrapped.val()).toBe(target.value);
+      wrapped.val("updated");
+      expect(target.value).toBe("updated");
+    }
+    expect($(missing).val()).toBe("");
+    $(missing).val("ignored");
+    expect(missing.value).toBe("decoy");
+    expect(missing.textContent).toBe("decoy");
+  });
 });
 
 describe("TUI heading text getter", () => {
@@ -393,6 +609,80 @@ describe("TUI heading text getter", () => {
 });
 
 describe("TUI resize state restoration", () => {
+  test("replays a mutation recorded through arbitrarily nested id selections", () => {
+    const source = "## Features\n\n- [ ] Original\n";
+    const { $, buffer } = tuiSelector(source);
+    const objectTarget = { id: "features", value: "DECOY" };
+    let nested = $(objectTarget);
+    for (let depth = 0; depth < 8; depth++) nested = $(nested);
+
+    expect(nested.push({ value: "Added through nesting", checked: true })).toBe(2);
+    expect(buffer._mdcuiMutationMacros).toHaveLength(1);
+    expect(buffer._mdcuiMutationMacros[0].selector).toBe("#features");
+
+    const snapshot = captureTuiRerenderState(buffer);
+    const narrowAnsi = String(Bun.markdown.ansi(
+      source,
+      { hyperlinks: true, columns: 24 },
+    ));
+    buffer.lines = Bun.stripANSI(narrowAnsi).split("\n");
+    buffer._mdcuiAnsiText = narrowAnsi;
+    buffer._ansiStyleLines = null;
+    buffer._mdcuiHeadingTaskListAnchors = null;
+    restoreTuiRerenderState(buffer, snapshot);
+
+    const items = nested.slice();
+    expect(items).toEqual([
+      { value: "Original", checked: false },
+      { value: "Added through nesting", checked: true },
+    ]);
+    expect(items.filter(item => item.value === "Added through nesting"))
+      .toHaveLength(1);
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
+    expect(objectTarget.value).toBe("DECOY");
+  });
+
+  test("preserves a deep visibility change made through hidden ancestors", () => {
+    const source = `# First
+
+First body.
+
+## Child
+
+Child body.
+
+### Grandchild
+
+Grandchild body.
+
+# End
+`;
+    const { $, buffer } = tuiSelector(source);
+    $("#grandchild").hide();
+    $("#child").hide();
+    $("#first").hide();
+    $("#grandchild").show();
+
+    const snapshot = captureTuiRerenderState(buffer);
+    const narrowAnsi = String(Bun.markdown.ansi(
+      source,
+      { hyperlinks: true, columns: 24 },
+    ));
+    buffer.lines = Bun.stripANSI(narrowAnsi).split("\n");
+    buffer._mdcuiAnsiText = narrowAnsi;
+    buffer._ansiStyleLines = null;
+    buffer._mdcuiHeadingTaskListAnchors = null;
+    restoreTuiRerenderState(buffer, snapshot);
+
+    expect(buffer._mdcuiIdStore.get("first").headingVisibility.hidden).toBe(true);
+    expect(buffer._mdcuiIdStore.get("child").headingVisibility.hidden).toBe(true);
+    expect(buffer._mdcuiIdStore.get("grandchild")?.headingVisibility).toBeUndefined();
+    $("#first").show();
+    $("#child").show();
+    expect(buffer.lines.some(line => line.includes("Grandchild body."))).toBe(true);
+    expect(buffer._mdcuiRerenderMismatch).toBeNull();
+  });
+
   test("replays list macros, restores checkbox order, and re-hides deepest headings first", () => {
     const source = `# Parent
 
@@ -568,6 +858,10 @@ class TestDocument {
     return new TestText(text, this);
   }
 
+  getElementById(id) {
+    return this.querySelectorAll("heading").find((element) => element.id === id) ?? null;
+  }
+
   querySelector(selector) {
     if (!selector.startsWith("#")) return null;
     const id = selector.slice(1);
@@ -609,6 +903,7 @@ function webSelector() {
   const section = documentObject.createElement("section");
   const heading = documentObject.createElement("h2");
   heading.id = "features";
+  heading.append(documentObject.createTextNode("Features"));
   const list = documentObject.createElement("ul");
   appendWebItem(documentObject, list, "Search", true);
   appendWebItem(documentObject, list, "Notifications");
@@ -616,6 +911,34 @@ function webSelector() {
   section.append(heading, list);
   documentObject.root.append(section);
   return { $: createWebDollar(documentObject), documentObject, section, heading, list };
+}
+
+function nestedWebSelector() {
+  const documentObject = new TestDocument();
+  const outerSection = documentObject.createElement("section");
+  const outerHeading = documentObject.createElement("h1");
+  outerHeading.id = "first";
+  outerHeading.append(documentObject.createTextNode("First"));
+  const outerBody = documentObject.createElement("p");
+  outerBody.append(documentObject.createTextNode("First web body."));
+  const childSection = documentObject.createElement("section");
+  const childHeading = documentObject.createElement("h2");
+  childHeading.id = "child";
+  childHeading.append(documentObject.createTextNode("Child"));
+  const childBody = documentObject.createElement("p");
+  childBody.append(documentObject.createTextNode("Child web body."));
+  childSection.append(childHeading, childBody);
+  outerSection.append(outerHeading, outerBody, childSection);
+  documentObject.root.append(outerSection);
+  return {
+    $: createWebDollar(documentObject),
+    documentObject,
+    outerSection,
+    outerHeading,
+    childSection,
+    childHeading,
+    childBody,
+  };
 }
 
 describe("WUI heading task-list Array methods", () => {
@@ -710,6 +1033,37 @@ describe("WUI heading section visibility", () => {
     expect(section.hidden).toBe(false);
     expect(heading.parentElement).toBe(section);
   });
+
+  test("show, hide, and toggle update a child while its parent is hidden", () => {
+    const scenarios = [
+      { initiallyHidden: false, method: "hide", visible: false },
+      { initiallyHidden: true, method: "show", visible: true },
+      { initiallyHidden: false, method: "toggle", visible: false },
+      { initiallyHidden: true, method: "toggle", visible: true },
+    ];
+
+    for (const scenario of scenarios) {
+      const {
+        $, documentObject, outerSection, childSection, childHeading,
+      } = nestedWebSelector();
+      const first = $("#first");
+      const child = $("#child");
+      if (scenario.initiallyHidden) child.hide();
+      first.hide();
+
+      child[scenario.method]();
+
+      expect(outerSection.hidden).toBe(true);
+      expect(documentObject._mdcuiIdStore.get("first").headingVisibility.hidden)
+        .toBe(true);
+      first.show();
+      expect(Boolean(childSection.hidden)).toBe(!scenario.visible);
+      expect(Boolean(
+        documentObject._mdcuiIdStore.get("child")?.headingVisibility?.hidden,
+      )).toBe(!scenario.visible);
+      expect(childHeading.parentElement === childSection).toBe(scenario.visible);
+    }
+  });
 });
 
 describe("WUI id-centered user data", () => {
@@ -785,6 +1139,31 @@ describe("WUI id-centered user data", () => {
     nested.data("afterRemoval", true);
     expect(documentObject._mdcuiIdStore.get("features").data.afterRemoval).toBe(true);
   });
+
+  test("legal object ids discard decoy fields through arbitrary nesting", () => {
+    const { $, heading } = webSelector();
+    const objectTarget = {
+      id: "features",
+      innerHTML: "DECOY HTML",
+      textContent: "DECOY TEXT",
+      value: "DECOY VALUE",
+    };
+    const direct = $(objectTarget);
+    expect(direct.text()).toBe(heading.textContent);
+    expect(direct.val()).toEqual(["Search", "Offline"]);
+    objectTarget.id = "missing";
+    let nested = direct;
+    for (let depth = 0; depth < 8; depth++) nested = $(nested);
+
+    expect(nested.id).toBe("features");
+    expect(nested.text()).toBe(heading.textContent);
+    expect(nested.val()).toEqual(["Search", "Offline"]);
+    expect(nested.val("Ignored")).toBe(nested);
+    expect(heading.textContent).toBe("Features");
+    expect(objectTarget.value).toBe("DECOY VALUE");
+    expect(nested.push({ value: "Nested addition", checked: true })).toBe(4);
+    expect(nested.val()).toEqual(["Search", "Offline", "Nested addition"]);
+  });
 });
 
 describe("WUI object target wrapper", () => {
@@ -836,5 +1215,44 @@ describe("WUI object target wrapper", () => {
     };
 
     expect($(heading).html()).toBe("<em>Title</em>");
+  });
+
+  test("invalid object ids stay generic while missing legal ids do not", () => {
+    const { $ } = webSelector();
+    const invalidTargets = [
+      { id: "9invalid", value: "numeric" },
+      { id: "invalid id", value: "spaced" },
+    ];
+    const missing = { id: "missing", value: "decoy", textContent: "decoy" };
+
+    for (const target of invalidTargets) {
+      const wrapped = $(target);
+      expect(wrapped.id).toBe("");
+      expect(wrapped.val()).toBe(target.value);
+      wrapped.val("updated");
+      expect(target.value).toBe("updated");
+    }
+    expect($(missing).val()).toBe("");
+    $(missing).val("ignored");
+    expect(missing.value).toBe("decoy");
+    expect(missing.textContent).toBe("decoy");
+  });
+
+  test("pure ids with selector punctuation use id lookup", () => {
+    const documentObject = new TestDocument();
+    const section = documentObject.createElement("section");
+    const heading = documentObject.createElement("h2");
+    heading.id = "feature:item";
+    heading.append(documentObject.createTextNode("Punctuation ID"));
+    section.append(heading);
+    documentObject.root.append(section);
+    documentObject.querySelector = () => {
+      throw new SyntaxError("CSS parser treats ':' as a pseudo-class");
+    };
+    const $ = createWebDollar(documentObject);
+
+    expect($("#feature:item").text()).toBe("Punctuation ID");
+    expect($({ id: "feature:item", textContent: "DECOY" }).text())
+      .toBe("Punctuation ID");
   });
 });

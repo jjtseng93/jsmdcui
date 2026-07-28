@@ -343,13 +343,286 @@ export function convertWuiTextareas(html, eventsById = new Map())
   );
 }
 
+let wuiGraphemeSegmenter;
+function firstWuiGraphemeCluster(value)
+{
+  const input = String(value ?? "");
+  if (!input) return "";
+
+  if (wuiGraphemeSegmenter === undefined) {
+    try {
+      wuiGraphemeSegmenter = typeof Intl === "object"
+        && typeof Intl.Segmenter === "function"
+        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+        : null;
+    } catch {
+      wuiGraphemeSegmenter = null;
+    }
+  }
+  const segmented = wuiGraphemeSegmenter
+    ?.segment(input)?.[Symbol.iterator]?.().next?.().value?.segment;
+  if (segmented) return segmented;
+
+  const points = [...input];
+  let result = points[0] ?? "";
+  let index = 1;
+  const isExtend = character => {
+    const point = character.codePointAt(0);
+    return /\p{Mark}/u.test(character)
+      || (point >= 0xFE00 && point <= 0xFE0F)
+      || (point >= 0xE0100 && point <= 0xE01EF)
+      || (point >= 0x1F3FB && point <= 0x1F3FF)
+      || (point >= 0xE0020 && point <= 0xE007F);
+  };
+  const isRegionalIndicator = character => {
+    const point = character?.codePointAt?.(0);
+    return point >= 0x1F1E6 && point <= 0x1F1FF;
+  };
+
+  if (isRegionalIndicator(points[0]) && isRegionalIndicator(points[1])) {
+    result += points[1];
+    index = 2;
+  }
+  while (index < points.length) {
+    if (isExtend(points[index])) {
+      result += points[index++];
+      continue;
+    }
+    if (points[index] === "\u200D" && index + 1 < points.length) {
+      result += points[index] + points[index + 1];
+      index += 2;
+      continue;
+    }
+    break;
+  }
+  return result;
+}
+
+function wuiHtmlTagAt(input, start)
+{
+  if (input[start] !== "<") return null;
+  if (input.startsWith("<!--", start)) {
+    const commentEnd = input.indexOf("-->", start + 4);
+    return {
+      kind: "comment",
+      start,
+      end: commentEnd < 0 ? input.length : commentEnd + 3,
+      name: null,
+      closing: false,
+      selfClosing: false,
+      source: input.slice(start, commentEnd < 0 ? input.length : commentEnd + 3),
+    };
+  }
+
+  let quote = null;
+  let end = -1;
+  for (let index = start + 1; index < input.length; index++) {
+    const character = input[index];
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ">") {
+      end = index + 1;
+      break;
+    }
+  }
+  if (end < 0) return null;
+
+  const source = input.slice(start, end);
+  const closingMatch = source.match(
+    /^<\/([A-Za-z][A-Za-z0-9:-]*)(?=[\s>])/,
+  );
+  const openingMatch = closingMatch
+    ? null
+    : source.match(/^<([A-Za-z][A-Za-z0-9:-]*)(?=[\s/>])/);
+  return {
+    kind: closingMatch || openingMatch ? "tag" : "other",
+    start,
+    end,
+    name: String(closingMatch?.[1] ?? openingMatch?.[1] ?? "").toLowerCase() || null,
+    closing: Boolean(closingMatch),
+    selfClosing: Boolean(openingMatch && /\/\s*>$/.test(source)),
+    source,
+  };
+}
+
+function nextWuiHtmlTag(input, from)
+{
+  let start = input.indexOf("<", from);
+  while (start >= 0) {
+    const token = wuiHtmlTagAt(input, start);
+    if (token?.kind !== "other") return token;
+    start = input.indexOf("<", start + 1);
+  }
+  return null;
+}
+
+function matchingWuiHtmlClose(input, opening)
+{
+  if (opening?.kind !== "tag" || opening.closing || opening.selfClosing)
+    return null;
+  let depth = 1;
+  let scan = opening.end;
+  let token;
+  while ((token = nextWuiHtmlTag(input, scan))) {
+    scan = token.end;
+    if (token.kind !== "tag" || token.name !== opening.name) continue;
+    if (token.closing) {
+      depth--;
+      if (depth === 0) return token;
+    } else if (!token.selfClosing) {
+      depth++;
+    }
+  }
+  return null;
+}
+
+const WUI_HEADING_OPAQUE_TAGS = new Set([
+  "script",
+  "style",
+  "pre",
+  "textarea",
+  "template",
+]);
+const WUI_RAW_TEXT_TAGS = new Set([
+  "script",
+  "style",
+  "textarea",
+]);
+
+function closingWuiOpaqueTag(input, opening)
+{
+  if (!WUI_RAW_TEXT_TAGS.has(opening?.name))
+    return matchingWuiHtmlClose(input, opening);
+
+  let scan = opening.end;
+  let token;
+  while ((token = nextWuiHtmlTag(input, scan))) {
+    scan = token.end;
+    if (
+      token.kind === "tag"
+      && token.closing
+      && token.name === opening.name
+    ) return token;
+  }
+  return null;
+}
+
+function wuiDocumentBodyBoundary(input)
+{
+  const bodyOpaqueTags = new Set([...WUI_HEADING_OPAQUE_TAGS, "code"]);
+  let opening = null;
+  let scan = 0;
+  let token;
+  while ((token = nextWuiHtmlTag(input, scan))) {
+    scan = token.end;
+    if (token.kind !== "tag") continue;
+
+    if (!token.closing && bodyOpaqueTags.has(token.name)) {
+      if (!token.selfClosing) {
+        const closing = closingWuiOpaqueTag(input, token);
+        scan = closing?.end ?? input.length;
+      }
+      continue;
+    }
+    if (!opening && !token.closing && token.name === "body") {
+      opening = token;
+      continue;
+    }
+    if (opening && token.closing && token.name === "body")
+      return { opening, closing: token };
+  }
+  return null;
+}
+
+function protectWuiHeadingOpaqueHtml(input, markerPrefix)
+{
+  const opaqueHtml = [];
+  let searchable = "";
+  let cursor = 0;
+  let scan = 0;
+  let token;
+
+  while ((token = nextWuiHtmlTag(input, scan))) {
+    scan = token.end;
+    let end = null;
+    if (token.kind === "comment") {
+      end = token.end;
+    } else if (
+      token.kind === "tag"
+      && !token.closing
+      && WUI_HEADING_OPAQUE_TAGS.has(token.name)
+    ) {
+      const closing = token.selfClosing
+        ? token
+        : closingWuiOpaqueTag(input, token);
+      end = closing?.end ?? input.length;
+    }
+    if (end == null) continue;
+
+    const marker = `\0${markerPrefix}${opaqueHtml.length}\0`;
+    searchable += input.slice(cursor, token.start) + marker;
+    opaqueHtml.push({ marker, html: input.slice(token.start, end) });
+    cursor = end;
+    scan = end;
+  }
+
+  searchable += input.slice(cursor);
+  return { searchable, opaqueHtml };
+}
+
+function wuiHtmlTagHasAttribute(token, expectedName)
+{
+  if (token?.kind !== "tag" || token.closing) return false;
+  const input = token.source;
+  const opening = input.match(/^<[^\s/>]+/);
+  if (!opening) return false;
+  let index = opening[0].length;
+
+  while (index < input.length) {
+    while (/\s/u.test(input[index] ?? "")) index++;
+    if (input[index] === ">" || input[index] === "/" || index >= input.length)
+      return false;
+
+    const start = index;
+    while (index < input.length && !/[\s=/>]/u.test(input[index])) index++;
+    const name = input.slice(start, index).toLowerCase();
+    while (/\s/u.test(input[index] ?? "")) index++;
+    if (name === expectedName.toLowerCase()) return true;
+
+    if (input[index] !== "=") continue;
+    index++;
+    while (/\s/u.test(input[index] ?? "")) index++;
+    const quote = input[index] === '"' || input[index] === "'"
+      ? input[index++]
+      : null;
+    if (quote) {
+      while (index < input.length && input[index] !== quote) index++;
+      if (input[index] === quote) index++;
+    } else {
+      while (index < input.length && !/[\s>]/u.test(input[index])) index++;
+    }
+  }
+  return false;
+}
+
 function wrapWuiHeadingToggleCharacter(headingHtml)
 {
   const input = String(headingHtml);
-  const opening = input.match(/^<h[1-6]\b[^>]*>/i);
-  if (!opening || !/\bid\s*=/i.test(opening[0])) return input;
+  const opening = wuiHtmlTagAt(input, 0);
+  if (
+    opening?.kind !== "tag"
+    || opening.closing
+    || !/^h[1-6]$/.test(opening.name ?? "")
+    || !wuiHtmlTagHasAttribute(opening, "id")
+  ) return input;
 
-  let index = opening[0].length;
+  let index = opening.end;
   while (index < input.length) {
     if (input[index] === "\0") {
       const markerEnd = input.indexOf("\0", index + 1);
@@ -358,9 +631,13 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
       continue;
     }
     if (input[index] === "<") {
-      const end = input.indexOf(">", index + 1);
-      if (end < 0) return input;
-      index = end + 1;
+      const tag = wuiHtmlTagAt(input, index);
+      if (!tag) return input;
+      if (tag.kind === "other") {
+        index++;
+        continue;
+      }
+      index = tag.end;
       continue;
     }
     if (/\s/u.test(input[index])) {
@@ -373,7 +650,8 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
       const entityEnd = input.indexOf(";", index + 1);
       end = entityEnd >= 0 ? entityEnd + 1 : index + 1;
     } else {
-      end = index + [...input.slice(index)][0].length;
+      const grapheme = firstWuiGraphemeCluster(input.slice(index));
+      end = index + grapheme.length;
     }
     return input.slice(0, index) +
       '<span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">' +
@@ -387,47 +665,55 @@ function wrapWuiHeadingToggleCharacter(headingHtml)
 export function wrapWuiHeadingSections(html)
 {
   const input = String(html);
-  const bodyStart = input.match(/<body\b[^>]*>/i);
-  if (bodyStart?.index != null) {
-    const contentStart = bodyStart.index + bodyStart[0].length;
-    const bodyEnd = input.slice(contentStart).search(/<\/body\s*>/i);
-    if (bodyEnd >= 0) {
-      const contentEnd = contentStart + bodyEnd;
-      return input.slice(0, contentStart) +
-        wrapWuiHeadingSections(input.slice(contentStart, contentEnd)) +
-        input.slice(contentEnd);
-    }
+  const body = wuiDocumentBodyBoundary(input);
+  if (body) {
+    const contentStart = body.opening.end;
+    const contentEnd = body.closing.start;
+    return input.slice(0, contentStart) +
+      wrapWuiHeadingSections(input.slice(contentStart, contentEnd)) +
+      input.slice(contentEnd);
   }
 
   let markerPrefix = "MDCUI_HEADING_OPAQUE_";
   while (input.includes(markerPrefix)) markerPrefix = "_" + markerPrefix;
-  const opaqueHtml = [];
-  const searchable = input.replace(
-    /<!--[^]*?-->|<(script|style|pre|textarea|template)\b[^>]*>[^]*?<\/\1\s*>/gi,
-    (whole) => {
-      const marker = `\0${markerPrefix}${opaqueHtml.length}\0`;
-      opaqueHtml.push({ marker, html: whole });
-      return marker;
-    }
-  );
+  const { searchable, opaqueHtml } =
+    protectWuiHeadingOpaqueHtml(input, markerPrefix);
 
-  const heading = /<h([1-6])\b[^>]*>[^]*?<\/h\1\s*>/gi;
   const openLevels = [];
   let output = "";
   let cursor = 0;
-  let match;
+  let scan = 0;
+  let codeDepth = 0;
+  let token;
 
-  while ((match = heading.exec(searchable)) !== null) {
-    const level = Number(match[1]);
-    const headingHtml = wrapWuiHeadingToggleCharacter(match[0]);
-    output += searchable.slice(cursor, match.index);
+  while ((token = nextWuiHtmlTag(searchable, scan))) {
+    scan = token.end;
+    if (token.kind !== "tag") continue;
+    if (token.name === "code") {
+      if (token.closing) codeDepth = Math.max(0, codeDepth - 1);
+      else if (!token.selfClosing) codeDepth++;
+      continue;
+    }
+    const headingMatch = !token.closing && codeDepth === 0
+      ? token.name?.match(/^h([1-6])$/)
+      : null;
+    if (!headingMatch) continue;
+    const closing = matchingWuiHtmlClose(searchable, token);
+    if (!closing) continue;
+
+    const level = Number(headingMatch[1]);
+    const headingHtml = wrapWuiHeadingToggleCharacter(
+      searchable.slice(token.start, closing.end),
+    );
+    output += searchable.slice(cursor, token.start);
     while (openLevels.length && openLevels.at(-1) >= level) {
       output += "</section>\n";
       openLevels.pop();
     }
     output += `<section>\n${headingHtml}`;
     openLevels.push(level);
-    cursor = heading.lastIndex;
+    cursor = closing.end;
+    scan = closing.end;
   }
 
   output += searchable.slice(cursor);

@@ -326,6 +326,7 @@ test("front evaluation binds link this and event targets to the same object", as
 test("WUI javascript href interception injects the registered front module, this, and event", async () => {
   let clickListener;
   let seen;
+  let preventDefaultCalls = 0;
   const anchor = {
     tagName: "A",
     href: "javascript:inspect(this,event)",
@@ -350,12 +351,15 @@ test("WUI javascript href interception injects the registered front module, this
     __mdcuiFrontModule: {
       inspect(targetArg, eventArg) {
         seen = {
+          initialDefaultPrevented: eventArg.defaultPrevented,
           targetArg,
           eventArg,
           target: eventArg.target,
           currentTarget: eventArg.currentTarget,
           type: eventArg.type,
         };
+        eventArg.preventDefault();
+        seen.afterPreventDefault = eventArg.defaultPrevented;
       },
     },
   };
@@ -363,18 +367,67 @@ test("WUI javascript href interception injects the registered front module, this
   const nativeEvent = {
     type: "click",
     target: anchor,
-    preventDefault() {},
+    defaultPrevented: false,
+    preventDefault() {
+      preventDefaultCalls++;
+      this.defaultPrevented = true;
+    },
   };
 
   await clickListener(nativeEvent);
 
   expect(seen).toEqual({
+    initialDefaultPrevented: false,
     targetArg: anchor,
     eventArg: expect.any(Object),
     target: anchor,
     currentTarget: anchor,
     type: "click",
+    afterPreventDefault: true,
   });
+  expect(nativeEvent.defaultPrevented).toBeTrue();
+  expect(preventDefaultCalls).toBe(2);
+});
+
+test("WUI javascript href interception honors an earlier preventDefault", async () => {
+  let clickListener;
+  let calls = 0;
+  const anchor = {
+    href: "javascript:inspect()",
+    getAttribute(name) {
+      return name === "href" ? this.href : null;
+    },
+    closest(selector) {
+      return selector === "a[href]" ? this : null;
+    },
+  };
+  const documentObject = {
+    readyState: "complete",
+    addEventListener(name, listener) {
+      if (name === "click") clickListener = listener;
+    },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+  };
+  installWebDollar({
+    document: documentObject,
+    addEventListener() {},
+    __mdcuiFrontModule: {
+      inspect() { calls++; },
+    },
+  });
+  const nativeEvent = {
+    type: "click",
+    target: anchor,
+    defaultPrevented: true,
+    preventDefault() {
+      throw new Error("interceptor must not prevent an already-cancelled event");
+    },
+  };
+
+  await clickListener(nativeEvent);
+
+  expect(calls).toBe(0);
 });
 
 test("WUI wraps only the first visible heading character as a toggle target", () => {
@@ -388,6 +441,39 @@ test("WUI wraps only the first visible heading character as a toggle target", ()
   expect(html).toContain(
     '<span class="mdcui-heading-toggle" role="button" tabindex="0" aria-expanded="true">&amp;</span> next',
   );
+});
+
+test("WUI heading toggles preserve quoted greater-than signs in HTML attributes", () => {
+  const html = wrapWuiHeadingSections(
+    '<!doctype html><body title="body > value">'
+    + '<h2 id="quoted" title="heading > value">'
+    + "<em data-note='inline > value'>Title</em></h2><p>Body</p>"
+    + "</body>",
+  );
+
+  expect(html).toContain('<body title="body > value">');
+  expect(html).toContain('<h2 id="quoted" title="heading > value">');
+  expect(html).toContain("<em data-note='inline > value'>"
+    + '<span class="mdcui-heading-toggle" role="button" tabindex="0" '
+    + 'aria-expanded="true">T</span>itle</em>');
+  expect(html).not.toContain('heading > <span class="mdcui-heading-toggle"');
+  expect(html).not.toContain("inline > <span class=\"mdcui-heading-toggle\"");
+});
+
+test("WUI heading sections ignore body-like text inside opaque elements", () => {
+  const html = wrapWuiHeadingSections(
+    '<!doctype html><html><head><script>'
+    + 'const opening = "<body>"; const closing = "</body>";'
+    + "</script></head><body>"
+    + '<h2 id="real">Real</h2><p>Body</p>'
+    + "</body></html>",
+  );
+
+  expect(html).toContain(
+    '<script>const opening = "<body>"; const closing = "</body>";</script>',
+  );
+  expect(html.match(/<section>/g)).toHaveLength(1);
+  expect(html.indexOf("</section>")).toBeLessThan(html.lastIndexOf("</body>"));
 });
 
 test("WUI heading toggles preserve inline code and opaque block markers", () => {
@@ -405,6 +491,142 @@ test("WUI heading toggles preserve inline code and opaque block markers", () => 
   expect(protectedBlock).toContain('<pre><code><h2 id="fake">Fake</h2></code></pre>');
   expect(protectedBlock).not.toContain("MDCUI_HEADING_OPAQUE_");
   expect(protectedBlock.match(/<section>/g)).toHaveLength(1);
+
+  const standaloneCode = wrapWuiHeadingSections(
+    '<CODE data-note="standalone > code"><h2 id="fake">Fake</h2></CODE>'
+    + '<h2 id="real">Real</h2><p>Body</p>',
+  );
+  expect(standaloneCode).toContain(
+    '<CODE data-note="standalone > code"><h2 id="fake">Fake</h2></CODE>',
+  );
+  expect(standaloneCode).not.toContain(
+    '<h2 id="fake"><span class="mdcui-heading-toggle"',
+  );
+  expect(standaloneCode.match(/<section>/g)).toHaveLength(1);
+  expect(standaloneCode).toContain(
+    '<h2 id="real"><span class="mdcui-heading-toggle"',
+  );
+
+  const quotedScript = wrapWuiHeadingSections(
+    '<script data-note="> </script>"><h2 id="fake">Fake</h2></script>'
+    + '<h2 id="real">Real</h2>',
+  );
+  expect(quotedScript).toContain(
+    '<script data-note="> </script>"><h2 id="fake">Fake</h2></script>',
+  );
+  expect(quotedScript.match(/<section>/g)).toHaveLength(1);
+
+  const nestedTemplate = wrapWuiHeadingSections(
+    '<template><template>Inner</template><h2 id="fake">Fake</h2></template>'
+    + '<h2 id="real">Real</h2>',
+  );
+  expect(nestedTemplate).toContain(
+    '<template><template>Inner</template><h2 id="fake">Fake</h2></template>',
+  );
+  expect(nestedTemplate.match(/<section>/g)).toHaveLength(1);
+
+  const unclosedScript = wrapWuiHeadingSections(
+    '<script><h2 id="fake">Fake</h2>',
+  );
+  expect(unclosedScript).toBe('<script><h2 id="fake">Fake</h2>');
+  expect(unclosedScript).not.toContain("<section>");
+
+  const rawLessThan = wrapWuiHeadingSections(
+    'One < two <h2 id="real">Real</h2>',
+  );
+  expect(rawLessThan.match(/<section>/g)).toHaveLength(1);
+});
+
+test("WUI heading toggles wrap complete grapheme clusters", () => {
+  const graphemes = [
+    "e\u0301",
+    "👨‍👩‍👧‍👦",
+    "👍🏽",
+    "🇹🇼",
+  ];
+
+  for (const [index, grapheme] of graphemes.entries()) {
+    const html = wrapWuiHeadingSections(
+      `<h2 id="grapheme-${index}"><code>${grapheme} rest</code></h2>`,
+    );
+    expect(html).toContain(
+      '<span class="mdcui-heading-toggle" role="button" tabindex="0" '
+      + `aria-expanded="true">${grapheme}</span> rest`,
+    );
+  }
+});
+
+test("WUI runtime decoration wraps a complete grapheme cluster", async () => {
+  const graphemes = [
+    "e\u0301",
+    "👨‍👩‍👧‍👦",
+    "👍🏽",
+    "🇹🇼",
+  ];
+
+  for (const [caseIndex, grapheme] of graphemes.entries()) {
+    const textNode = {
+      nodeType: 3,
+      textContent: `  ${grapheme} heading`,
+    };
+    let rangeStart = -1;
+    let rangeEnd = -1;
+    let wrapped = "";
+    let toggle;
+    const heading = {
+      tagName: "H2",
+      id: `dynamic-${caseIndex}`,
+      childNodes: [textNode],
+      ownerDocument: null,
+      querySelector() { return null; },
+    };
+    const documentObject = {
+      readyState: "complete",
+      addEventListener() {},
+      querySelector() { return null; },
+      querySelectorAll(selector) {
+        return selector === "h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]"
+          ? [heading]
+          : [];
+      },
+      createRange() {
+        return {
+          setStart(node, index) {
+            expect(node).toBe(textNode);
+            rangeStart = index;
+          },
+          setEnd(node, index) {
+            expect(node).toBe(textNode);
+            rangeEnd = index;
+          },
+          surroundContents(node) {
+            toggle = node;
+            wrapped = textNode.textContent.slice(rangeStart, rangeEnd);
+          },
+        };
+      },
+      createElement(tagName) {
+        return {
+          tagName: String(tagName).toUpperCase(),
+          style: {},
+          attributes: new Map(),
+          setAttribute(name, value) { this.attributes.set(name, value); },
+        };
+      },
+    };
+    heading.ownerDocument = documentObject;
+
+    installWebDollar({
+      document: documentObject,
+      addEventListener() {},
+    });
+    await Promise.resolve();
+
+    expect(rangeStart).toBe(2);
+    expect(rangeEnd).toBe(2 + grapheme.length);
+    expect(wrapped).toBe(grapheme);
+    expect(toggle.className).toBe("mdcui-heading-toggle");
+  }
 });
 
 test("TUI keydown.prevent runs before editing and blocks text input", async () => {

@@ -824,8 +824,8 @@ function _blockValue(lines, selector) {
 
 function _headingSelectorId(input) {
   if (input !== null && typeof input === "object") {
-    const id = String(input.id ?? "").trim();
-    return id || null;
+    const id = String(input.id ?? "");
+    return /^[A-Za-z_][\w:-]*$/.test(id) ? id : null;
   }
   const match = String(input ?? "").trim().match(/^#([^\s]+)$/);
   return match?.[1] ?? null;
@@ -877,12 +877,52 @@ function _tuiHeadingAnsiPrefixes() {
 
 function _headingTuiLine(buffer, heading) {
   const ansiText = buffer?._mdcuiAnsiText;
-  if (!heading || typeof ansiText !== "string") return 0;
+  if (
+    !heading ||
+    typeof ansiText !== "string" ||
+    _headingHasHiddenTuiAncestor(buffer, heading)
+  ) return 0;
   const tuiHeadings = _tuiHeadingLines(buffer);
   const visibleOrdinal = _headingVisibleOrdinal(buffer, heading);
   const exact = tuiHeadings[visibleOrdinal];
   if (exact?.level === heading.level) return exact.line;
   return 0;
+}
+
+function _hiddenTuiHeadingAncestors(buffer, heading) {
+  if (!heading || !(buffer?._mdcuiIdStore instanceof Map)) return [];
+
+  const hiddenAncestors = [];
+  for (const [id, record] of buffer._mdcuiIdStore) {
+    const state = record?.headingVisibility;
+    if (
+      state?.hidden &&
+      Number.isInteger(state.ordinal) &&
+      state.ordinal < heading.ordinal
+    ) hiddenAncestors.push({ id, ordinal: state.ordinal });
+  }
+  if (hiddenAncestors.length === 0) return [];
+
+  const sourceHeadings = _tuiSourceHeadings(buffer);
+  const result = [];
+  for (const hidden of hiddenAncestors) {
+    const ancestor = sourceHeadings[hidden.ordinal];
+    if (!ancestor || ancestor.id !== hidden.id) continue;
+
+    let containsHeading = true;
+    for (let index = hidden.ordinal + 1; index <= heading.ordinal; index++) {
+      if (sourceHeadings[index]?.level <= ancestor.level) {
+        containsHeading = false;
+        break;
+      }
+    }
+    if (containsHeading) result.push({ id: hidden.id, heading: ancestor });
+  }
+  return result.sort((a, b) => a.heading.ordinal - b.heading.ordinal);
+}
+
+function _headingHasHiddenTuiAncestor(buffer, heading) {
+  return _hiddenTuiHeadingAncestors(buffer, heading).length > 0;
 }
 
 function _headingVisibleOrdinal(buffer, heading) {
@@ -960,6 +1000,29 @@ function _removeTuiUserData(buffer, id, keys) {
     for (const key of keys) delete record.data[key];
   }
   if (Object.keys(record).length === 0) store.delete(id);
+}
+
+export function clearTuiSourceDependentState(buffer) {
+  if (!buffer || typeof buffer !== "object") return;
+
+  if (buffer._mdcuiIdStore instanceof Map) {
+    for (const [id, record] of buffer._mdcuiIdStore) {
+      if (!record || typeof record !== "object") {
+        buffer._mdcuiIdStore.delete(id);
+        continue;
+      }
+      delete record.headingVisibility;
+      if (Object.keys(record).length === 0)
+        buffer._mdcuiIdStore.delete(id);
+    }
+  }
+
+  delete buffer._mdcuiMutationMacros;
+  buffer._mdcuiReplayingMutations = false;
+  buffer._mdcuiHeadingTaskListAnchors = null;
+  buffer._mdcuiRerenderMismatch = null;
+  buffer._mdcuiFenceBlockIndex = null;
+  buffer._mdcuiControlBlockIndex = null;
 }
 
 function _hideTuiHeadingSection(buffer, heading, id) {
@@ -1047,6 +1110,33 @@ function _showTuiHeadingSection(buffer, heading, id) {
   return true;
 }
 
+function _changeTuiHeadingSectionVisibility(buffer, heading, id, action) {
+  if (!buffer || !heading || !id) return false;
+  const expandedAncestors = [];
+  try {
+    for (const ancestor of _hiddenTuiHeadingAncestors(buffer, heading)) {
+      if (!_showTuiHeadingSection(buffer, ancestor.heading, ancestor.id))
+        return false;
+      expandedAncestors.push(ancestor);
+    }
+
+    if (action === "show")
+      return _showTuiHeadingSection(buffer, heading, id);
+    if (action === "hide")
+      return _hideTuiHeadingSection(buffer, heading, id);
+    if (action === "toggle") {
+      const hidden = _tuiIdStore(buffer).get(id)?.headingVisibility?.hidden;
+      return hidden
+        ? _showTuiHeadingSection(buffer, heading, id)
+        : _hideTuiHeadingSection(buffer, heading, id);
+    }
+    return false;
+  } finally {
+    for (const ancestor of expandedAncestors.reverse())
+      _hideTuiHeadingSection(buffer, ancestor.heading, ancestor.id);
+  }
+}
+
 export function toggleTuiHeadingAt(buffer, y, x) {
   if (!buffer || !Array.isArray(buffer.lines)) return false;
   const row = Math.trunc(Number(y));
@@ -1067,6 +1157,7 @@ export function toggleTuiHeadingAt(buffer, y, x) {
 }
 
 function _tuiHeadingTaskList(buffer, heading) {
+  if (!heading || _headingHasHiddenTuiAncestor(buffer, heading)) return null;
   const savedAnchor = buffer?._mdcuiHeadingTaskListAnchors?.get(heading.ordinal);
   if (savedAnchor) {
     return {
@@ -1250,7 +1341,10 @@ function _recordTuiHeadingListMutation(buffer, selector, method, args) {
 
 function _mutateAndRecordTuiHeadingList(buffer, heading, selector, method, args, failureValue) {
   if (!buffer || !heading) return failureValue;
-  if (_tuiIdStore(buffer).get(heading.id)?.headingVisibility?.hidden)
+  if (
+    _headingHasHiddenTuiAncestor(buffer, heading) ||
+    _tuiIdStore(buffer).get(heading.id)?.headingVisibility?.hidden
+  )
     return failureValue;
   const before = Array.isArray(buffer.lines) ? buffer.lines.join("\n") : "";
   const result = _mutateTuiHeadingList(buffer, heading, method, args);
@@ -1542,9 +1636,15 @@ function _setBlockValue(buffer, selector, value) {
 }
 
 export function createTuiSelector(getBuffer) {
-  return function $(selector) {
-    const objectTarget = selector !== null && typeof selector === "object"
-      ? selector
+  return function $(selectorInput) {
+    const objectSelectorId = selectorInput !== null && typeof selectorInput === "object"
+      ? _headingSelectorId(selectorInput)
+      : null;
+    const selector = objectSelectorId ? `#${objectSelectorId}` : selectorInput;
+    const objectTarget = !objectSelectorId
+      && selectorInput !== null
+      && typeof selectorInput === "object"
+      ? selectorInput
       : null;
     const parsedSelector = objectTarget
       ? null
@@ -1591,7 +1691,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
-          _showTuiHeadingSection(buffer, _findHeading(buffer, selector), id);
+          _changeTuiHeadingSectionVisibility(
+            buffer, _findHeading(buffer, selector), id, "show",
+          );
         } catch {}
         return selection;
       },
@@ -1599,7 +1701,9 @@ export function createTuiSelector(getBuffer) {
         try {
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
-          _hideTuiHeadingSection(buffer, _findHeading(buffer, selector), id);
+          _changeTuiHeadingSectionVisibility(
+            buffer, _findHeading(buffer, selector), id, "hide",
+          );
         } catch {}
         return selection;
       },
@@ -1608,10 +1712,7 @@ export function createTuiSelector(getBuffer) {
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
           const heading = _findHeading(buffer, selector);
-          if (_tuiIdStore(buffer).get(id)?.headingVisibility?.hidden)
-            _showTuiHeadingSection(buffer, heading, id);
-          else
-            _hideTuiHeadingSection(buffer, heading, id);
+          _changeTuiHeadingSectionVisibility(buffer, heading, id, "toggle");
         } catch {}
         return selection;
       },

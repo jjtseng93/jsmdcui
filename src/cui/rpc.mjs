@@ -22,6 +22,13 @@ function parseDollarIdentity(input, { selector = false } = {})
   };
 }
 
+function webDollarObjectId(input)
+{
+  if (input === null || typeof input !== "object") return null;
+  const id = String(input.id ?? "");
+  return /^[A-Za-z_][\w:-]*$/.test(id) ? id : null;
+}
+
 function matchesDollarIdentity(identity, selector)
 {
   if (selector.tag && identity.tag !== selector.tag) return false;
@@ -43,6 +50,11 @@ function findMarkdownCodeElement(documentObject, selector)
 
 function findWebDollarElement(documentObject, selectorText, selector)
 {
+  if (selector?.id && !selector.tag && selector.classes.length === 0) {
+    const byId = documentObject?.getElementById?.(selector.id);
+    if (byId) return byId;
+  }
+
   try {
     const direct = documentObject?.querySelector?.(String(selectorText));
     if (direct) return direct;
@@ -91,6 +103,61 @@ function firstWebHeadingTextNode(root)
   return null;
 }
 
+let webGraphemeSegmenter;
+function firstWebGraphemeCluster(value)
+{
+  const input = String(value ?? "");
+  if (!input) return "";
+
+  if (webGraphemeSegmenter === undefined) {
+    try {
+      webGraphemeSegmenter = typeof Intl === "object"
+        && typeof Intl.Segmenter === "function"
+        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+        : null;
+    } catch {
+      webGraphemeSegmenter = null;
+    }
+  }
+  const segmented = webGraphemeSegmenter
+    ?.segment(input)?.[Symbol.iterator]?.().next?.().value?.segment;
+  if (segmented) return segmented;
+
+  const points = [...input];
+  let result = points[0] ?? "";
+  let index = 1;
+  const isExtend = character => {
+    const point = character.codePointAt(0);
+    return /\p{Mark}/u.test(character)
+      || (point >= 0xFE00 && point <= 0xFE0F)
+      || (point >= 0xE0100 && point <= 0xE01EF)
+      || (point >= 0x1F3FB && point <= 0x1F3FF)
+      || (point >= 0xE0020 && point <= 0xE007F);
+  };
+  const isRegionalIndicator = character => {
+    const point = character?.codePointAt?.(0);
+    return point >= 0x1F1E6 && point <= 0x1F1FF;
+  };
+
+  if (isRegionalIndicator(points[0]) && isRegionalIndicator(points[1])) {
+    result += points[1];
+    index = 2;
+  }
+  while (index < points.length) {
+    if (isExtend(points[index])) {
+      result += points[index++];
+      continue;
+    }
+    if (points[index] === "\u200D" && index + 1 < points.length) {
+      result += points[index] + points[index + 1];
+      index += 2;
+      continue;
+    }
+    break;
+  }
+  return result;
+}
+
 function ensureWebHeadingToggle(heading)
 {
   if (!isWebHeading(heading) || !heading.id) return null;
@@ -104,7 +171,7 @@ function ensureWebHeadingToggle(heading)
   const text = String(textNode?.textContent ?? "");
   const start = text.search(/\S/u);
   if (!textNode || start < 0) return null;
-  const character = [...text.slice(start)][0];
+  const character = firstWebGraphemeCluster(text.slice(start));
   const documentObject = heading.ownerDocument;
   const range = documentObject?.createRange?.();
   const toggle = documentObject?.createElement?.("span");
@@ -399,6 +466,7 @@ function installWebTextareaResize(target)
 
 function webLinkActivationEvent(nativeEvent, anchor)
 {
+  let defaultPrevented = Boolean(nativeEvent?.defaultPrevented);
   return {
     type: String(nativeEvent?.type ?? "click"),
     target: anchor,
@@ -408,8 +476,11 @@ function webLinkActivationEvent(nativeEvent, anchor)
     altKey: Boolean(nativeEvent?.altKey),
     shiftKey: Boolean(nativeEvent?.shiftKey),
     metaKey: Boolean(nativeEvent?.metaKey),
-    get defaultPrevented() { return Boolean(nativeEvent?.defaultPrevented); },
-    preventDefault() { nativeEvent?.preventDefault?.(); },
+    get defaultPrevented() { return defaultPrevented; },
+    preventDefault() {
+      defaultPrevented = true;
+      nativeEvent?.preventDefault?.();
+    },
     stopPropagation() { nativeEvent?.stopPropagation?.(); },
   };
 }
@@ -420,11 +491,12 @@ function installWebLinkContext(target)
   if (!documentObject || documentObject.__mdcuiLinkContextInstalled) return;
   documentObject.__mdcuiLinkContextInstalled = true;
   documentObject.addEventListener?.("click", async nativeEvent => {
+    if (nativeEvent.defaultPrevented) return;
     const anchor = nativeEvent.target?.closest?.("a[href]");
     const href = anchor?.getAttribute?.("href") ?? "";
     if (!/^javascript:/i.test(href)) return;
-    nativeEvent.preventDefault?.();
     const event = webLinkActivationEvent(nativeEvent, anchor);
+    nativeEvent.preventDefault?.();
     await evalFront(
       target.__mdcuiFrontModule ?? {},
       href,
@@ -467,38 +539,20 @@ function installWebHeadingToggle(target)
 
 export function createWebDollar(documentObject = globalThis.document)
 {
-  return function $(selectorText) {
-    const objectTarget = selectorText !== null && typeof selectorText === "object"
-      ? selectorText
+  return function $(selectorInput) {
+    const objectSelectorId = webDollarObjectId(selectorInput);
+    const selectorText = objectSelectorId ? `#${objectSelectorId}` : selectorInput;
+    const objectTarget = !objectSelectorId
+      && selectorInput !== null
+      && typeof selectorInput === "object"
+      ? selectorInput
       : null;
     const selector = objectTarget
       ? null
       : parseDollarIdentity(selectorText, { selector: true });
-    const selectorId = String(objectTarget?.id ?? selector?.id ?? "");
-    const nestedSelection = Boolean(objectTarget?._mdcuiDollarSelection);
-    const identityOnlyObject = Boolean(
-      objectTarget
-      && selectorId
-      && !("value" in objectTarget)
-      && !("textContent" in objectTarget)
-      && !("innerHTML" in objectTarget)
-      && !objectTarget.tagName
-      && !objectTarget.nodeType
-      && !objectTarget.ownerDocument
-    );
-    const resolveElementById = () => (
-      documentObject?.getElementById?.(selectorId)
-      ?? findWebDollarElement(
-        documentObject,
-        `#${selectorId}`,
-        parseDollarIdentity(`#${selectorId}`, { selector: true }),
-      )
-    );
-    const resolveElement = () => nestedSelection || identityOnlyObject
-      ? (
-        resolveElementById()
-      )
-      : objectTarget ?? findWebDollarElement(documentObject, selectorText, selector);
+    const selectorId = String(selector?.id ?? "");
+    const resolveElement = () =>
+      objectTarget ?? findWebDollarElement(documentObject, selectorText, selector);
     const selection = {
       id: selectorId,
       _mdcuiDollarSelection: true,

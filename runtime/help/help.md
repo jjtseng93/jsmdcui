@@ -499,13 +499,17 @@ The available selector methods are:
 | `.html()` | For a heading selector, return its Bun-generated inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
 
-Every `$()` selection exposes its resolved `.id`. An object target with an ID
-can be wrapped directly, and selections may be wrapped repeatedly without
-losing their identity:
+Every `$()` selection exposes its resolved `.id`. Passing an object with a
+legal MDCUI ID immediately canonicalizes it to the same path as `$('#id')`.
+The original object's other fields are not retained, so repeated wrapping
+follows that ID path at any nesting depth. Objects without a legal ID keep
+their generic object-target behavior:
 
 ```js
-const heading = $('#features')
-const nested = $($($(heading)))
+const source = { id: 'features', value: 'ignored after selection' }
+const heading = $(source)       // exactly the same target as $('#features')
+source.id = 'something-else'    // does not retarget heading
+const nested = $($($($(heading))))
 
 nested.id                 // "features"
 nested.text()

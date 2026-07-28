@@ -83,7 +83,7 @@ function writeResult(title, fields) {
   const lines = [
     `
 ✓✓✓ Success ✓✓✓
-    
+
 ${title}`,
     ...Object.entries(fields).map(([key, value]) =>
       `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`

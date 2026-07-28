@@ -106,7 +106,7 @@ import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
 import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
-import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
+import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
 import { detectSyntax, loadSyntaxDefinitions } from "./highlight/parser.js";
 import { Highlighter } from "./highlight/highlighter.js";
@@ -2035,6 +2035,7 @@ class BufferModel {
       this.Settings.fileformat = this.fileformat;
       this.lines = normalizeBufferText(text).split("\n");
       if (this.lines.length === 0) this.lines = [""];
+      clearTuiSourceDependentState(this);
       this.modTimeMs = null;
       this.readonly = readonly;
       this.Settings.readonly = readonly;
@@ -2068,6 +2069,7 @@ class BufferModel {
     this.Settings.fileformat = this.fileformat;
     this.lines = normalizeBufferText(text).split("\n");
     if (this.lines.length === 0) this.lines = [""];
+    clearTuiSourceDependentState(this);
     this.modTimeMs = info.mtimeMs;
     this.readonly = !canWritePath(this.path) || isMdcuiEncoding(this.encoding);
     this.Settings.readonly = this.readonly;
