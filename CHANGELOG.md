@@ -20,6 +20,14 @@ All notable user-visible changes to jsmdcui are documented here.
 - Preserve heading-list mutations, checkbox states, fenced-control contents,
   and collapsed headings when a terminal-width change rerenders a TUI
   document.
+- Accept Unicode letters, numbers, and combining marks in MDCUI IDs across
+  fenced declarations and selectors. Markdown headings whose usual generated
+  ID is empty receive a normalized Unicode ID or a stable `mdcui-h-...`
+  fallback.
+- Give TUI link targets source-rendered inline label HTML through `innerHTML`,
+  with a visible-text fallback when source metadata is unavailable.
+- Add `--outline FILE.md` to print every selectable heading ID as an indented
+  `-` item and every named fenced-block ID as a top-level `+` item.
 
 ### Changed
 
@@ -33,6 +41,8 @@ All notable user-visible changes to jsmdcui are documented here.
   replaced in the WUI DOM. `.removeData()` removes only user-owned data.
 - Return semantic heading HTML without exposing the internal first-grapheme
   toggle wrapper.
+- Bound heading visibility and direct task-list lookup to the heading's
+  Markdown container, such as its enclosing blockquote or list item.
 
 ### Fixed
 
@@ -55,6 +65,24 @@ All notable user-visible changes to jsmdcui are documented here.
   so heading-like content inside them cannot create broken sections.
 - Treat the first visible heading character as one complete grapheme cluster,
   avoiding splits in combining-character and ZWJ emoji sequences.
+- Discover selectable and event-enabled fenced blocks correctly inside
+  blockquotes and list items, and make `--check` report ATX, Setext, and fenced
+  declarations at their actual source lines.
+- Keep wrapped TUI links active on every displayed row and retain the correct
+  complete label across repeated URLs, images, hidden sections, and rerenders.
+- Preserve an emptied task list's insertion position and keep later heading
+  rows, `.line()`, and first-character toggles aligned when text controls
+  change height or the TUI rerenders.
+- Resize prefixed text frames at their visible corners without pairing them
+  with an adjacent or differently nested frame.
+- Coalesce overlapping TUI width rerenders and preserve terminal-input order,
+  including split `Alt` key sequences.
+- Prevent the key used to dismiss an alert, prompt, or shell pause from being
+  replayed into the editor afterward.
+- Apply one shared timeout budget to remote Kitty images in a TUI render,
+  abort stalled downloads, and retain the linked `📷` fallback.
+- Preserve valid raw `%` expressions in WUI `javascript:` links and report
+  synchronous or asynchronous handler failures to the browser console.
 
 ## [0.12.0] - 2026-07-27
 
