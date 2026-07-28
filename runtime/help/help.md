@@ -506,7 +506,8 @@ The available selector methods are:
 | `★★ .splice(start, deleteCount, ...items)` | Remove and insert direct task items; return the removed labels as an array. | Same. |
 | `★★ .slice(start, end)` | Return `{ value, checked }` snapshots without changing the direct task items. | Same. |
 | `★★ .cell(row, col).text()` | Read a heading-associated table cell using zero-based coordinates. Wrapped visual lines are joined without a separator. | Read the corresponding `th` or `td` text. |
-| `★★ .cell(row, col).text(value)` | Replace only visible text inside the cell's existing rendered rectangle; excess text is truncated while table borders, ANSI styles, and OSC 8 links stay intact. | Replace cell text nodes while retaining existing elements such as links. |
+| `★★ .cell(row, col).text(value)` | Replace text within the cell's available space; excess text is truncated while table borders, formatting, and links stay intact. | Replace cell text while retaining existing elements such as links. |
+| `★★ .cell(row, col).val()` | Return `true` or `false` for the first `☒` or `☐` in the cell; if there is no checkbox, return the cell text. | Return the first checkbox input's checked state, or the cell text when none exists. |
 | `★★ .cell(...).row`, `.col`, `.left()`, `.right()`, `.up()`, `.down()` | Inspect zero-based cell coordinates or move to a physical neighbor. `.lt()`, `.rt()`, and `.dn()` are aliases. Moving outside the table returns `null`. | Same. |
 | `★★ .parent()` | From a link event's `$(this)`, return its containing table cell, or `null`. | From an element inside `th` or `td`, return the same cell selection. |
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
@@ -514,9 +515,10 @@ The available selector methods are:
 
 At the start of any Markdown table cell, `[ ]` and `[x]` (or `[X]`) become
 unchecked and checked controls. The TUI displays `☐` or `☒` without changing
-the table width and colors checked `☒` green like Bun task lists; the WUI
+the row layout and colors checked `☒` green like Bun task lists; the WUI
 creates a native `<input type="checkbox">`. The same text elsewhere in a cell
-is left unchanged.
+is left unchanged. Use `.cell(row, col).val()` when application code needs the
+checked state.
 
 Every `$()` selection exposes its resolved `.id`. Passing an object with a
 legal MDCUI ID immediately canonicalizes it to the same path as `$('#id')`.
@@ -615,15 +617,10 @@ and heading visibility.
 ### TUI resize behavior
 
 Changing terminal or split width rerenders MDCUI while preserving heading
-visibility, task-list changes, the current contents and ANSI/OSC 8 state of
-identified table cells (including direct edits), direct checkbox state, and
-fenced-control contents. Table-cell text is refitted to each new rectangle and
-truncated only when its new capacity is smaller. Multiline `.val(value)` changes
-also update later heading positions.
-
-State changed through public `$()` control and heading APIs is supported.
-Arbitrary screen-row edits made through low-level editor APIs are outside this
-preservation guarantee.
+visibility, task-list changes, edited table cells, checkbox state, and
+fenced-control contents. Edited cell text is fitted into the resized table and
+is truncated only when the new cell is too small. Multiline `.val(value)`
+changes also update later heading positions.
 
 The 3 UI building blocks are:
 

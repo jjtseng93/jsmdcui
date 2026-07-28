@@ -8,7 +8,9 @@ All notable user-visible changes to jsmdcui are documented here.
 
 - Convert a leading `[ ]`, `[x]`, or `[X]` in every Markdown table cell into
   a fixed-width `☐`/green `☒` TUI control or a native WUI checkbox, while
-  leaving matching text elsewhere in the cell unchanged.
+  leaving matching text elsewhere in the cell unchanged. TUI conversion now
+  happens from the Markdown source before Bun lays out narrow cells, so the
+  checkbox cannot be split across rendered lines.
 - Add cross-interface `$('#heading-id').cell(row, col).text()` and
   `.text(value)` for reading or replacing zero-based cells in the
   heading-associated table. TUI wrapped cell lines are joined on read; writes
@@ -19,13 +21,16 @@ All notable user-visible changes to jsmdcui are documented here.
   navigation that returns `null` outside the table, with `.lt()`, `.rt()`, and
   `.dn()` convenience aliases. A link event's `$(this).parent()` returns its
   containing cell in both interfaces.
+- Add cross-interface `.cell(row, col).val()`. It returns the first checkbox's
+  checked state as `true` or `false`, or falls back to the cell text when the
+  cell has no checkbox.
 
 ### Fixed
 
-- Preserve the actual text, ANSI styles, and OSC 8 data inside every identified
-  TUI table cell across width rerenders, including direct cursor edits. Restore
-  snapshots into the newly sized rectangles instead of replaying only
-  `.cell().text()` calls.
+- Preserve edited TUI table cells, including their ANSI styles and OSC 8 data,
+  across terminal resize, `vsplit`, and closing a split. Refit edited contents
+  into the newly sized cells while leaving unchanged cells to the fresh
+  Markdown layout.
 - Let TUI table overwrite mode accept double-width IME input such as Chinese
   by consuming adjacent editable columns without crossing cell padding.
 - Render a full-width divider between logical TUI table rows associated with
