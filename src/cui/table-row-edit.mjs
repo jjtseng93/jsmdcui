@@ -92,19 +92,35 @@ export function overwriteMdcuiTableRow(line, cursor, input) {
   const value = String(input ?? "");
   if (!isMdcuiTableRow(text) || !value || /\r|\n/u.test(value)) return null;
   const inputWidth = stringWidth(value);
-  const target = graphemes(text)
-    .find(item => item.start >= cursor || (item.start < cursor && item.end > cursor));
+  const items = graphemes(text);
+  const targetIndex = items.findIndex(
+    item => item.start >= cursor || (item.start < cursor && item.end > cursor),
+  );
+  const target = items[targetIndex];
   if (
     !target
     || isTableSeparator(target)
     || (isTablePadding(text, target) && value !== " ")
   ) return null;
-  const targetWidth = stringWidth(target.text);
-  if (inputWidth <= 0 || inputWidth > targetWidth) return null;
+  if (inputWidth <= 0) return null;
+
+  let end = target.end;
+  let targetWidth = stringWidth(target.text);
+  for (
+    let index = targetIndex + 1;
+    targetWidth < inputWidth && index < items.length;
+    index++
+  ) {
+    const next = items[index];
+    if (isTableSeparator(next) || isTablePadding(text, next)) return null;
+    targetWidth += stringWidth(next.text);
+    end = next.end;
+  }
+  if (inputWidth > targetWidth) return null;
   const replacement = value + " ".repeat(targetWidth - inputWidth);
   return replacementResult(
     text,
-    target,
+    { ...target, end },
     replacement,
     target.start + value.length,
   );

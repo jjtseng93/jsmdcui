@@ -58,9 +58,24 @@ test("table-row overwrite and delete preserve separators and visual width", () =
   expect(Bun.stringWidth(space.line)).toBe(Bun.stringWidth(line));
 
   const wide = overwriteMdcuiTableRow("│ AB │", 2, "中");
-  expect(wide).toBeNull();
+  expect(wide.line).toBe("│ 中 │");
+  expect(Bun.stringWidth(wide.line)).toBe(Bun.stringWidth("│ AB │"));
   expect(overwriteMdcuiTableRow(line, 0, "x")).toBeNull();
   expect(deleteMdcuiTableRow(line, line.indexOf("中")).line).toBe("│   B │");
+});
+
+test("IME-width characters consume adjacent cell columns without crossing padding", () => {
+  const line = "│      │";
+  const first = overwriteMdcuiTableRow(line, 2, "中");
+  expect(first.line).toBe("│ 中   │");
+  expect(first.cursor).toBe(3);
+  expect(Bun.stringWidth(first.line)).toBe(Bun.stringWidth(line));
+
+  const second = overwriteMdcuiTableRow(first.line, first.cursor, "文");
+  expect(second.line).toBe("│ 中文 │");
+  expect(Bun.stringWidth(second.line)).toBe(Bun.stringWidth(line));
+
+  expect(overwriteMdcuiTableRow("│ A │", 2, "中")).toBeNull();
 });
 
 test("table-row overwrite preserves padding beside every separator", () => {

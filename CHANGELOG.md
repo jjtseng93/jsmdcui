@@ -13,6 +13,8 @@ All notable user-visible changes to jsmdcui are documented here.
 
 ### Fixed
 
+- Let TUI table overwrite mode accept double-width IME input such as Chinese
+  by consuming adjacent editable columns without crossing cell padding.
 - Render a full-width divider between logical TUI table rows associated with
   headings (without splitting wrapped cell text), and use
   the active colorscheme's cursor-line or color-column color for the header
