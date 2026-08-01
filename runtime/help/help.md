@@ -27,6 +27,8 @@ Editable in both TUI and WUI
   * TUI = Terminal User Interface
   * WUI = Web User Interface
 - .
+- Use a single Markdown file to build interactive TUI and Web UI apps in minutes, then compile them into [single-file executables](#distribution---build-single-file-executables) in seconds
+- .
 - It's based on bunmicro, a terminal text editor derived from the Micro text editor
 
 - Original projects:
