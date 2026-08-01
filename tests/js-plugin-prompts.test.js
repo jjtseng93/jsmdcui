@@ -80,10 +80,15 @@ test("TUI $.tts forwards text and updates process-local pitch and speed", async 
   const previousPitch = Bun.env.TTS_PITCH;
   const previousSpeed = Bun.env.TTS_SPEED;
   const calls = [];
+  let stopped = 0;
   const app = {
     async runTts(text, options) {
       calls.push([text, options]);
       return "done";
+    },
+    stopTts() {
+      stopped++;
+      return true;
     },
   };
   try {
@@ -92,6 +97,8 @@ test("TUI $.tts forwards text and updates process-local pitch and speed", async 
     expect(Bun.env.TTS_PITCH).toBe("1.2");
     expect(Bun.env.TTS_SPEED).toBe("0.8");
     expect(calls).toEqual([["你好", { trackBuffer: false }]]);
+    expect(await globalThis.$.tts.stop()).toBe(true);
+    expect(stopped).toBe(1);
   } finally {
     if (previousPitch === undefined) delete Bun.env.TTS_PITCH;
     else Bun.env.TTS_PITCH = previousPitch;

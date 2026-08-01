@@ -4066,9 +4066,7 @@ class App {
     if (this._ttsState) {
       const events = parseInputEvents(data);
       if (events.some(e => e.type !== "mouse")) {
-        this._ttsState.abort = true;
-        try { this._ttsState.proc?.kill(); } catch {}
-        this._ttsState = null;
+        this.stopTts();
         this.message = "TTS: stopped";
         this.render();
         return;
@@ -6859,9 +6857,9 @@ class App {
   }
 
   async runTts(text, { trackBuffer = true } = {}) {
-    if (!text.trim()) { this.message = "Nothing to speak"; return; }
+    if (!text.trim()) { this.message = "Nothing to speak"; return this.message; }
     const cmd = detectTtsCmd();
-    if (!cmd) { this.message = "No TTS command found (install espeak)"; return; }
+    if (!cmd) { this.message = "No TTS command found (install espeak)"; return this.message; }
     const buf = this.buffer;
     const pane = trackBuffer ? this.pane : null;
     let startX, startY;
@@ -6872,11 +6870,12 @@ class App {
       startX = buf.cursor.x; startY = buf.cursor.y;
     }
     const sentences = splitSentencesWithPositions(text, startX, startY);
-    this._ttsState = { abort: false, proc: null };
+    const state = { abort: false, proc: null };
+    this._ttsState = state;
     this.message = `TTS_PITCH:${Bun.env.TTS_PITCH||1} TTS_SPEED:${Bun.env.TTS_SPEED||1.5} — Press key: Stop`;
     this.render();
     for (let { text: sentence, start, end } of sentences) {
-      if (this._ttsState?.abort) break;
+      if (state.abort) break;
       if (pane) {
         pane.selection = { start, end };
         buf.cursor = { x: start.x, y: start.y };
@@ -6897,18 +6896,34 @@ class App {
       }
       const args = cmd.via === "arg" ? [...cmd.cmd, sentence] : cmd.cmd;
       const proc = Bun.spawn(args, spawnOpts);
-      this._ttsState.proc = proc;
+      state.proc = proc;
       const code = await proc.exited;
+      if (state.abort) break;
       if (code !== 0) {
-        this._ttsState = null;
+        if (this._ttsState === state) this._ttsState = null;
         this.message = `TTS: command exited with code ${code}`;
         this.render();
-        return;
+        return this.message;
       }
     }
-    if (this._ttsState && !this._ttsState.abort) this.message = "TTS: done";
-    this._ttsState = null;
+    if (state.abort) {
+      this.message = "TTS: stopped";
+      if (this._ttsState === state) this._ttsState = null;
+      this.render();
+      return this.message;
+    }
+    this.message = "TTS: done";
+    if (this._ttsState === state) this._ttsState = null;
     this.render();
+  }
+
+  stopTts() {
+    const state = this._ttsState;
+    if (!state) return false;
+    state.abort = true;
+    try { state.proc?.kill(); } catch {}
+    if (this._ttsState === state) this._ttsState = null;
+    return true;
   }
 
 }

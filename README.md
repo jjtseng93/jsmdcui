@@ -552,9 +552,16 @@ Calling `.removeData()` does not change heading visibility.
 
 For React and Vue users, the closest mental model is a heading-scoped component
 with shared state: the Markdown heading owns the data, each exactly
-four-backtick `md template` fence below it is a rendered view, and the next
-heading starts a new scope. Templates under the same heading therefore read and
-react to the same data object; templates under another heading do not.
+four-backtick `md template` or `js template` fence below it is a rendered view,
+and the next heading starts a new scope. Templates under the same heading
+therefore read and react to the same data object; templates under another
+heading do not.
+
+An `md template` source is automatically treated as a JavaScript template
+literal. A `js template` source is instead used directly as a synchronous
+render function body and must explicitly return Markdown, for example with a
+`return` statement and a template literal. Both forms use the same component
+and rendering pipeline; `js template` does not support async rendering yet.
 
 The optional YAML front matter at the beginning of a template provides its
 initial values, comparable to Vue's initial `data()` or React's initial state.
@@ -578,11 +585,10 @@ appropriate in-memory TUI or WUI Markdown step before replacing only that
 component's region.
 
 During rendering, `this` is the template component instance. It exposes
-`source`, `initialData`, `last`, `data`, `id`, `index`, and
+`source`, `templateType`, `initialData`, `last`, `data`, `id`, `index`, and
 `render(data = {})`; `this.id` is the owning heading ID and `this.data` is the
-same shared object passed as `data`. This instance context is also intended for
-future JavaScript-powered `md template` support, where `this.id` can identify
-the component's heading scope while implementing more dynamic behavior.
+same shared object passed as `data`. A `js template` can use `this.id` to
+identify its heading scope while implementing more dynamic render logic.
 
 The full syntax and working input binding are kept in `demos/reactive.md` so
 this runnable README does not declare a template component of its own.
@@ -700,6 +706,9 @@ wait until it finishes. In the TUI, supplied pitch and speed values update
 persisted after exit. In the WUI, the same call uses the browser Web Speech API.
 Successful calls resolve to `undefined`; WUI failures resolve to an error-reason
 string instead of rejecting, so callers may inspect the awaited return value.
+Call `await $.tts.stop()` to stop speech. In the TUI this uses the dedicated TTS
+stop path; in the WUI it cancels browser speech synthesis. Pressing Escape in
+the TUI also uses that same dedicated stop path while speech is active.
 
 > An `_` prefix only hides a function from the browser WUI RPC interface. The
 > local terminal UI imports the backend module directly, so `_` is a naming

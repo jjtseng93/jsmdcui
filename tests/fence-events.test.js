@@ -158,6 +158,7 @@ test("WUI onMdcuiLoad waits for window load and runs once", async () => {
 
 test("WUI $.tts resolves after browser speech ends with pitch and speed", async () => {
   const spoken = [];
+  let cancellations = 0;
   class Utterance {
     constructor(text) { this.text = text; }
   }
@@ -170,7 +171,7 @@ test("WUI $.tts resolves after browser speech ends with pitch and speed", async 
     addEventListener() {},
     SpeechSynthesisUtterance: Utterance,
     speechSynthesis: {
-      cancel() {},
+      cancel() { cancellations++; },
       speak(utterance) {
         spoken.push(utterance);
         queueMicrotask(() => utterance.onend());
@@ -186,6 +187,8 @@ test("WUI $.tts resolves after browser speech ends with pitch and speed", async 
     rate: 0.7,
     lang: "en-US",
   });
+  expect(target.$.tts.stop()).toBe(true);
+  expect(cancellations).toBe(2);
 });
 
 test("WUI $.tts resolves error reasons instead of rejecting", async () => {

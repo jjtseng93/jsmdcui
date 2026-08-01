@@ -1072,6 +1072,7 @@ tr:hover {
       data: record.data,
       components: record.components.map(component => ({
         source: component.source,
+        templateType: component.templateType,
         last: component.last,
         id: component.id,
         index: component.index,

@@ -16,7 +16,16 @@ All notable user-visible changes to jsmdcui are documented here.
   its native speech command and updates the current process's `TTS_PITCH` and
   `TTS_SPEED`, while the WUI uses the browser Web Speech API and resolves after
   the utterance ends. WUI speech failures resolve to an error-reason string
-  instead of rejecting the promise.
+  instead of rejecting the promise. Add `$.tts.stop()` as the shared stop API;
+  its TUI implementation uses the same dedicated stop path as Escape does while
+  speech is active.
+- Add synchronous four-backtick `js template` components alongside
+  `md template`. Their source is used directly as the render function body, so
+  it can explicitly return Markdown while retaining the same heading-owned
+  `data` argument, component `this`, front matter, and reactive replacement
+  flow.
+- Add the `demos/filelist.md` file-list reader demo with reactive ten-file
+  pages, local-file and URL loading, keyboard paging, and sequential speech.
 
 ## [0.15.0] - 2026-08-01
 

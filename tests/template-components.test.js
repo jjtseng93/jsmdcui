@@ -33,6 +33,7 @@ before
   const component = record.components[0];
 
   expect(component.id).toBe("users");
+  expect(component.templateType).toBe("md");
   expect(component.source).toBe(`| Name | Active |
 | --- | --- |
 | Ada | yes |`);
@@ -47,6 +48,30 @@ before
   );
   expect(result.markdown).toContain(component.source);
   expect(result.markdown).not.toContain("````md template");
+});
+
+test("four-backtick js template uses its source as a synchronous function body", () => {
+  const result = renderMarkdownTemplateComponents(`# Profile
+
+\`\`\`\`js template
+---
+name: Ada
+---
+return \`Hello **\${data.name}** from \${this.id}\`
+\`\`\`\`
+`);
+  const record = result.idStore.get("profile");
+  const component = record.components[0];
+
+  expect(component.templateType).toBe("js");
+  expect(component.initialData).toEqual({ name: "Ada" });
+  expect(component.source).toBe(
+    "return `Hello **${data.name}** from ${this.id}`",
+  );
+  expect(component.data).toBe(record.data);
+  expect(component.last).toBe("Hello **Ada** from profile");
+  expect(result.markdown).toContain("Hello **Ada** from profile");
+  expect(result.markdown).not.toContain("````js template");
 });
 
 test("components use the closest preceding heading and share its data", () => {
@@ -140,6 +165,33 @@ test("WUI template payload hydrates the document id store", () => {
   expect(record.components[0].data).toBe(data);
   expect(record.components[0].render(data)).toBe("hello");
   expect(record.components[0].index).toBe(0);
+});
+
+test("WUI hydrates js template render bodies with component this", () => {
+  const payload = {
+    textContent: JSON.stringify([{
+      id: "profile",
+      data: { name: "Ada" },
+      components: [{
+        id: "profile",
+        index: 0,
+        templateType: "js",
+        source: "return `${this.id}: ${data.name}`",
+        last: "profile: Ada",
+      }],
+    }]),
+  };
+  const heading = { id: "profile", tagName: "H1" };
+  const documentObject = {
+    getElementById(id) {
+      return id === "mdcui-template-components" ? payload : heading;
+    },
+  };
+
+  installWebTemplateComponents(documentObject);
+  const component = documentObject._mdcuiIdStore.get("profile").components[0];
+  expect(component.templateType).toBe("js");
+  expect(component.render.call(component, component.data)).toBe("profile: Ada");
 });
 
 test("createWui expands templates and embeds their component payload", async () => {

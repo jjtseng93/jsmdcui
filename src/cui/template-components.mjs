@@ -75,10 +75,12 @@ function templateOutput(component, mode, ordinal) {
     + `\n\n${component.marker.end}\n`;
 }
 
-export function compileTemplateComponentRender(source) {
+export function compileTemplateComponentRender(source, templateType = "md") {
   return new Function(
     "data = {}",
-    `return \`${String(source ?? "")}\`;`,
+    templateType === "js"
+      ? String(source ?? "")
+      : `return \`${String(source ?? "")}\`;`,
   );
 }
 
@@ -118,9 +120,10 @@ export function renderMarkdownTemplateComponents(markdown, { mode = "tui" } = {}
     while (closing < lines.length && !fenceClosing(lines[closing], opening))
       closing++;
 
+    const templateMatch = opening.info.match(/^(md|js)[ \t]+template$/iu);
     const isTemplate = opening.character === "`"
       && opening.length === 4
-      && /^md[ \t]+template$/iu.test(opening.info);
+      && templateMatch;
     const heading = isTemplate ? headingAtLine(headings, index + 1) : null;
     if (!heading || closing >= lines.length) {
       output.push(...lines.slice(index, Math.min(closing + 1, lines.length)));
@@ -134,14 +137,16 @@ export function renderMarkdownTemplateComponents(markdown, { mode = "tui" } = {}
     const frontMatter = extractTemplateFrontMatter(rawSource);
     if (frontMatter.data) Object.assign(record.data, frontMatter.data);
     const componentSource = frontMatter.source;
+    const templateType = templateMatch[1].toLowerCase();
     const component = {
       source: componentSource,
+      templateType,
       initialData: frontMatter.data,
       last: null,
       data: record.data,
       id: heading.id,
       index: componentIndex,
-      render: compileTemplateComponentRender(componentSource),
+      render: compileTemplateComponentRender(componentSource, templateType),
     };
     record.components.push(component);
     output.push({ component, mode, ordinal: componentOrdinal++ });

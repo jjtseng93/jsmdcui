@@ -2930,6 +2930,7 @@ export function buildMicroGlobal(jsManager) {
       trackBuffer: false,
     });
   };
+  $.tts.stop = () => getApp()?.stopTts?.() ?? false;
 
   // Converts cmd args to a safe command string for handleCommand
   function buildCmdString(name, args) {

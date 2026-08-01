@@ -224,11 +224,13 @@ function webIdRecord(documentObject, id)
   return record;
 }
 
-function compileWebTemplateComponentRender(source)
+function compileWebTemplateComponentRender(source, templateType = "md")
 {
   return new Function(
     "data = {}",
-    `return \`${String(source ?? "")}\`;`,
+    templateType === "js"
+      ? String(source ?? "")
+      : `return \`${String(source ?? "")}\`;`,
   );
 }
 
@@ -258,14 +260,16 @@ export function installWebTemplateComponents(documentObject = globalThis.documen
     record.components = Array.isArray(item.components)
       ? item.components.map(serialized => {
         const source = String(serialized?.source ?? "");
+        const templateType = serialized?.templateType === "js" ? "js" : "md";
         return {
         source,
+        templateType,
         initialData: serialized?.initialData ?? null,
         last: String(serialized?.last ?? ""),
         data: record.data,
         id,
         index: Number(serialized?.index) || 0,
-        render: compileWebTemplateComponentRender(source),
+        render: compileWebTemplateComponentRender(source, templateType),
       }})
       : [];
   }
@@ -1089,6 +1093,14 @@ export function installWebDollar(target = globalThis)
       });
     } catch (error) {
       return String(error?.message || error);
+    }
+  };
+  $.tts.stop = () => {
+    try {
+      target.speechSynthesis?.cancel?.();
+      return true;
+    } catch {
+      return false;
     }
   };
   target.$ = $;
