@@ -598,7 +598,7 @@ During rendering, `this` is the template component instance. It exposes
 same shared object passed as `data`. A `js template` can use `this.id` to
 identify its heading scope while implementing more dynamic render logic.
 
-The full syntax and working input binding are kept in `demos/reactive.md` so
+The full syntax and working input binding are kept in `demos/reactive.md` and `demos/reader.md` so
 this runnable README does not declare a template component of its own.
 
 For the detailed bilingual example with a text field and 200 ms debounce, read
