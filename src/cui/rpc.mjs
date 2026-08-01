@@ -1061,6 +1061,36 @@ export function installWebDollar(target = globalThis)
   if (!target?.document) return target?.$;
   installWebTemplateComponents(target.document);
   const $ = createWebDollar(target.document);
+  $.tts = async (text, pitch = 1, speed = 1) => {
+    try {
+      const Utterance = target.SpeechSynthesisUtterance;
+      const synthesis = target.speechSynthesis;
+      if (typeof Utterance !== "function" || !synthesis?.speak)
+        return "Web Speech synthesis is unavailable";
+      const spokenText = String(text ?? "");
+      if (!spokenText) return;
+      const utterance = new Utterance(spokenText);
+      const parsedPitch = Number(pitch);
+      const parsedSpeed = Number(speed);
+      utterance.pitch = Number.isFinite(parsedPitch) && parsedPitch > 0 ? parsedPitch : 1;
+      utterance.rate = Number.isFinite(parsedSpeed) && parsedSpeed > 0 ? parsedSpeed : 1;
+      const characters = [...spokenText];
+      const ascii = characters.filter(character => character.codePointAt(0) < 128).length;
+      utterance.lang = ascii / characters.length > 0.5 ? "en-US" : "zh-TW";
+      return await new Promise(resolve => {
+        utterance.onend = () => resolve();
+        utterance.onerror = event => resolve(
+          event?.error instanceof Error
+            ? event.error.message
+            : `Speech synthesis failed: ${event?.error ?? "unknown error"}`,
+        );
+        synthesis.cancel?.();
+        synthesis.speak(utterance);
+      });
+    } catch (error) {
+      return String(error?.message || error);
+    }
+  };
   target.$ = $;
   installWebTextareaResize(target);
   installWebHeadingToggle(target);

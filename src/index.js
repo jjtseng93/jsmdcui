@@ -6311,6 +6311,10 @@ class App {
         break;
       }
       case "tts": {
+        if (cmdArgs.length > 0) {
+          await this.runTts(cmdArgs.join(" "), { trackBuffer: false });
+          break;
+        }
         const buf = this.buffer;
         let ttsText;
         if (this.pane?.selection) {
@@ -6321,7 +6325,7 @@ class App {
           tail[0] = tail[0].slice(cur.x);
           ttsText = tail.join("\n");
         }
-        this.runTts(ttsText);
+        await this.runTts(ttsText);
         break;
       }
       case "ttsspeed": {
@@ -6854,12 +6858,12 @@ class App {
     await doNext();
   }
 
-  async runTts(text) {
+  async runTts(text, { trackBuffer = true } = {}) {
     if (!text.trim()) { this.message = "Nothing to speak"; return; }
     const cmd = detectTtsCmd();
     if (!cmd) { this.message = "No TTS command found (install espeak)"; return; }
     const buf = this.buffer;
-    const pane = this.pane;
+    const pane = trackBuffer ? this.pane : null;
     let startX, startY;
     if (pane?.selection) {
       const { first } = selectionBounds(pane.selection);

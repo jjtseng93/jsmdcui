@@ -9,6 +9,14 @@ All notable user-visible changes to jsmdcui are documented here.
 - Add the optional async `onMdcuiLoad()` front export. It runs with the normal
   front-code scope after initial TUI layout/rendering, or after WUI
   `window.load` and installation of selectors and template component state.
+- Let the built-in `tts` command accept the sentence to speak as an argument,
+  including calls such as `micro.cmd.tts('Hello world')`. Calling `tts` without
+  an argument retains selection-or-cursor reading behavior.
+- Add the cross-interface async `$.tts(text, pitch, speed)` helper. The TUI uses
+  its native speech command and updates the current process's `TTS_PITCH` and
+  `TTS_SPEED`, while the WUI uses the browser Web Speech API and resolves after
+  the utterance ends. WUI speech failures resolve to an error-reason string
+  instead of rejecting the promise.
 
 ## [0.15.0] - 2026-08-01
 

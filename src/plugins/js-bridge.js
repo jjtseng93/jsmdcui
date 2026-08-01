@@ -2917,6 +2917,19 @@ export function buildMicroGlobal(jsManager) {
       if (app?._started) app.render?.();
     },
   );
+  $.tts = async (text, pitch, speed) => {
+    const app = getApp();
+    if (!app?.runTts) return;
+    const parsedPitch = Number(pitch);
+    const parsedSpeed = Number(speed);
+    if (Number.isFinite(parsedPitch) && parsedPitch > 0)
+      Bun.env.TTS_PITCH = String(parsedPitch);
+    if (Number.isFinite(parsedSpeed) && parsedSpeed > 0)
+      Bun.env.TTS_SPEED = String(parsedSpeed);
+    return app.runTts(String(text ?? ""), {
+      trackBuffer: false,
+    });
+  };
 
   // Converts cmd args to a safe command string for handleCommand
   function buildCmdString(name, args) {

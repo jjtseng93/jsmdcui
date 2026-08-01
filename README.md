@@ -694,6 +694,13 @@ The 3 UI building blocks are:
   with `_`. Call a published function from the front end with
   `await rpc.functionName(arg1, arg2)`.
 
+Front code can use `await $.tts(text, pitch, speed)` to speak a sentence and
+wait until it finishes. In the TUI, supplied pitch and speed values update
+`TTS_PITCH` and `TTS_SPEED` for the current jsmdcui process only; they are not
+persisted after exit. In the WUI, the same call uses the browser Web Speech API.
+Successful calls resolve to `undefined`; WUI failures resolve to an error-reason
+string instead of rejecting, so callers may inspect the awaited return value.
+
 > An `_` prefix only hides a function from the browser WUI RPC interface. The
 > local terminal UI imports the backend module directly, so `_` is a naming
 > convention, not authentication or a security boundary. Use a name without

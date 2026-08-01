@@ -156,6 +156,70 @@ test("WUI onMdcuiLoad waits for window load and runs once", async () => {
   expect(calls).toBe(1);
 });
 
+test("WUI $.tts resolves after browser speech ends with pitch and speed", async () => {
+  const spoken = [];
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const target = {
+    document: {
+      getElementById() { return null; },
+      querySelectorAll() { return []; },
+      addEventListener() {},
+    },
+    addEventListener() {},
+    SpeechSynthesisUtterance: Utterance,
+    speechSynthesis: {
+      cancel() {},
+      speak(utterance) {
+        spoken.push(utterance);
+        queueMicrotask(() => utterance.onend());
+      },
+    },
+  };
+  installWebDollar(target);
+  await target.$.tts("Hello world", 1.4, 0.7);
+  expect(spoken).toHaveLength(1);
+  expect(spoken[0]).toMatchObject({
+    text: "Hello world",
+    pitch: 1.4,
+    rate: 0.7,
+    lang: "en-US",
+  });
+});
+
+test("WUI $.tts resolves error reasons instead of rejecting", async () => {
+  const document = {
+    getElementById() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener() {},
+  };
+  const unavailable = { document, addEventListener() {} };
+  installWebDollar(unavailable);
+  expect(await unavailable.$.tts("hello")).toBe(
+    "Web Speech synthesis is unavailable",
+  );
+
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const failed = {
+    document,
+    addEventListener() {},
+    SpeechSynthesisUtterance: Utterance,
+    speechSynthesis: {
+      cancel() {},
+      speak(utterance) {
+        queueMicrotask(() => utterance.onerror({ error: "not-allowed" }));
+      },
+    },
+  };
+  installWebDollar(failed);
+  expect(await failed.$.tts("hello")).toBe(
+    "Speech synthesis failed: not-allowed",
+  );
+});
+
 test("keyup declarations are unsupported in both interfaces", () => {
   const markdown = '```text#myid @keyup="update(event)"\nvalue\n```\n';
   const declarations = parseFenceDeclarations(markdown);

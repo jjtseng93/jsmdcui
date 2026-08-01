@@ -74,3 +74,30 @@ test("current buffer exposes its actual MDCUI module source", () => {
     else globalThis.$ = previousSelector;
   }
 });
+
+test("TUI $.tts forwards text and updates process-local pitch and speed", async () => {
+  const previousSelector = globalThis.$;
+  const previousPitch = Bun.env.TTS_PITCH;
+  const previousSpeed = Bun.env.TTS_SPEED;
+  const calls = [];
+  const app = {
+    async runTts(text, options) {
+      calls.push([text, options]);
+      return "done";
+    },
+  };
+  try {
+    buildMicroGlobal({ _app: app, _ctx: null, on() {} });
+    expect(await globalThis.$.tts("你好", 1.2, 0.8)).toBe("done");
+    expect(Bun.env.TTS_PITCH).toBe("1.2");
+    expect(Bun.env.TTS_SPEED).toBe("0.8");
+    expect(calls).toEqual([["你好", { trackBuffer: false }]]);
+  } finally {
+    if (previousPitch === undefined) delete Bun.env.TTS_PITCH;
+    else Bun.env.TTS_PITCH = previousPitch;
+    if (previousSpeed === undefined) delete Bun.env.TTS_SPEED;
+    else Bun.env.TTS_SPEED = previousSpeed;
+    if (previousSelector === undefined) delete globalThis.$;
+    else globalThis.$ = previousSelector;
+  }
+});
