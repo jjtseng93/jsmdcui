@@ -2,15 +2,15 @@
 
 # File List Reader / 檔案列表閱讀器
 
-Enter a local directory, press Tab to complete directories, then press Enter or
-choose **List directory**. 輸入本機目錄後可按 Tab 補全目錄，再按 Enter 或選擇
-「列出目錄」。
+Enter a local directory or web page URL, then press Enter or choose **List**.
+Tab completes local directories. 輸入本機目錄或網頁網址後按 Enter 或選擇
+「列出」；Tab 可補全本機目錄。
 
 ```text#directory @keydown="directoryKey(event)"
 .
 ```
 
-- [List directory / 列出目錄](javascript:listDirectory())
+- [List files or links / 列出檔案或連結](javascript:listDirectory())
 
 ## File List / 檔案列表
 
@@ -41,9 +41,9 @@ return markdown
 
 ## Controls / 控制
 
-| Previous page | Previous | Next | Next page | Clear selection |
+| Previous page | Page | Go | Next page | Clear selection |
 | --- | --- | --- | --- | --- |
-| [上一頁](javascript:changeListPage(-1)) | [上一個](javascript:selectRelative(-1)) | [下一個](javascript:selectRelative(1)) | [下一頁](javascript:changeListPage(1)) | [清除已選](javascript:clearSelection()) |
+| [上一頁](javascript:changeListPage(-1)) | 1 | [跳轉](javascript:jumpListPage(this)) | [下一頁](javascript:changeListPage(1)) | [清除已選](javascript:clearSelection()) |
 | [🚀載入](javascript:loadSelected()) | [⏮上一章](javascript:loadRelative(-1)) | [⏭下一章](javascript:loadRelative(1)) | [⏹停止朗讀](javascript:stopReading()) | [📢朗讀](javascript:readFromCurrentPage()) |
 
 ## Document Reader / 文件閱讀器
@@ -58,6 +58,24 @@ next page.
 
 將遊標放在閱讀框；QWERTY 左半邊、左／上方向鍵或 PageUp 切到上一頁，右半邊、
 右／下方向鍵或 PageDown 切到下一頁。
+
+To replace text while loading, use `replace.json`. For a local file, place it
+beside that file; for a URL, place it in `process.cwd()`. It is parsed as JSON5
+and must contain an array of two-item arrays. The first item is passed to
+`new RegExp(target, "g")`; the second item is inserted as literal replacement
+text. Invalid or unparseable rules are ignored.
+
+載入本機檔案時，可在檔案同一目錄放置 `replace.json`；載入 URL 時則使用
+`process.cwd()` 下的 `replace.json`。檔案會以 JSON5 解析，格式為二項陣列所組成
+的陣列；第一項會傳給 `new RegExp(target, "g")`，第二項是純文字取代結果。
+無效或無法解析時會忽略規則並正常載入原文。
+
+```json5
+[
+  ["old\\s+name", "new name"],
+  ["第[零〇]章", "序章"],
+]
+```
 
 ### Document content
 
@@ -218,6 +236,7 @@ export async function listDirectory() {
     $('#directory').val(result.directory);
     selectedIndex = -1;
     $('#file-list').data({ filelist: result.files, listPage: 0 });
+    $('#controls').cell(1, 1).text('1');
     message(`Listed ${result.files.length} files from ${result.directory}`);
   } catch (error) {
     message(`List failed: ${error?.message || error}`);
@@ -228,15 +247,28 @@ export function selectFile(value) {
   const files = fileState().filelist || [];
   selectedIndex = files.findIndex(file => file.value === value);
   $('#selected').val(value);
-  if (selectedIndex >= 0)
-    $('#file-list').data('listPage', Math.floor(selectedIndex / 10));
+  if (selectedIndex >= 0) setListPage(Math.floor(selectedIndex / 10));
   message(`Selected: ${value}`);
 }
 
-export function changeListPage(delta) {
+function setListPage(nextPage) {
   const data = fileState();
-  const next = Math.max(0, Math.min((Number(data.listPage) || 0) + delta, pageCount() - 1));
+  const next = Math.max(0, Math.min(Number(nextPage) || 0, pageCount() - 1));
   $('#file-list').data('listPage', next);
+  $('#controls').cell(1, 1).text(String(next + 1));
+}
+
+export function changeListPage(delta) {
+  setListPage((Number(fileState().listPage) || 0) + delta);
+}
+
+export function jumpListPage(link) {
+  const value = trailingNumber($(link).parent()?.left()?.text());
+  if (!Number.isFinite(value)) {
+    message('Invalid list page number / 檔案列表頁碼無效');
+    return;
+  }
+  setListPage(Math.trunc(value) - 1);
 }
 
 export function selectRelative(delta) {
@@ -360,6 +392,7 @@ import { basename, dirname, resolve, sep } from 'node:path';
 
 export async function completeReaderDirectory(input) {
   const raw = String(input ?? '').trim();
+  if (/^https?:\/\//iu.test(raw)) return { directory: raw, matches: 0 };
   const resolved = resolve(raw || process.cwd());
   const endsWithSeparator = /[\\/]$/u.test(raw);
   const parent = endsWithSeparator ? resolved : dirname(resolved);
@@ -382,7 +415,38 @@ export async function completeReaderDirectory(input) {
 }
 
 export async function listReaderDirectory(input) {
-  const directory = resolve(String(input ?? '').trim() || process.cwd());
+  const value = String(input ?? '').trim();
+  if (/^https?:\/\//iu.test(value)) {
+    const response = await fetch(value);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const directory = response.url || value;
+    const links = [];
+    let currentLink = null;
+    await new HTMLRewriter()
+      .on('a[href]', {
+        element(element) {
+          const href = element.getAttribute('href')?.trim();
+          currentLink = href ? { href, text: '' } : null;
+          if (currentLink) links.push(currentLink);
+        },
+        text(chunk) {
+          if (currentLink) currentLink.text += chunk.text;
+        },
+      })
+      .transform(response)
+      .text();
+    const seen = new Set();
+    const files = [];
+    for (const link of links) {
+      let url;
+      try { url = new URL(link.href, directory); } catch { continue; }
+      if (!/^https?:$/iu.test(url.protocol) || seen.has(url.href)) continue;
+      seen.add(url.href);
+      files.push({ name: link.text.trim() || link.href, value: url.href });
+    }
+    return { directory, files };
+  }
+  const directory = resolve(value || process.cwd());
   const entries = await readdir(directory, { withFileTypes: true });
   const files = entries
     .filter(entry => entry.isFile())
@@ -394,17 +458,41 @@ export async function listReaderDirectory(input) {
   return { directory, files };
 }
 
+async function applyReaderReplacements(text, directory) {
+  const replacementFile = Bun.file(resolve(directory, 'replace.json'));
+  if (!await replacementFile.exists()) return text;
+  try {
+    const rules = Bun.JSON5.parse(await replacementFile.text());
+    if (!Array.isArray(rules)) return text;
+    for (const rule of rules) {
+      if (!Array.isArray(rule) || rule.length !== 2) continue;
+      try {
+        const pattern = new RegExp(String(rule[0]), 'g');
+        const replacement = String(rule[1]);
+        text = text.replace(pattern, () => replacement);
+      } catch {}
+    }
+  } catch {}
+  return text;
+}
+
 export async function loadReaderResource(input) {
   const value = String(input ?? '').trim();
   if (!value) throw new Error('Select a file or enter a URL first');
   if (/^https?:\/\//iu.test(value)) {
     const response = await fetch(value);
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    return { source: response.url || value, text: await response.text() };
+    return {
+      source: response.url || value,
+      text: await applyReaderReplacements(await response.text(), process.cwd()),
+    };
   }
   const source = resolve(value);
   const file = Bun.file(source);
   if (!await file.exists()) throw new Error(`File not found: ${source}`);
-  return { source, text: await file.text() };
+  return {
+    source,
+    text: await applyReaderReplacements(await file.text(), dirname(source)),
+  };
 }
 ```
