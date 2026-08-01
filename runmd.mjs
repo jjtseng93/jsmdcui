@@ -14,6 +14,10 @@ import {
   convertTuiTableCheckboxes,
   markHeadingTableRows,
 } from './src/cui/table-render.mjs'
+import {
+  renderMarkdownTemplateComponents,
+  wrapWuiTemplateComponents,
+} from './src/cui/template-components.mjs'
 import { REPO_ROOT } from './single-exe/compiled.js'
 
 const csl=console.log
@@ -247,8 +251,12 @@ export async function writeRuntimeFiles(mdpath)
 }
 
 
-export function createTui(md,TERMINAL_WIDTH=30) // ANSI Colors
+export function createTui(md,TERMINAL_WIDTH=30, context = null) // ANSI Colors
 {
+  const templates = renderMarkdownTemplateComponents(md);
+  if (context && typeof context === "object")
+    context.preRenderHeadingData = templates.idStore;
+  md = templates.markdown;
   const tablePlan = markHeadingTableRows(md);
   md = (  Bun?.markdown?.ansi?.(
             tablePlan.markdown,{
@@ -988,9 +996,12 @@ export function convertWuiTableCheckboxes(html)
 
 export async function createWui(md,mdpath,{ bundling = false } = {}) // HTML
 {
+  const templates = renderMarkdownTemplateComponents(md, { mode: "wui" })
+  md = templates.markdown
   const eventsById = fenceEventMap(md)
   
   md = renderMarkdownWithHeadingIds(md).html;
+  md = wrapWuiTemplateComponents(md, templates.idStore)
   
   // Restore single quotes
   let reHrefs = /href="[^"]*?"/g  //  "
@@ -1048,6 +1059,19 @@ tr:hover {
 }
 </style>`;
   const moduleEntry = bundling ? `${mdb}.tmpfi.js` : `${mdb}.front.js`;
+  const templatePayload = JSON.stringify(
+    [...templates.idStore].map(([id, record]) => ({
+      id,
+      data: record.data,
+      components: record.components.map(component => ({
+        source: component.source,
+        last: component.last,
+        id: component.id,
+        index: component.index,
+      })),
+    })),
+  ).replaceAll("<", "\\u003c");
+  const templateScript = `<scr`+`ipt type="application/json" id="mdcui-template-components">${templatePayload}</scr`+`ipt>`;
   const moduleScript = `<scr`+`ipt type="module" src="./${moduleEntry}"></scr`+`ipt>`;
   const isFullHtmlDocument = /^\s*<!doctype html>/i.test(md);
   if (!isFullHtmlDocument) {
@@ -1061,6 +1085,7 @@ tr:hover {
 </head>
 <body>
 ${md}
+${templateScript}
 ${moduleScript}
 </body>
 </html>
@@ -1072,9 +1097,9 @@ ${moduleScript}
       md = `${responsiveImageStyle}\n${md}`;
     }
     if (/<\/body\s*>/i.test(md)) {
-      md = md.replace(/<\/body\s*>/i, `${moduleScript}\n</body>`);
+      md = md.replace(/<\/body\s*>/i, `${templateScript}\n${moduleScript}\n</body>`);
     } else {
-      md += `\n${moduleScript}\n`;
+      md += `\n${templateScript}\n${moduleScript}\n`;
     }
   }
 

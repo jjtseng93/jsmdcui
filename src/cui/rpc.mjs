@@ -224,6 +224,46 @@ function webIdRecord(documentObject, id)
   return record;
 }
 
+export function installWebTemplateComponents(documentObject = globalThis.document)
+{
+  const payload = documentObject?.getElementById?.("mdcui-template-components");
+  if (!payload || payload.__mdcuiInstalled) return webIdStore(documentObject);
+  payload.__mdcuiInstalled = true;
+
+  let headings;
+  try {
+    headings = JSON.parse(String(payload.textContent ?? "[]"));
+  } catch {
+    return webIdStore(documentObject);
+  }
+  if (!Array.isArray(headings)) return webIdStore(documentObject);
+
+  for (const item of headings) {
+    const id = String(item?.id ?? "");
+    if (!id) continue;
+    const record = webIdRecord(documentObject, id);
+    if (!record.data || typeof record.data !== "object")
+      record.data = Object.create(null);
+    if (item.data && typeof item.data === "object")
+      Object.assign(record.data, item.data);
+
+    record.components = Array.isArray(item.components)
+      ? item.components.map(serialized => ({
+        source: String(serialized?.source ?? ""),
+        last: String(serialized?.last ?? ""),
+        data: record.data,
+        id,
+        index: Number(serialized?.index) || 0,
+        render(data) {
+          void data;
+          return this.source;
+        },
+      }))
+      : [];
+  }
+  return webIdStore(documentObject);
+}
+
 function webUserData(documentObject, id, element)
 {
   if (!documentObject || !id) return undefined;
@@ -929,6 +969,7 @@ export function createWebDollar(documentObject = globalThis.document)
 export function installWebDollar(target = globalThis)
 {
   if (!target?.document) return target?.$;
+  installWebTemplateComponents(target.document);
   const $ = createWebDollar(target.document);
   target.$ = $;
   installWebTextareaResize(target);

@@ -67,6 +67,12 @@ function tableRow(line) {
   return text.includes("|") && !/^\s*$/u.test(text);
 }
 
+function invisibleMarkerLine(line) {
+  return /^[\u200b\u200c\u2060-\u2063\ufeff]+$/u.test(
+    String(line ?? "").trim(),
+  );
+}
+
 function insertRowMarker(line, marker) {
   const text = String(line ?? "");
   const opening = /^(\s*(?:>\s*)*\|?\s*)/u.exec(text)?.[0] ?? "";
@@ -94,7 +100,10 @@ export function markHeadingTableRows(markdown) {
   });
   for (const heading of headings) {
     let header = Math.max(0, Number(heading.endLine) || heading.line);
-    while (header < lines.length && !lines[header].trim()) header++;
+    while (
+      header < lines.length
+      && (!lines[header].trim() || invisibleMarkerLine(lines[header]))
+    ) header++;
     const delimiter = header + 1;
     if (
       delimiter >= lines.length

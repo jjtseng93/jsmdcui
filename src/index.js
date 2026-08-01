@@ -112,6 +112,7 @@ import {
 } from "./cui/rerender-queue.mjs";
 import { resizeMdcuiTextBlock } from "./cui/text-block-resize.mjs";
 import { indexedTuiLinkAtPosition, refreshTuiLinkIndex, tuiLinkActivationContext } from "./cui/tui-links.mjs";
+import { applyPreRenderHeadingData } from "./cui/template-components.mjs";
 import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
@@ -379,10 +380,10 @@ async function decodeAndRenderTextBytes(bytes, encoding = "utf-8", width = proce
   const decoded = decodeTextBytesWithEncoding(bytes, encoding);
   if (!isMdcuiEncoding(decoded.encoding)) return decoded;
   const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
-  const { rendered, tuiSourceText, images } = await renderMdcui(decoded.text, renderWidth, mdpath, mdpath);
+  const { rendered, tuiSourceText, images, preRenderHeadingData } = await renderMdcui(decoded.text, renderWidth, mdpath, mdpath);
   const styled = parseAnsiStyledText(rendered);
   markTuiTableStripeStyles(styled.styleLines, styled.text.split("\n"));
-  return { text: styled.text, encoding: "mdcui", sourceText: decoded.text, tuiSourceText, ansiText: rendered, ansiStyleLines: styled.styleLines, mdcuiImages: images, mdcuiRenderWidth: renderWidth };
+  return { text: styled.text, encoding: "mdcui", sourceText: decoded.text, tuiSourceText, ansiText: rendered, ansiStyleLines: styled.styleLines, mdcuiImages: images, mdcuiRenderWidth: renderWidth, preRenderHeadingData };
 }
 
 async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpath = null, imageBasePath = mdpath) {
@@ -392,7 +393,12 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     md = await runmd.extractJs(md, mdpath);
     await runmd.createWui(md, mdpath);
   }
-  const tui = runmd.createTui(md, Math.max(1, Math.trunc(Number(width) || 80)));
+  const renderContext = {};
+  const tui = runmd.createTui(
+    md,
+    Math.max(1, Math.trunc(Number(width) || 80)),
+    renderContext,
+  );
   const resolvedImageBasePath = mdpath && !isHttpUrl(mdpath)
     ? remoteMarkdownSources.get(resolve(mdpath)) ?? imageBasePath
     : imageBasePath;
@@ -407,6 +413,7 @@ async function renderMdcui(markdown, width = process.stdout.columns || 80, mdpat
     rendered: prepared.rendered,
     images: prepared.images,
     tuiSourceText: md,
+    preRenderHeadingData: renderContext.preRenderHeadingData,
   };
 }
 
@@ -1386,7 +1393,7 @@ class BufferModel {
   get searchPattern() { return this._searchPattern ?? ""; }
   set searchPattern(v) { this._searchPattern = v ?? ""; this.searchMatches?.clear(); }
 
-  constructor({ path = "", text = "", command = {}, type = "default", readonly = false, modTimeMs = null, encoding = DEFAULT_SETTINGS.encoding, ansiStyleLines = null, ansiText = null, sourceText = null, tuiSourceText = null, mdcuiImages = null, mdcuiRenderWidth = 0 } = {}) {
+  constructor({ path = "", text = "", command = {}, type = "default", readonly = false, modTimeMs = null, encoding = DEFAULT_SETTINGS.encoding, ansiStyleLines = null, ansiText = null, sourceText = null, tuiSourceText = null, mdcuiImages = null, mdcuiRenderWidth = 0, preRenderHeadingData = null } = {}) {
     this.path = path;
     this.type = type;
     this.name = path ? basename(path) : "No name";
@@ -1405,6 +1412,7 @@ class BufferModel {
     if (isMdcuiEncoding(this.encoding)) {
       indexTuiHeadingRows(this);
       refreshTuiLinkIndex(this, { resetCatalog: true });
+      applyPreRenderHeadingData(this, preRenderHeadingData);
     }
     this._useBundledMdcuiModules = false;
     this.cursor = { x: 0, y: 0 };
@@ -1507,6 +1515,7 @@ class BufferModel {
     let tuiSourceText = null;
     let mdcuiRenderWidth = 0;
     let mdcuiImages = null;
+    let preRenderHeadingData = null;
     if (existsSync(path)) {
       const info = statSync(path);
       if (info.isDirectory()) throw new Error(`${path} is a directory`);
@@ -1521,9 +1530,10 @@ class BufferModel {
       tuiSourceText = decoded.tuiSourceText ?? null;
       mdcuiRenderWidth = decoded.mdcuiRenderWidth ?? 0;
       mdcuiImages = decoded.mdcuiImages ?? null;
+      preRenderHeadingData = decoded.preRenderHeadingData ?? null;
       if (isMdcuiEncoding(encoding)) readonly = true;
     }
-    const buffer = new BufferModel({ path, text, command, readonly, modTimeMs, encoding, ansiStyleLines, ansiText, sourceText, tuiSourceText, mdcuiImages, mdcuiRenderWidth });
+    const buffer = new BufferModel({ path, text, command, readonly, modTimeMs, encoding, ansiStyleLines, ansiText, sourceText, tuiSourceText, mdcuiImages, mdcuiRenderWidth, preRenderHeadingData });
     buffer._configDir = context?.config?.configDir ?? null;
     attachSyntax(buffer, context, path, text);
     return buffer;
@@ -1961,6 +1971,7 @@ class BufferModel {
       if (isMdcuiEncoding(this.encoding)) {
         indexTuiHeadingRows(this);
         refreshTuiLinkIndex(this, { resetCatalog: true });
+        applyPreRenderHeadingData(this, decoded.preRenderHeadingData);
       }
       this.modTimeMs = null;
       this.readonly = readonly;
@@ -1999,6 +2010,7 @@ class BufferModel {
     if (isMdcuiEncoding(this.encoding)) {
       indexTuiHeadingRows(this);
       refreshTuiLinkIndex(this, { resetCatalog: true });
+      applyPreRenderHeadingData(this, decoded.preRenderHeadingData);
     }
     this.modTimeMs = info.mtimeMs;
     this.readonly = !canWritePath(this.path) || isMdcuiEncoding(this.encoding);
@@ -2030,7 +2042,7 @@ class BufferModel {
       restoreTuiHiddenHeadings(this, snapshot.hiddenHeadings);
       throw error;
     }
-    const { rendered, images } = rerendered;
+    const { rendered, images, preRenderHeadingData } = rerendered;
     const styled = parseAnsiStyledText(rendered);
     markTuiTableStripeStyles(styled.styleLines, styled.text.split("\n"));
     this.lines = normalizeBufferText(styled.text).split("\n");
@@ -2041,6 +2053,7 @@ class BufferModel {
     this._mdcuiHeadingTaskListAnchors = null;
     indexTuiHeadingRows(this);
     refreshTuiLinkIndex(this, { resetCatalog: true });
+    applyPreRenderHeadingData(this, preRenderHeadingData);
     restoreTuiRerenderState(this, snapshot);
     this._mdcuiRenderWidth = renderWidth;
     this.fileformat = detectFileFormat(styled.text, this.Settings.fileformat ?? DEFAULT_SETTINGS.fileformat);
