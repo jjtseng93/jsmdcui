@@ -24,7 +24,7 @@ All notable user-visible changes to jsmdcui are documented here.
   it can explicitly return Markdown while retaining the same heading-owned
   `data` argument, component `this`, front matter, and reactive replacement
   flow.
-- Add the `demos/filelist.md` file-list reader demo with reactive ten-file
+- Add the `demos/reader.md` file-list reader demo with reactive ten-file
   pages, local-file and URL loading, keyboard paging, and sequential speech.
 
 ## [0.15.0] - 2026-08-01

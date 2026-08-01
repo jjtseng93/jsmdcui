@@ -2,8 +2,9 @@
 
 # File List Reader / 檔案列表閱讀器
 
-Enter a local directory, then press Enter or choose **List directory**.
-輸入本機目錄後按 Enter，或選擇「列出目錄」。
+Enter a local directory, press Tab to complete directories, then press Enter or
+choose **List directory**. 輸入本機目錄後可按 Tab 補全目錄，再按 Enter 或選擇
+「列出目錄」。
 
 ```text#directory @keydown="directoryKey(event)"
 .
@@ -43,7 +44,7 @@ return markdown
 | Previous page | Previous | Next | Next page | Clear selection |
 | --- | --- | --- | --- | --- |
 | [上一頁](javascript:changeListPage(-1)) | [上一個](javascript:selectRelative(-1)) | [下一個](javascript:selectRelative(1)) | [下一頁](javascript:changeListPage(1)) | [清除已選](javascript:clearSelection()) |
-| [載入](javascript:loadSelected()) | [上一章](javascript:loadRelative(-1)) | [下一章](javascript:loadRelative(1)) | [停止朗讀](javascript:stopReading()) | [朗讀](javascript:readFromCurrentPage()) |
+| [🚀載入](javascript:loadSelected()) | [⏮上一章](javascript:loadRelative(-1)) | [⏭下一章](javascript:loadRelative(1)) | [⏹停止朗讀](javascript:stopReading()) | [📢朗讀](javascript:readFromCurrentPage()) |
 
 ## Document Reader / 文件閱讀器
 - asdf = prev page
@@ -75,6 +76,13 @@ next page.
 
 ```
 
+### Reader controls / 閱讀控制
+
+| Prev page / Speed | Page | Go / Pitch | Next page |
+| --- | --- | --- | --- |
+| [上一頁](javascript:previousReaderPage()) | 1 | [跳轉](javascript:jumpReaderPage(this)) | [下一頁](javascript:nextReaderPage()) |
+| 速度: [1.5](javascript:applySpeechSetting(this,'speed',false)) | [套用 / Apply](javascript:applySpeechSetting(this,'speed')) | 音高: [1.0](javascript:applySpeechSetting(this,'pitch',false)) | [套用 / Apply](javascript:applySpeechSetting(this,'pitch')) |
+
 ```text#reader-status
 Not loaded / 尚未載入
 ```
@@ -96,6 +104,8 @@ let pageIndex = 0;
 let selectedIndex = -1;
 let readingRevision = 0;
 let loadedSource = '';
+let speechSpeed = 1.5;
+let speechPitch = 1.0;
 
 function message(text) {
   $('#reader-status').val(String(text));
@@ -136,7 +146,34 @@ function showReaderPage(nextPage = pageIndex) {
   const rows = String(pages[pageIndex] ?? '').split('\n');
   while (rows.length < PAGE_ROWS) rows.push('');
   $('#reader').val(rows.slice(0, PAGE_ROWS).join('\n'));
+  $('#reader-controls').cell(1, 1).text(String(pageIndex + 1));
   message(`${loadedSource || 'Reader'} · Page ${pageIndex + 1} / ${pages.length}`);
+}
+
+function trailingNumber(text) {
+  const match = String(text ?? '').trim().match(/(-?(?:\d+(?:\.\d*)?|\.\d+))\s*$/u);
+  return match ? Number(match[1]) : NaN;
+}
+
+export function jumpReaderPage(link) {
+  const value = trailingNumber($(link).parent()?.left()?.text());
+  if (!Number.isFinite(value)) {
+    message('Invalid page number / 頁碼無效');
+    return;
+  }
+  showReaderPage(Math.trunc(value) - 1);
+}
+
+export function applySpeechSetting(link, kind, fromLeft = true) {
+  const cell = $(link).parent();
+  const value = trailingNumber((fromLeft ? cell?.left() : cell)?.text());
+  if (!Number.isFinite(value) || value <= 0) {
+    message(`Invalid ${kind} / ${kind === 'speed' ? '速度' : '音高'}無效`);
+    return;
+  }
+  if (kind === 'speed') speechSpeed = value;
+  else speechPitch = value;
+  message(`${kind === 'speed' ? 'Speed / 速度' : 'Pitch / 音高'}: ${value}`);
 }
 
 function sentences(text) {
@@ -153,9 +190,26 @@ export async function onMdcuiLoad() {
 }
 
 export function directoryKey(event) {
-  if (event.key !== 'Enter') return;
-  event.preventDefault();
-  return listDirectory();
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    return completeDirectory();
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    return listDirectory();
+  }
+}
+
+export async function completeDirectory() {
+  try {
+    const result = await rpc.completeReaderDirectory($('#directory').val());
+    if (result.matches > 0) $('#directory').val(result.directory);
+    message(result.matches > 0
+      ? `Directory completion: ${result.matches} match${result.matches === 1 ? '' : 'es'}`
+      : 'No matching directory / 找不到符合的目錄');
+  } catch (error) {
+    message(`Completion failed: ${error?.message || error}`);
+  }
 }
 
 export async function listDirectory() {
@@ -288,7 +342,7 @@ async function runReading(revision) {
     showReaderPage(current);
     for (const sentence of sentences(pages[current])) {
       if (revision !== readingRevision) return;
-      const error = await $.tts(sentence);
+      const error = await $.tts(sentence, speechPitch, speechSpeed);
       if (error) {
         message(error);
         return;
@@ -302,7 +356,30 @@ async function runReading(revision) {
 
 ```js back
 import { readdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
+
+export async function completeReaderDirectory(input) {
+  const raw = String(input ?? '').trim();
+  const resolved = resolve(raw || process.cwd());
+  const endsWithSeparator = /[\\/]$/u.test(raw);
+  const parent = endsWithSeparator ? resolved : dirname(resolved);
+  const prefix = endsWithSeparator ? '' : basename(resolved);
+  const entries = await readdir(parent, { withFileTypes: true });
+  const matches = entries
+    .filter(entry => entry.isDirectory() && entry.name.startsWith(prefix))
+    .map(entry => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+  if (!matches.length) return { directory: raw, matches: 0 };
+  let common = matches[0];
+  for (const name of matches.slice(1)) {
+    let length = 0;
+    while (length < common.length && common[length] === name[length]) length++;
+    common = common.slice(0, length);
+  }
+  let directory = common ? resolve(parent, common) : `${resolved}${sep}`;
+  if (matches.length === 1) directory += sep;
+  return { directory, matches: matches.length };
+}
 
 export async function listReaderDirectory(input) {
   const directory = resolve(String(input ?? '').trim() || process.cwd());
