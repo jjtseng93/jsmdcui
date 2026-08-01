@@ -15,6 +15,9 @@ import {
   replaceAnsiPlainRange,
   replaceAnsiPlainRangePreservingControls,
 } from "../cui/table-row-edit.mjs";
+import { renderTuiComponentMarkdown } from "../cui/template-components.mjs";
+import { markTuiTableStripeStyles } from "../cui/table-render.mjs";
+import { refreshTuiLinkIndex } from "../cui/tui-links.mjs";
 
 // ── Action registry ──────────────────────────────────────────────────────────
 
@@ -1199,6 +1202,50 @@ function _removeTuiUserData(buffer, id, keys) {
   if (Object.keys(record).length === 0) store.delete(id);
 }
 
+const _renderingTuiComponentRecords = new WeakSet();
+
+function _renderTuiHeadingComponents(buffer, id) {
+  const record = buffer?._mdcuiIdStore?.get(id);
+  if (!record || _renderingTuiComponentRecords.has(record) || !Array.isArray(record.components))
+    return false;
+  let changed = false;
+  _renderingTuiComponentRecords.add(record);
+  try {
+    for (const component of record.components) {
+      if (!component || typeof component.render !== "function") continue;
+      const rendered = String(component.render.call(component, record.data) ?? "");
+      if (rendered === component.last) continue;
+      const start = buffer.lines.findIndex(line =>
+        String(line ?? "").includes(component.marker?.start)
+      );
+      const end = buffer.lines.findIndex((line, index) =>
+        index > start && String(line ?? "").includes(component.marker?.end)
+      );
+      if (start < 0 || end < 0) continue;
+      const replacement = renderTuiComponentMarkdown(
+        component,
+        rendered,
+        buffer._mdcuiRenderWidth || 80,
+      );
+      if (!replacement) continue;
+      const styled = buffer._parseAnsiStyledText?.(replacement.ansi.join("\n"));
+      if (styled?.styleLines)
+        markTuiTableStripeStyles(styled.styleLines, replacement.lines);
+      spliceTuiBufferLines(buffer, start + 1, end - start - 1, replacement.lines, {
+        ansi: replacement.ansi,
+        styles: styled?.styleLines,
+        markModified: false,
+      });
+      component.last = rendered;
+      changed = true;
+    }
+    if (changed) refreshTuiLinkIndex(buffer);
+  } finally {
+    _renderingTuiComponentRecords.delete(record);
+  }
+  return changed;
+}
+
 function _takeTuiTaskListAnchors(buffer, start, end) {
   const anchors = [];
   const stored = buffer?._mdcuiHeadingTaskListAnchors;
@@ -2379,7 +2426,7 @@ export function spliceTuiBufferLines(buffer, start, deleteCount, replacement, re
       buffer.cursor.y = start + relativeY;
     }
   }
-  buffer.modified = true;
+  if (replacementMeta.markModified !== false) buffer.modified = true;
   buffer.ensureCursor?.();
 }
 
@@ -2450,7 +2497,7 @@ function _setBlockValue(buffer, selector, value) {
   return true;
 }
 
-export function createTuiSelector(getBuffer) {
+export function createTuiSelector(getBuffer, requestRender = null) {
   return function $(selectorInput) {
     const objectSelectorId = selectorInput !== null && typeof selectorInput === "object"
       ? _headingSelectorId(selectorInput)
@@ -2661,11 +2708,13 @@ export function createTuiSelector(getBuffer) {
           if (args.length === 1) {
             if (args[0] && typeof args[0] === "object") {
               Object.assign(data, args[0]);
+              if (_renderTuiHeadingComponents(buffer, selectorId)) requestRender?.();
               return selection;
             }
             return data[String(args[0])];
           }
           data[String(args[0])] = args[1];
+          if (_renderTuiHeadingComponents(buffer, selectorId)) requestRender?.();
           return selection;
         } catch {
           return args.length <= 1 ? undefined : selection;
@@ -2861,7 +2910,13 @@ export function markTuiTableCellDirtyAtPosition(buffer, lineIndex, characterInde
 export function buildMicroGlobal(jsManager) {
   const getApp = () => jsManager._app;
   const getCtx = () => jsManager._ctx;
-  const $ = createTuiSelector(() => getApp()?.buffer);
+  const $ = createTuiSelector(
+    () => getApp()?.buffer,
+    () => {
+      const app = getApp();
+      if (app?._started) app.render?.();
+    },
+  );
 
   // Converts cmd args to a safe command string for handleCommand
   function buildCmdString(name, args) {

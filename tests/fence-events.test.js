@@ -114,6 +114,19 @@ test("WUI writes keyboard code as native inline handlers with a mobile beforeinp
   expect(html).not.toContain("addEventListener");
 });
 
+test("input handlers are added without changing keydown or mobile beforeinput", () => {
+  const markdown = '```text#myid @keydown="guard(event)" @input="changed(event)"\nvalue\n```\n';
+  const declaration = fenceEventMap(markdown).get("myid");
+  const html = convertWuiTextareas(Bun.markdown.html(markdown), fenceEventMap(markdown));
+  expect(declaration.events.get("input")).toEqual({
+    code: "changed(event)",
+    modifiers: [],
+  });
+  expect(html).toContain("onkeydown=");
+  expect(html).toContain("onbeforeinput=");
+  expect(html).toContain('oninput="changed(event)"');
+});
+
 test("keyup declarations are unsupported in both interfaces", () => {
   const markdown = '```text#myid @keyup="update(event)"\nvalue\n```\n';
   const declarations = parseFenceDeclarations(markdown);
@@ -1017,6 +1030,56 @@ test("TUI keydown.prevent runs before editing and blocks text input", async () =
     terminal.write("\x11");
     await Promise.race([proc.exited, Bun.sleep(2000)]);
     expect(Bun.stripANSI(output)).toContain("x:field:a:true:false:true");
+  } finally {
+    if (proc && proc.exitCode == null) proc.kill();
+    terminal?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10000);
+
+test("TUI input runs after insertion with the updated value", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-input-"));
+  const markdownPath = join(dir, "app.md");
+  const markdown = [
+    '```text#field @input="changed(event)"',
+    "a",
+    "```",
+    "",
+    "```text#status",
+    "waiting",
+    "```",
+    "",
+    "```js front",
+    "export function changed(event) {",
+    "  $('#status').val(`input:<${event.target.value}>`);",
+    "}",
+    "```",
+    "",
+  ].join("\n");
+  let output = "";
+  let proc;
+  let terminal;
+  try {
+    await writeFile(markdownPath, markdown);
+    terminal = new Bun.Terminal({
+      cols: 60,
+      rows: 16,
+      data(_terminal, data) {
+        output += Buffer.from(data).toString();
+      },
+    });
+    proc = Bun.spawn({
+      cmd: [bunBin, tui, "+2:4", markdownPath],
+      cwd: dir,
+      terminal,
+      env: { ...process.env, TERM: "xterm-256color", COLUMNS: "60", LINES: "16" },
+    });
+    await waitFor(() => Bun.stripANSI(output).includes("waiting"));
+    terminal.write("x");
+    await waitFor(() => Bun.stripANSI(output).includes("input:<ax>"));
+    terminal.write("\x11");
+    await Promise.race([proc.exited, Bun.sleep(2000)]);
+    expect(Bun.stripANSI(output)).toContain("input:<ax>");
   } finally {
     if (proc && proc.exitCode == null) proc.kill();
     terminal?.close();

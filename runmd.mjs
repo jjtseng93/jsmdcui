@@ -3,7 +3,7 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { readInternalAssetText } from './single-exe/assetsHelper.js'
-import { fenceEventMap } from './src/cui/fence-events.mjs'
+import { fenceEventMap, inlineFenceEventCode } from './src/cui/fence-events.mjs'
 import {
   readLeadingHtmlCharacterReference,
   renderMarkdownWithHeadingIds,
@@ -307,6 +307,7 @@ export function convertWuiTextareas(html, eventsById = new Map())
         ? eventsById.get(identity.id)
         : null;
       const keydownHandler = declaration?.events.get("keydown");
+      const inputHandler = declaration?.events.get("input");
       const keydownCode = keydownHandler
         ? [
             "const __mdcuiKeyCode=Number(event.keyCode||event.which||0);",
@@ -341,6 +342,9 @@ export function convertWuiTextareas(html, eventsById = new Map())
       const inlineEventAttrs = [
         keydownCode ? `onkeydown="${escapeHtmlAttribute(keydownCode)}"` : "",
         beforeInputCode ? `onbeforeinput="${escapeHtmlAttribute(beforeInputCode)}"` : "",
+        inputHandler
+          ? `oninput="${escapeHtmlAttribute(inlineFenceEventCode(inputHandler))}"`
+          : "",
       ];
       const attrs = [
         `data-mdcui-tag="${identity.tag}"`,
@@ -1068,6 +1072,7 @@ tr:hover {
         last: component.last,
         id: component.id,
         index: component.index,
+        initialData: component.initialData,
       })),
     })),
   ).replaceAll("<", "\\u003c");

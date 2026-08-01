@@ -224,6 +224,14 @@ function webIdRecord(documentObject, id)
   return record;
 }
 
+function compileWebTemplateComponentRender(source)
+{
+  return new Function(
+    "data = {}",
+    `return \`${String(source ?? "")}\`;`,
+  );
+}
+
 export function installWebTemplateComponents(documentObject = globalThis.document)
 {
   const payload = documentObject?.getElementById?.("mdcui-template-components");
@@ -248,17 +256,17 @@ export function installWebTemplateComponents(documentObject = globalThis.documen
       Object.assign(record.data, item.data);
 
     record.components = Array.isArray(item.components)
-      ? item.components.map(serialized => ({
-        source: String(serialized?.source ?? ""),
+      ? item.components.map(serialized => {
+        const source = String(serialized?.source ?? "");
+        return {
+        source,
+        initialData: serialized?.initialData ?? null,
         last: String(serialized?.last ?? ""),
         data: record.data,
         id,
         index: Number(serialized?.index) || 0,
-        render(data) {
-          void data;
-          return this.source;
-        },
-      }))
+        render: compileWebTemplateComponentRender(source),
+      }})
       : [];
   }
   return webIdStore(documentObject);
@@ -287,6 +295,86 @@ function removeWebUserData(documentObject, id, element, keys)
     for (const key of keys) delete record.data[key];
   }
   if (Object.keys(record).length === 0) store.delete(id);
+}
+
+const renderingWebComponentRecords = new WeakSet();
+const webComponentRenderRevisions = new WeakMap();
+
+function webComponentMarkdownHtml(markdown)
+{
+  const source = String(markdown ?? "");
+  if (typeof Bun !== "undefined" && Bun?.markdown?.html)
+    return renderWebComponentMarkdownOnServer(source);
+  return fetch("rpc", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(["_mdcui_render_markdown", [source]]),
+  }).then(response => response.json()).then(result => String(result ?? ""));
+}
+
+function renderWebComponentMarkdownOnServer(markdown)
+{
+  let html = String(Bun.markdown.html(String(markdown ?? "")));
+  html = html.replaceAll(
+    'class="task-list-item-checkbox" disabled',
+    'class="task-list-item-checkbox"',
+  );
+  return html.replace(
+    /<table\b[^>]*>[\s\S]*?<\/table>/giu,
+    table => table
+      .replace(
+        /^<table\b([^>]*)>/iu,
+        (opening, attributes) => /\bcontenteditable\s*=/iu.test(attributes)
+          ? opening
+          : `<table${attributes} contenteditable="true">`,
+      )
+      .replace(
+        /(<t[dh]\b[^>]*>)(\s*)\[( |x|X)\]/giu,
+        (whole, opening, whitespace, state) =>
+          `${opening}${whitespace}<input type="checkbox"`
+          + `${state === " " ? "" : " checked"}>`,
+      ),
+  );
+}
+
+function replaceWebComponentMarkdown(wrapper, component, markdown)
+{
+  const revision = (webComponentRenderRevisions.get(component) ?? 0) + 1;
+  webComponentRenderRevisions.set(component, revision);
+  const converted = webComponentMarkdownHtml(markdown);
+  const apply = html => {
+    if (webComponentRenderRevisions.get(component) !== revision) return;
+    wrapper.innerHTML = String(html ?? "");
+    component.last = markdown;
+  };
+  if (converted && typeof converted.then === "function")
+    converted.then(apply).catch(() => {});
+  else apply(converted);
+}
+
+function renderWebHeadingComponents(documentObject, id)
+{
+  const record = webIdStore(documentObject).get(id);
+  if (!record || renderingWebComponentRecords.has(record) || !Array.isArray(record.components))
+    return;
+  renderingWebComponentRecords.add(record);
+  try {
+    const wrappers = [...(documentObject.querySelectorAll?.(".mdcui-template") ?? [])];
+    for (const component of record.components) {
+      if (!component || typeof component.render !== "function") continue;
+      const rendered = String(component.render.call(component, record.data) ?? "");
+      if (rendered === component.last) continue;
+      const wrapper = wrappers.find(element =>
+        String(element.getAttribute?.("data-mdcui-heading-id") ?? "") === id
+        && Number(element.getAttribute?.("data-mdcui-component-index"))
+          === component.index
+      );
+      if (!wrapper) continue;
+      replaceWebComponentMarkdown(wrapper, component, rendered);
+    }
+  } finally {
+    renderingWebComponentRecords.delete(record);
+  }
 }
 
 function hideWebHeadingSection(documentObject, heading)
@@ -854,11 +942,13 @@ export function createWebDollar(documentObject = globalThis.document)
           if (args.length === 1) {
             if (args[0] && typeof args[0] === "object") {
               Object.assign(data, args[0]);
+              renderWebHeadingComponents(documentObject, id);
               return selection;
             }
             return data[String(args[0])];
           }
           data[String(args[0])] = args[1];
+          renderWebHeadingComponents(documentObject, id);
           return selection;
         } catch {
           return args.length <= 1 ? undefined : selection;
@@ -986,6 +1076,9 @@ export async function evalBack(backmod, qjson)
 {
 
 try{
+
+if(qjson?.[0] === "_mdcui_render_markdown")
+  return renderWebComponentMarkdownOnServer(qjson?.[1]?.[0]);
 
 
 

@@ -1,6 +1,11 @@
 import {
   collectMarkdownHeadingDeclarations,
 } from "./heading-ids.mjs";
+import {
+  addTuiTableRowSeparators,
+  convertTuiTableCheckboxes,
+  markHeadingTableRows,
+} from "./table-render.mjs";
 
 function headingRecord(store, id) {
   let record = store.get(id);
@@ -70,6 +75,28 @@ function templateOutput(component, mode, ordinal) {
     + `\n\n${component.marker.end}\n`;
 }
 
+export function compileTemplateComponentRender(source) {
+  return new Function(
+    "data = {}",
+    `return \`${String(source ?? "")}\`;`,
+  );
+}
+
+function extractTemplateFrontMatter(source) {
+  const lines = String(source ?? "").split("\n");
+  if (lines[0] !== "---") return { source: String(source ?? ""), data: null };
+  const closing = lines.findIndex((line, index) => index > 0 && line === "---");
+  if (closing < 0) return { source: String(source ?? ""), data: null };
+  const parsed = Bun.YAML.parse(lines.slice(1, closing).join("\n"));
+  const data = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed
+    : null;
+  return {
+    source: lines.slice(closing + 1).join("\n"),
+    data,
+  };
+}
+
 export function renderMarkdownTemplateComponents(markdown, { mode = "tui" } = {}) {
   const source = String(markdown ?? "");
   const lines = source.split(/\r\n?|\n/u);
@@ -103,24 +130,35 @@ export function renderMarkdownTemplateComponents(markdown, { mode = "tui" } = {}
 
     const record = headingRecord(idStore, heading.id);
     const componentIndex = record.components.length;
+    const rawSource = lines.slice(index + 1, closing).join("\n");
+    const frontMatter = extractTemplateFrontMatter(rawSource);
+    if (frontMatter.data) Object.assign(record.data, frontMatter.data);
+    const componentSource = frontMatter.source;
     const component = {
-      source: lines.slice(index + 1, closing).join("\n"),
+      source: componentSource,
+      initialData: frontMatter.data,
       last: null,
       data: record.data,
       id: heading.id,
       index: componentIndex,
-      render(data) {
-        void data;
-        return this.source;
-      },
+      render: compileTemplateComponentRender(componentSource),
     };
     record.components.push(component);
-    component.last = String(component.render.call(component, component.data) ?? "");
-    output.push(templateOutput(component, mode, componentOrdinal++));
+    output.push({ component, mode, ordinal: componentOrdinal++ });
     index = closing + 1;
   }
 
-  return { markdown: output.join("\n"), idStore };
+  for (const record of idStore.values()) {
+    for (const component of record.components)
+      component.last = String(component.render.call(component, component.data) ?? "");
+  }
+  return {
+    markdown: output.map(item => typeof item === "string"
+      ? item
+      : templateOutput(item.component, item.mode, item.ordinal)
+    ).join("\n"),
+    idStore,
+  };
 }
 
 function escapeHtmlAttribute(value) {
@@ -152,6 +190,32 @@ export function wrapWuiTemplateComponents(html, store) {
     }
   }
   return output;
+}
+
+export function renderTuiComponentMarkdown(component, markdown, columns = 80) {
+  const start = String(component?.marker?.start ?? "");
+  const end = String(component?.marker?.end ?? "");
+  if (!start || !end) return null;
+  const source = `# MDCUI reactive template\n\n${start}\n\n${String(markdown ?? "")}`
+    + `\n\n${end}\n`;
+  const plan = markHeadingTableRows(source);
+  let ansi = String(Bun.markdown.ansi(plan.markdown, {
+    hyperlinks: true,
+    columns: Math.max(1, Math.trunc(Number(columns) || 80)),
+  }));
+  ansi = addTuiTableRowSeparators(ansi, plan);
+  ansi = convertTuiTableCheckboxes(ansi);
+  const ansiLines = ansi.split("\n");
+  const plainLines = Bun.stripANSI(ansi).split("\n");
+  const startLine = plainLines.findIndex(line => line.includes(start));
+  const endLine = plainLines.findIndex(
+    (line, index) => index > startLine && line.includes(end),
+  );
+  if (startLine < 0 || endLine < 0) return null;
+  return {
+    ansi: ansiLines.slice(startLine + 1, endLine),
+    lines: plainLines.slice(startLine + 1, endLine),
+  };
 }
 
 export function applyPreRenderHeadingData(buffer, preRenderStore) {

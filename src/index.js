@@ -1409,6 +1409,7 @@ class BufferModel {
     this._mdcuiFenceEvents = isMdcuiEncoding(this.encoding) ? fenceEventMap(sourceText ?? tuiSourceText ?? text) : new Map();
     this._mdcuiImages = isMdcuiEncoding(this.encoding) ? (mdcuiImages ?? []) : [];
     this._mdcuiRenderWidth = Math.trunc(Number(mdcuiRenderWidth) || 0);
+    this._parseAnsiStyledText = parseAnsiStyledText;
     if (isMdcuiEncoding(this.encoding)) {
       indexTuiHeadingRows(this);
       refreshTuiLinkIndex(this, { resetCatalog: true });
@@ -4181,6 +4182,12 @@ class App {
 
   async handleEvent(event) {
     const buf = this.buffer;
+    const eventFenceBlock = indexedMdcuiFenceBlockAtLine(buf, buf?.cursor.y);
+    const fenceValue = (block) => {
+      const header = block?.header;
+      if (!header?.id) return undefined;
+      return globalThis.$?.(`${header.tag}#${header.id}`)?.val?.();
+    };
     // Mouse up/move are passive — don't clear status messages set by a prior click.
     if (event.type !== "mouse" || event.action === "down") {
       this.message = "";
@@ -4194,6 +4201,7 @@ class App {
     }
 
     if (event.type === "paste") {
+      const valueBeforePaste = fenceValue(eventFenceBlock);
       if (
         isMdcuiEncoding(buf?.encoding)
         && isMdcuiTableRow(buf?.line?.())
@@ -4229,6 +4237,8 @@ class App {
       this._undoInsertChain = false;
       if (this.pane?.selection) deleteSelection(buf, this.pane);
       buf.insert(event.text);
+      if (fenceValue(eventFenceBlock) !== valueBeforePaste)
+        await this.dispatchMdcuiFenceEvent(buf, eventFenceBlock, event, "input");
       this.message = pasteStatusMessage("terminal", event.text);
       this.render();
       return;
@@ -4236,7 +4246,8 @@ class App {
 
     const text = event.raw;
     const seq = event.key;
-    const keydownBlock = indexedMdcuiFenceBlockAtLine(buf, buf?.cursor.y);
+    const keydownBlock = eventFenceBlock;
+    const valueBeforeKeydown = fenceValue(keydownBlock);
     if (buf) buf.allowCursorOffscreen = false;
 
     if (this._rawMode) {
@@ -4688,6 +4699,8 @@ class App {
         }
         break;
     }
+    if (fenceValue(keydownBlock) !== valueBeforeKeydown)
+      await this.dispatchMdcuiFenceEvent(buf, keydownBlock, event, "input");
     this.render();
   }
 

@@ -4,13 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyPreRenderHeadingData,
+  renderTuiComponentMarkdown,
   renderMarkdownTemplateComponents,
 } from "../src/cui/template-components.mjs";
 import {
   createWebDollar,
+  evalBack,
   installWebTemplateComponents,
 } from "../src/cui/rpc.mjs";
 import { createWui } from "../runmd.mjs";
+import { createTui } from "../runmd.mjs";
+import { createTuiSelector } from "../src/plugins/js-bridge.js";
 
 test("four-backtick md template fences create heading components", () => {
   const result = renderMarkdownTemplateComponents(`# Users
@@ -155,4 +159,172 @@ test("createWui expands templates and embeds their component payload", async () 
   expect(html).toContain('id="mdcui-template-components"');
   expect(html).toContain('"id":"users"');
   expect(html).toContain('"source":"| A | B |\\n| --- | --- |\\n| one | two |"');
+});
+
+test("TUI data setters rerender every component between invisible markers", () => {
+  const context = {};
+  const ansi = String(createTui(`# Users
+
+\`\`\`\`md template
+Hello **\${data.name ?? "Guest"}**
+\`\`\`\`
+`, 40, context));
+  const buffer = {
+    lines: Bun.stripANSI(ansi).split("\n"),
+    _mdcuiAnsiText: ansi,
+    _mdcuiRenderWidth: 40,
+    cursor: { x: 0, y: 0 },
+    modified: false,
+    invalidateHighlightFrom() {},
+    ensureCursor() {},
+  };
+  applyPreRenderHeadingData(buffer, context.preRenderHeadingData);
+  const component = buffer._mdcuiIdStore.get("users").components[0];
+  let renderRequests = 0;
+
+  createTuiSelector(() => buffer, () => renderRequests++)("#users").data("name", "Ada");
+
+  const plain = buffer.lines.join("\n");
+  expect(plain).toContain("Hello Ada");
+  expect(plain).not.toContain("Guest");
+  expect(plain).toContain(component.marker.start);
+  expect(plain).toContain(component.marker.end);
+  expect(component.last).toBe("Hello **Ada**");
+  expect(buffer.modified).toBe(false);
+  expect(renderRequests).toBe(1);
+});
+
+test("TUI component Markdown renderer retains heading-associated tables", () => {
+  const scanned = renderMarkdownTemplateComponents(`# Users
+
+\`\`\`\`md template
+before
+\`\`\`\`
+`);
+  const component = scanned.idStore.get("users").components[0];
+  const rendered = renderTuiComponentMarkdown(component, `| A | B |
+| --- | --- |
+| one | two |`, 40);
+  expect(rendered.lines.join("\n")).toContain("┌");
+  expect(rendered.lines.join("\n")).toContain("│ one │ two │");
+});
+
+test("WUI data setters rerender every matching template wrapper", () => {
+  const payload = {
+    textContent: JSON.stringify([{
+      id: "users",
+      data: {},
+      components: [{
+        id: "users",
+        index: 0,
+        source: 'Hello **${data.name ?? "Guest"}**',
+        last: 'Hello **Guest**',
+      }],
+    }]),
+  };
+  const heading = { id: "users", tagName: "H1" };
+  const wrapper = {
+    innerHTML: "<p>Hello <strong>Guest</strong></p>",
+    getAttribute(name) {
+      if (name === "data-mdcui-heading-id") return "users";
+      if (name === "data-mdcui-component-index") return "0";
+      return null;
+    },
+  };
+  const documentObject = {
+    getElementById(id) {
+      return id === "mdcui-template-components" ? payload : heading;
+    },
+    querySelectorAll(selector) {
+      return selector === ".mdcui-template" ? [wrapper] : [];
+    },
+  };
+  installWebTemplateComponents(documentObject);
+  const component = documentObject._mdcuiIdStore.get("users").components[0];
+
+  createWebDollar(documentObject)("#users").data({ name: "Ada" });
+
+  expect(wrapper.innerHTML).toContain("Hello <strong>Ada</strong>");
+  expect(component.last).toBe("Hello **Ada**");
+});
+
+test("WUI internal RPC renders component Markdown without writing files", async () => {
+  const html = await evalBack({}, ["_mdcui_render_markdown", [`| Done |
+| --- |
+| [x] yes |`]]);
+  expect(html).toContain('<table contenteditable="true">');
+  expect(html).toContain('<input type="checkbox" checked>');
+});
+
+test("component source is a reactive JavaScript template literal", () => {
+  const result = renderMarkdownTemplateComponents(`# Greeting
+
+\`\`\`\`md template
+Hello **\${data.name ?? "Guest"}** from \${this.id}.
+\`\`\`\`
+`);
+  const component = result.idStore.get("greeting").components[0];
+  expect(component.last).toBe("Hello **Guest** from greeting.");
+  expect(component.render.call(component))
+    .toBe("Hello **Guest** from greeting.");
+  component.data.name = "Ada";
+  expect(component.render.call(component, component.data))
+    .toBe("Hello **Ada** from greeting.");
+});
+
+test("template front matter initializes heading data before first render", () => {
+  const result = renderMarkdownTemplateComponents(`# Profile
+
+\`\`\`\`md template
+---
+name: Ada
+count: 3
+enabled: true
+---
+Hello **\${data.name}** (\${data.count}) \${data.enabled}
+\`\`\`\`
+`);
+  const record = result.idStore.get("profile");
+  const component = record.components[0];
+
+  expect(record.data).toEqual({ name: "Ada", count: 3, enabled: true });
+  expect(component.data).toBe(record.data);
+  expect(component.initialData).toEqual({ name: "Ada", count: 3, enabled: true });
+  expect(component.source).toBe(
+    "Hello **${data.name}** (${data.count}) ${data.enabled}",
+  );
+  expect(component.last).toBe("Hello **Ada** (3) true");
+  expect(result.markdown).not.toContain("name: Ada");
+});
+
+test("all heading front matter is merged before any component first render", () => {
+  const result = renderMarkdownTemplateComponents(`# Shared
+
+\`\`\`\`md template
+First sees \${data.later}
+\`\`\`\`
+
+\`\`\`\`md template
+---
+later: ready
+---
+Second sees \${data.later}
+\`\`\`\`
+`);
+  const components = result.idStore.get("shared").components;
+  expect(components[0].last).toBe("First sees ready");
+  expect(components[1].last).toBe("Second sees ready");
+});
+
+test("an unmatched opening front matter delimiter remains template source", () => {
+  const result = renderMarkdownTemplateComponents(`# Demo
+
+\`\`\`\`md template
+---
+not: closed
+\`\`\`\`
+`);
+  const component = result.idStore.get("demo").components[0];
+  expect(component.initialData).toBeNull();
+  expect(component.source).toBe("---\nnot: closed");
 });
