@@ -77,6 +77,21 @@ text. Invalid or unparseable rules are ignored.
 ]
 ```
 
+Button translations / 按鈕翻譯:
+
+- `上一頁` — Previous page
+- `跳轉` — Go to the entered page
+- `下一頁` — Next page
+- `清除已選` — Clear selection
+- `🚀載入` — Load the selected file or URL
+- `⏮上一章` — Previous chapter
+- `⏭下一章` — Next chapter
+- `⏹停止朗讀` — Stop reading aloud
+- `📢朗讀` — Start reading aloud from the current page
+- `速度` — Speech speed
+- `音高` — Speech pitch
+- `套用` — Apply
+
 ### Document content
 
 ```textarea#reader @keydown.prevent="readerKey(event)"
