@@ -2,7 +2,13 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
-## [Unreleased]
+## [0.16.0] - 2026-08-02
+
+This release expands jsmdcui's reactive Markdown model with synchronous
+JavaScript templates, heading-scoped state updates, and a post-load lifecycle
+hook. It also introduces a shared TTS API for TUI and WUI and demonstrates the
+new capabilities in a practical file-and-URL reader with paging, navigation,
+speech controls, and configurable text replacement.
 
 ### Added
 
@@ -24,8 +30,21 @@ All notable user-visible changes to jsmdcui are documented here.
   it can explicitly return Markdown while retaining the same heading-owned
   `data` argument, component `this`, front matter, and reactive replacement
   flow.
-- Add the `demos/reader.md` file-list reader demo with reactive ten-file
-  pages, local-file and URL loading, keyboard paging, and sequential speech.
+- Add the bilingual `demos/reader.md` reader demo. It provides reactive
+  ten-item file-list pages, editable page jumps, local directory completion,
+  direct file or URL selection, fixed-size document pages, keyboard paging,
+  and heading-scoped help.
+- Let the reader fetch a web page and build its source list from `a[href]`
+  elements in document order. Link labels use anchor text while selected
+  values resolve relative links to complete HTTP(S) URLs.
+- Add reader navigation and speech controls for numbered previous/next
+  chapters, speech speed and pitch, sequential sentence playback, automatic
+  page advancement, and cancellation that also stops the background reading
+  loop.
+- Support optional JSON5 `replace.json` rules during reader loads. Each
+  two-item rule compiles its target as a global regular expression and inserts
+  its replacement literally. Local files use their own directory; URL loads
+  use `process.cwd()`.
 
 ## [0.15.0] - 2026-08-01
 

@@ -105,6 +105,11 @@ npx jsmdcui --demo-maze
 npx jsmdcui --demo-event
 ```
 
+```sh
+# Text-to-speech reader
+npx jsmdcui --demo-reader
+```
+
 To watch jsmdcui start the maze with a local CDP server and solve it
 automatically after three seconds, run:
 
@@ -174,6 +179,7 @@ bun src/index.js --wui testapp.md
 | `bun src/index.js --demo-<filename>` | Load `demos/<filename>.md`; preserve an existing local copy or write the bundled copy, then open it and generate its five companion files. New files added under `demos/` work automatically. |
 | `bun src/index.js --demo-imgtool` | Load the compact table-based Bun.Image processor demo. |
 | `bun src/index.js --demo-imgtool-zh` | Load the Traditional Chinese table-based Bun.Image processor demo. |
+| `bun src/index.js --demo-reader` | Load the text-to-speech reader demo. |
 | `bun src/index.js --cdp-maze` | Load the maze demo, start CDP on `127.0.0.1:9222`, and run the bundled solver after three seconds. |
 | `bun src/index.js --allow-url URL.md` | Download HTTP(S) Markdown to the current directory and, with Kitty mode enabled, download its HTTP(S) images; write 5 generated files and allow embedded code to run. Only use trusted URLs. |
 | `bun src/index.js --wui` | Use local `testapp.md` when present, otherwise write the bundled demo; write five generated files in the current directory, then print and serve a random URL. |
@@ -570,8 +576,10 @@ before any component performs its first render. The parsed values also remain
 available as that component's `initialData`. Front matter is recognized only
 when the first line and a later closing line are both exactly `---`.
 
-Inside a template, `data` is the owning heading's `.data()` object. To update
-the state, call the heading selector's `.data(key, value)` or `.data(object)`.
+Inside a template, `data` is the owning heading's `.data()` object and acts as
+heading-scoped reactive state, similar to Vue reactive state or React component
+state. To update it and trigger rendering, call the heading selector's
+`.data(key, value)` or `.data(object)`.
 For example, updating `$('#profile')` updates the state owned by the `profile`
 heading. jsmdcui then automatically calls every template component under that
 heading and replaces its rendered region in both the TUI and WUI; application

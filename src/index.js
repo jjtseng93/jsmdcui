@@ -1325,6 +1325,9 @@ Demo:
       Or write the bundled demos/<filename>.md if missing
       Open it in the TUI and write 5 generated files beside it
       For example: --demo-select, --demo-todo, or --demo-todo-zh
+
+  --demo-reader
+      Text-to-speech reader
       
   --overwrite-demo
       Overwrite an existing local demo with the bundled copy; combine with any --demo option
@@ -8444,6 +8447,7 @@ function printDemoList() {
     ["demos/imgtool-zh.md", "Traditional Chinese compact table-based modern image processor UI"],
     ["demos/image-processor.md", "long-form document image processor UI"],
     ["demos/image-processor.zh-TW.md", "Traditional Chinese long-form document image processor UI"],
+    ["demos/reader.md", "text-to-speech reader"],
   ]);
 
   console.log("Available demos:\n");

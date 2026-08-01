@@ -20,6 +20,8 @@ test("--help describes the non-overwriting demo behavior", () => {
   expect(output).toContain("Execute an existing ./testapp.md");
   expect(output).toContain("Or write the bundled demo if missing");
   expect(output).toContain("--demo-<filename>");
+  expect(output).toContain("--demo-reader");
+  expect(output).toContain("Text-to-speech reader");
   expect(output).toContain("demos/<filename>.md");
   expect(output.match(/Open it in the TUI and write 5 generated files beside it/g)?.length).toBe(2);
   expect(output).not.toContain("Alias for --demo-image-processor");
@@ -41,6 +43,7 @@ test("--demo-list lists root and automatically discovered demos", () => {
   expect(output).toContain("compact table-based modern image processor UI");
   expect(output).toContain("long-form document image processor UI");
   expect(output).toMatch(/--demo-select\s+demos\/select\.md/);
+  expect(output).toMatch(/--demo-reader\s+demos\/reader\.md\s+— text-to-speech reader/);
   expect(output).toMatch(/--demo-todo-zh\s+demos\/todo-zh\.md/);
   expect(output).not.toContain("Compatibility aliases:");
 });
