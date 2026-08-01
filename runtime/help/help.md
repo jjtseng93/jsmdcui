@@ -964,7 +964,7 @@ or serve Markdown UI files that you trust.
   calls, but it does not protect the backend module from trusted local code and
   is not a substitute for authentication.
 
-## Distribution
+## Distribution - Build single-file executables
 
 ### Text editor distribution
 
