@@ -2,6 +2,38 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.15.0] - 2026-08-01
+
+### Added
+
+- Add reactive Markdown components with exactly four-backtick `md template`
+  fences. Each component belongs to its closest preceding heading, shares that
+  heading's data object, and exposes `source`, `initialData`, `last`, `data`,
+  `id`, `index`, and a `render(data = {})` function.
+- Treat template source as a JavaScript template literal, allowing expressions
+  such as `${data.name}`. Component render results remain Markdown and pass
+  through an in-memory TUI or WUI Markdown conversion step before jsmdcui
+  replaces the component region.
+- Parse optional leading template front matter with `Bun.YAML`, merge it into
+  the heading data before the first component render, and retain the parsed
+  object as `component.initialData`.
+- Rerender every component under a heading when `.data(key, value)` or
+  `.data(object)` updates that heading. TUI components use invisible boundary
+  markers; WUI components use scoped `.mdcui-template` wrappers.
+- Add post-edit `@input` handlers for named `text` and `textarea` controls in
+  both interfaces. WUI support is layered on top of the existing `onkeydown`
+  and mobile `onbeforeinput` paths rather than replacing them.
+- Add `demos/reactive.md`, a bilingual reactive-template example using YAML
+  initial data and a 200 ms debounced text input.
+
+### Fixed
+
+- Make TUI `@input` handlers observe the value after character insertion and
+  other successful edits instead of the preceding keydown value.
+- Request a TUI redraw when an asynchronous `.data()` update replaces reactive
+  component output, preventing the display from remaining one update behind
+  until the next keypress.
+
 ## [0.14.0] - 2026-07-29
 
 ### Added
