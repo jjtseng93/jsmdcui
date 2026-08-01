@@ -1068,6 +1068,34 @@ export function installWebDollar(target = globalThis)
   return $;
 }
 
+const loadedWebFrontModules = new WeakSet();
+
+export async function runWebMdcuiLoad(target = globalThis, frontMod = {})
+{
+  if (!target?.document || !frontMod || typeof frontMod !== "object") return;
+  if (loadedWebFrontModules.has(frontMod)) return;
+  loadedWebFrontModules.add(frontMod);
+
+  if (target.document.readyState !== "complete") {
+    await new Promise(resolve => {
+      if (typeof target.addEventListener === "function")
+        target.addEventListener("load", resolve, { once: true });
+      else resolve();
+    });
+  }
+  installWebDollar(target);
+  return evalFront(
+    frontMod,
+    "typeof onMdcuiLoad === 'function' ? onMdcuiLoad() : undefined",
+    {},
+    target,
+    result => {
+      if (result?.ok === false)
+        target.console?.error?.(`[mdcui] onMdcuiLoad: ${result.error}`);
+    },
+  );
+}
+
 if (typeof globalThis.document !== "undefined")
   installWebDollar(globalThis);
 

@@ -2741,6 +2741,7 @@ class App {
     this._inputQueue = Promise.resolve();
     this._inputGeneration = 0;
     this._mdcuiExitNotified = new WeakSet();
+    this._mdcuiLoadNotified = new WeakSet();
   }
 
   get tab()    { return this.tabs[this.activeTabIdx]; }
@@ -5712,6 +5713,42 @@ class App {
       });
     } catch (error) {
       console.error(`[mdcui] onMdcuiExit: ${error?.message || error}`);
+    }
+  }
+
+  async notifyMdcuiLoad(buffer) {
+    if (
+      !buffer
+      || !isMdcuiEncoding(buffer.encoding)
+      || this._mdcuiLoadNotified.has(buffer)
+    ) return;
+    this._mdcuiLoadNotified.add(buffer);
+
+    const frontPath = buffer.path && !isHttpUrl(buffer.path)
+      ? `${buffer.path}.front.js`
+      : "";
+    const useBundledMdcuiModules = Boolean(
+      global.MDCUI_MAIN && buffer._useBundledMdcuiModules,
+    );
+    if (!useBundledMdcuiModules && (!frontPath || !existsSync(frontPath))) return;
+
+    try {
+      const [{ evalFront }, frontMod] = await Promise.all([
+        useBundledMdcuiModules
+          ? import(global.MDCUI_MAIN + "-rpc.js")
+          : import("./cui/rpc.mjs"),
+        useBundledMdcuiModules
+          ? import(global.MDCUI_MAIN + ".front.js")
+          : import(localModuleUrl(frontPath)),
+      ]);
+      const result = await evalFront(
+        frontMod,
+        "typeof onMdcuiLoad === 'function' ? onMdcuiLoad() : undefined",
+      );
+      if (result?.ok === false)
+        console.error(`[mdcui] onMdcuiLoad: ${result.error}`);
+    } catch (error) {
+      console.error(`[mdcui] onMdcuiLoad: ${error?.message || error}`);
     }
   }
 
@@ -8971,6 +9008,8 @@ async function main() {
   }
   
   await app.start();
+  await app.notifyMdcuiLoad(app.buffer);
+  app.render();
 }
 
 const HISTORY_MAX = 100;

@@ -54,6 +54,7 @@ test("bundling mode creates a browser-only front entry", async () => {
   expect(frontSource).not.toContain('import("./bundle.md.front.js")');
   expect(installerSource).toContain('import * as frontMod from "./bundle.md.tmpfs.js"');
   expect(installerSource).toContain("Object.assign(window, frontMod)");
+  expect(installerSource).toContain("await runWebMdcuiLoad(window, frontMod)");
   expect(html).toContain('src="./bundle.md.tmpfi.js"');
   expect(html).not.toContain("bundle.md.front.js");
 });

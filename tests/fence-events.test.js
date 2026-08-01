@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fenceEventMap, inlineFenceEventCode, parseFenceDeclarations } from "../src/cui/fence-events.mjs";
-import { evalFront, installWebDollar } from "../src/cui/rpc.mjs";
+import { evalFront, installWebDollar, runWebMdcuiLoad } from "../src/cui/rpc.mjs";
 import { buildTuiBlockIndex, createTuiSelector, findTuiBlockAtLine, findTuiBlockInIndex, insertTuiTextareaNewline, mergeTuiTextareaBackward, mergeTuiTextareaForward } from "../src/plugins/js-bridge.js";
 import { convertWuiTextareas, wrapWuiHeadingSections } from "../runmd.mjs";
 
@@ -125,6 +125,35 @@ test("input handlers are added without changing keydown or mobile beforeinput", 
   expect(html).toContain("onkeydown=");
   expect(html).toContain("onbeforeinput=");
   expect(html).toContain('oninput="changed(event)"');
+});
+
+test("WUI onMdcuiLoad waits for window load and runs once", async () => {
+  let loadListener = null;
+  let calls = 0;
+  const target = {
+    document: {
+      readyState: "loading",
+      getElementById() { return null; },
+      querySelectorAll() { return []; },
+      addEventListener() {},
+    },
+    addEventListener(name, listener) {
+      if (name === "load") loadListener = listener;
+    },
+    console,
+  };
+  const frontMod = {
+    onMdcuiLoad() { calls++; },
+  };
+
+  const pending = runWebMdcuiLoad(target, frontMod);
+  await Bun.sleep(0);
+  expect(calls).toBe(0);
+  loadListener();
+  await pending;
+  expect(calls).toBe(1);
+  await runWebMdcuiLoad(target, frontMod);
+  expect(calls).toBe(1);
 });
 
 test("keyup declarations are unsupported in both interfaces", () => {
@@ -1080,6 +1109,52 @@ test("TUI input runs after insertion with the updated value", async () => {
     terminal.write("\x11");
     await Promise.race([proc.exited, Bun.sleep(2000)]);
     expect(Bun.stripANSI(output)).toContain("input:<ax>");
+  } finally {
+    if (proc && proc.exitCode == null) proc.kill();
+    terminal?.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 10000);
+
+test("TUI onMdcuiLoad runs after startup resources are ready", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-load-"));
+  const markdownPath = join(dir, "app.md");
+  const markdown = [
+    "# Ready",
+    "",
+    "```text#status",
+    "waiting",
+    "```",
+    "",
+    "```js front",
+    "export function onMdcuiLoad() {",
+    "  $('#status').val('loaded');",
+    "}",
+    "```",
+    "",
+  ].join("\n");
+  let output = "";
+  let proc;
+  let terminal;
+  try {
+    await writeFile(markdownPath, markdown);
+    terminal = new Bun.Terminal({
+      cols: 60,
+      rows: 12,
+      data(_terminal, data) {
+        output += Buffer.from(data).toString();
+      },
+    });
+    proc = Bun.spawn({
+      cmd: [bunBin, tui, markdownPath],
+      cwd: dir,
+      terminal,
+      env: { ...process.env, TERM: "xterm-256color", COLUMNS: "60", LINES: "12" },
+    });
+    await waitFor(() => Bun.stripANSI(output).includes("loaded"));
+    terminal.write("\x11");
+    await Promise.race([proc.exited, Bun.sleep(2000)]);
+    expect(Bun.stripANSI(output)).toContain("loaded");
   } finally {
     if (proc && proc.exitCode == null) proc.kill();
     terminal?.close();

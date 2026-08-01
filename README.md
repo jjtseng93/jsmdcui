@@ -682,6 +682,10 @@ The 3 UI building blocks are:
   links.
 - 2. `js front` block contains UI code. Exported functions can use
   `alert`, `confirm`, `prompt`, and the generated `rpc` client.
+  * A front module may export `async function onMdcuiLoad()`.
+  * It runs once after the TUI has completed startup layout and rendering, or
+    after the WUI `window.load` event and installation of jsmdcui's browser
+    selectors and template store.
   * A front module may export `async function onMdcuiExit({ reason, path, $ })`.
   * The terminal UI awaits it before closing an `mdcui` buffer. 
   * Modified `mdcui` buffers close without a save prompt.

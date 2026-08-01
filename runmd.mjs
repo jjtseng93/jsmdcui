@@ -159,7 +159,7 @@ export async function extractJs(md,mdpath,{ bundling = false } = {})
   const frontSource = sctags
   sctags = "#!/usr/bin/env bun" + `
   
-    import { rpc as wuiRpcClient } from "./${mdb}-rpc.js";
+    import { rpc as wuiRpcClient, runWebMdcuiLoad } from "./${mdb}-rpc.js";
     let rpc = null
     if(globalThis.process)
     {
@@ -181,6 +181,7 @@ export async function extractJs(md,mdpath,{ bundling = false } = {})
         import("./${mdb}.front.js").then(mod=>{
           Object.assign(window,mod);
           window.__mdcuiFrontModule = mod;
+          return runWebMdcuiLoad(window, mod);
         })
       }, 0 ) ;
     }
@@ -204,9 +205,11 @@ export async function extractJs(md,mdpath,{ bundling = false } = {})
     await Bun.write(
       bundledImportPath,
       `import * as frontMod from "./${mdb}.tmpfs.js";
+import { runWebMdcuiLoad } from "./${mdb}-rpc.js";
 
 Object.assign(window, frontMod);
 window.__mdcuiFrontModule = frontMod;
+await runWebMdcuiLoad(window, frontMod);
 `,
     )
     logWroteFile("bundling import", bundledImportPath)

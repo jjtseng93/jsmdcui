@@ -2,6 +2,14 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Add the optional async `onMdcuiLoad()` front export. It runs with the normal
+  front-code scope after initial TUI layout/rendering, or after WUI
+  `window.load` and installation of selectors and template component state.
+
 ## [0.15.0] - 2026-08-01
 
 ### Added

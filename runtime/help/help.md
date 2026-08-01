@@ -327,9 +327,14 @@ cursor movement. The `.prevent` modifier applies this automatically:
 ```
 ````
 
-`@keydown` is the only keyboard event exposed by jsmdcui. Traditional terminal
+Use `@input` when the handler needs the value after an edit has completed.
+`@keydown` runs before the edit and can prevent it; `@input` runs after a
+successful text change and receives the updated value. The WUI adds `oninput`
+without replacing its existing `onkeydown` or mobile `onbeforeinput` handling.
+The TUI also dispatches `@input` after editing or paste. Traditional terminal
 input does not report physical key releases reliably, so jsmdcui does not
-provide or emulate `@keyup` in either interface.
+provide or emulate `@keyup` in either interface. See `demos/reactive.md` for a
+complete cross-interface example.
 
 In the terminal TUI, only content after the protected `│ ` or `| ` prefix can
 be edited, and the frame prefix cannot be deleted. Multiline paste remains
@@ -543,6 +548,53 @@ User data belongs to the resolved ID and remains available while the document
 is open, including when the corresponding WUI element is temporarily replaced.
 Calling `.removeData()` does not change heading visibility.
 
+### Reactive Markdown templates
+
+For React and Vue users, the closest mental model is a heading-scoped component
+with shared state: the Markdown heading owns the data, each exactly
+four-backtick `md template` fence below it is a rendered view, and the next
+heading starts a new scope. Templates under the same heading therefore read and
+react to the same data object; templates under another heading do not.
+
+The optional YAML front matter at the beginning of a template provides its
+initial values, comparable to Vue's initial `data()` or React's initial state.
+jsmdcui parses it with `Bun.YAML` and merges it into the owning heading's data
+before any component performs its first render. The parsed values also remain
+available as that component's `initialData`. Front matter is recognized only
+when the first line and a later closing line are both exactly `---`.
+
+Inside a template, `data` is the owning heading's `.data()` object. To update
+the state, call the heading selector's `.data(key, value)` or `.data(object)`.
+For example, updating `$('#profile')` updates the state owned by the `profile`
+heading. jsmdcui then automatically calls every template component under that
+heading and replaces its rendered region in both the TUI and WUI; application
+code does not call `render()` manually. Async updates from timers and promises
+also request an immediate TUI redraw.
+
+This is deliberately simpler than React reconciliation or Vue dependency
+tracking: a heading data setter rerenders all template components owned by that
+heading. Each render returns Markdown, which jsmdcui converts through the
+appropriate in-memory TUI or WUI Markdown step before replacing only that
+component's region.
+
+During rendering, `this` is the template component instance. It exposes
+`source`, `initialData`, `last`, `data`, `id`, `index`, and
+`render(data = {})`; `this.id` is the owning heading ID and `this.data` is the
+same shared object passed as `data`. This instance context is also intended for
+future JavaScript-powered `md template` support, where `this.id` can identify
+the component's heading scope while implementing more dynamic behavior.
+
+The full syntax and working input binding are kept in `demos/reactive.md` so
+this runnable README does not declare a template component of its own.
+
+For the detailed bilingual example with a text field and 200 ms debounce, read
+`demos/reactive.md` or run it in either interface:
+
+```sh
+bun src/index.js --demo-reactive
+bun src/index.js --wui --demo-reactive
+```
+
 ### Heading visibility boundaries
 
 `$('#topic').hide()` keeps the heading visible and hides its content through the
@@ -630,6 +682,10 @@ The 3 UI building blocks are:
   links.
 - 2. `js front` block contains UI code. Exported functions can use
   `alert`, `confirm`, `prompt`, and the generated `rpc` client.
+  * A front module may export `async function onMdcuiLoad()`.
+  * It runs once after the TUI has completed startup layout and rendering, or
+    after the WUI `window.load` event and installation of jsmdcui's browser
+    selectors and template store.
   * A front module may export `async function onMdcuiExit({ reason, path, $ })`.
   * The terminal UI awaits it before closing an `mdcui` buffer. 
   * Modified `mdcui` buffers close without a save prompt.
