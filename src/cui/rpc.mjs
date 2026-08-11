@@ -906,6 +906,19 @@ export function createWebDollar(documentObject = globalThis.document)
           return args.length > 0 ? selection : "";
         }
       },
+      scrollIntoView(...args) {
+        const value = args[0];
+        const element = resolveElement();
+        if (!isWebHeading(element) || typeof element.scrollIntoView !== "function")
+          return undefined;
+        if (args.length === 0) return element.scrollIntoView();
+        if (value === true || value === -1) return element.scrollIntoView(true);
+        if (value === false || value === 1) return element.scrollIntoView(false);
+        return element.scrollIntoView({
+          block: "center",
+          inline: "nearest",
+        });
+      },
       parent() {
         try {
           return webCellSelectionFromElement(resolveElement());

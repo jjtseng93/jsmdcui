@@ -3902,8 +3902,8 @@ class App {
     }
   }
 
-  // Center the current cursor line vertically in the pane.
-  scrollCursorToCenter(pane) {
+  // Align the current cursor line to the start, center, or end of the pane.
+  scrollCursorToAlignment(pane, block = "center") {
     const buf = pane?.buffer;
     if (!buf) return;
     const gutterW = editorGutterWidth(buf);
@@ -3911,20 +3911,29 @@ class App {
     const softwrap = buf.Settings?.softwrap ?? false;
     const wordwrap = softwrap && (buf.Settings?.wordwrap ?? false);
     const tabsize = buf.Settings?.tabsize ?? DEFAULT_SETTINGS.tabsize;
-    const half = Math.floor(pane.h / 2);
+    const offset = block === "start"
+      ? 0
+      : block === "end"
+        ? Math.max(0, pane.h - 1)
+        : Math.floor(pane.h / 2);
 
     if (softwrap) {
       const cursorBreaks = softwrapBreaks(buf.lines[buf.cursor.y] ?? "", bufW, wordwrap, tabsize);
       const cursorSubRow = softwrapRowOfCharIdx(cursorBreaks, buf.cursor.x);
       const cursorSloc = { line: buf.cursor.y, row: cursorSubRow };
-      const newScroll = slocRetreatN(buf.lines, cursorSloc, half, bufW, wordwrap, tabsize);
+      const newScroll = slocRetreatN(buf.lines, cursorSloc, offset, bufW, wordwrap, tabsize);
       buf.scroll.y = newScroll.line;
       buf.scroll.row = newScroll.row;
       buf.scroll.x = 0;
     } else {
-      buf.scroll.y = Math.max(0, buf.cursor.y - half);
+      buf.scroll.y = Math.max(0, buf.cursor.y - offset);
       buf.scroll.row = 0;
     }
+  }
+
+  // Center the current cursor line vertically in the pane.
+  scrollCursorToCenter(pane) {
+    this.scrollCursorToAlignment(pane, "center");
   }
 
   scrollCursorToBoundary(pane, boundary) {

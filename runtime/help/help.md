@@ -513,6 +513,7 @@ The available selector methods are:
 | `★★ .data()`, `.data(key, value)` | Read or update user data associated with the selection ID. | Same. |
 | `★★ .removeData(...)` | Remove selected user keys or all user data without changing heading visibility. | Same. |
 | `★★ .img(index = 0).src` | Return the indexed OSC 8 image address below a heading and before the next heading, or `""` when missing. | Return the indexed actual `<img>` element's current `src`, or `""` when missing. |
+| `★★ .scrollIntoView(value)` | Move the heading cursor into view and align it to the top, center, or bottom of the current pane. | Call the heading element's native `scrollIntoView()` after translating the supported shortcuts. |
 | `★★ .push(...items)` | Append unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
 | `★★ .pop()` | Remove and return the last direct task item's label, or `undefined`. | Same. |
 | `★★ .shift()` | Remove and return the first direct task item's label, or `undefined`. | Same. |
@@ -527,6 +528,21 @@ The available selector methods are:
 | `★★ .parent()` | From a link event's `$(this)`, return its containing table cell, or `null`. | From an element inside `th` or `td`, return the same cell selection. |
 | `.html()` | For a heading selector, return its rendered inline HTML from the source Markdown. For an object target, read that object's own `innerHTML` property. There is no TUI DOM. | Return any successfully selected DOM element's actual `innerHTML`. |
 | `.line()` | Return a heading's current 1-based TUI row, or `0` if missing. | Not available. |
+
+Heading `scrollIntoView()` accepts the browser boolean forms plus three numeric
+shortcuts. With no argument it aligns to the top. `true` and `-1` mean top;
+`0` means center; `false` and `1` mean bottom. Any other first argument falls
+back to center, and additional arguments are ignored:
+
+```js
+$('#result').scrollIntoView()     // top
+$('#result').scrollIntoView(true) // top
+$('#result').scrollIntoView(-1)   // top
+$('#result').scrollIntoView(0)    // center
+$('#result').scrollIntoView(1)    // bottom
+$('#result').scrollIntoView(false)// bottom
+$('#result').scrollIntoView({})   // center fallback
+```
 
 At the start of any Markdown table cell, `[ ]` and `[x]` (or `[X]`) become
 unchecked and checked controls. The TUI displays `☐` or `☒` without changing

@@ -1804,6 +1804,68 @@ describe("WUI heading image selection", () => {
   });
 });
 
+describe("heading scrollIntoView", () => {
+  test("TUI maps browser booleans and numeric alignment shortcuts", () => {
+    const ansi = String(Bun.markdown.ansi("# First\n\nBody\n\n## Target\n", {
+      hyperlinks: true,
+      columns: 80,
+    }));
+    const buffer = {
+      lines: Bun.stripANSI(ansi).split("\n"),
+      _mdcuiTuiSourceText: "# First\n\nBody\n\n## Target\n",
+      _mdcuiAnsiText: ansi,
+      cursor: { x: 0, y: 0 },
+      ensureCursor() {},
+    };
+    indexTuiHeadingRows(buffer);
+    const blocks = [];
+    const $ = createTuiSelector(
+      () => buffer,
+      null,
+      ({ block }) => blocks.push(block),
+    );
+    const target = $("#target");
+
+    target.scrollIntoView();
+    target.scrollIntoView(true);
+    target.scrollIntoView(false);
+    target.scrollIntoView(-1);
+    target.scrollIntoView(0);
+    target.scrollIntoView(1);
+    target.scrollIntoView("anything", "ignored");
+
+    expect(blocks).toEqual([
+      "start", "start", "end", "start", "center", "end", "center",
+    ]);
+    expect(buffer.lines[buffer.cursor.y]).toContain("Target");
+  });
+
+  test("WUI forwards browser forms and translates numeric shortcuts", () => {
+    const { $, heading } = webSelector();
+    const calls = [];
+    heading.scrollIntoView = (...args) => calls.push(args);
+    const features = $("#features");
+
+    features.scrollIntoView();
+    features.scrollIntoView(true);
+    features.scrollIntoView(false);
+    features.scrollIntoView(-1);
+    features.scrollIntoView(0);
+    features.scrollIntoView(1);
+    features.scrollIntoView({ block: "start" });
+
+    expect(calls).toEqual([
+      [],
+      [true],
+      [false],
+      [true],
+      [{ block: "center", inline: "nearest" }],
+      [false],
+      [{ block: "center", inline: "nearest" }],
+    ]);
+  });
+});
+
 class TestDocument {
   constructor() {
     this.root = new TestElement("main", this);

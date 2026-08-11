@@ -2534,7 +2534,7 @@ function _setBlockValue(buffer, selector, value) {
   return true;
 }
 
-export function createTuiSelector(getBuffer, requestRender = null) {
+export function createTuiSelector(getBuffer, requestRender = null, requestScroll = null) {
   return function $(selectorInput) {
     const objectSelectorId = selectorInput !== null && typeof selectorInput === "object"
       ? _headingSelectorId(selectorInput)
@@ -2567,6 +2567,21 @@ export function createTuiSelector(getBuffer, requestRender = null) {
         } catch {
           return 0;
         }
+      },
+      scrollIntoView(...args) {
+        const value = args[0];
+        const buffer = getBuffer?.();
+        const heading = _findHeading(buffer, selector);
+        if (!buffer || !heading?.id) return undefined;
+        if (!navigateTuiHeadingFragment(buffer, `#${encodeURIComponent(heading.id)}`))
+          return undefined;
+        const block = args.length === 0 || value === true || value === -1
+          ? "start"
+          : value === false || value === 1
+            ? "end"
+            : "center";
+        requestScroll?.({ buffer, block });
+        return undefined;
       },
       text(...args) {
         try {
@@ -2973,6 +2988,13 @@ export function buildMicroGlobal(jsManager) {
       if (!app?._started) return;
       if (imagesDirty) void app.refreshMdcuiKittyImages?.(app.buffer);
       else app.render?.();
+    },
+    ({ buffer, block }) => {
+      const app = getApp();
+      const pane = app?.pane;
+      if (!app?._started || pane?.buffer !== buffer) return;
+      app.scrollCursorToAlignment?.(pane, block);
+      app.render?.();
     },
   );
   $.tts = async (text, pitch, speed) => {
