@@ -434,6 +434,18 @@ function firstHeadingList(heading)
   return null;
 }
 
+function webHeadingImages(heading)
+{
+  const images = [];
+  for (let sibling = heading?.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    if (isWebHeading(sibling) || String(sibling.tagName ?? "").toLowerCase() === "section")
+      break;
+    if (String(sibling.tagName ?? "").toLowerCase() === "img") images.push(sibling);
+    images.push(...(sibling.querySelectorAll?.("img") ?? []));
+  }
+  return images;
+}
+
 function directTaskCheckbox(item)
 {
   for (const checkbox of item?.querySelectorAll?.('input[type="checkbox"]') ?? []) {
@@ -911,6 +923,21 @@ export function createWebDollar(documentObject = globalThis.document)
         } catch {
           return createWebCellSelection(null, row, col);
         }
+      },
+      img(index = 0) {
+        const normalizedIndex = Math.trunc(Number(index));
+        return {
+          get src() {
+            try {
+              if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0) return "";
+              const element = resolveElement();
+              if (!isWebHeading(element)) return "";
+              return String(webHeadingImages(element)[normalizedIndex]?.src ?? "");
+            } catch {
+              return "";
+            }
+          },
+        };
       },
       show() {
         try {
