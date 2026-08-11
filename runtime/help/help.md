@@ -503,6 +503,14 @@ The available selector methods are:
 
 `★★` means the API is intended for portable use in both the TUI and WUI.
 
+> **Visibility requirement:** a selected heading and the content being changed
+> must currently be shown before calling any update method, including `.data()`,
+> `.val(value)`, `.text(value)`, task-list mutations, or table-cell setters.
+> Updating content inside a hidden section is not supported and can appear to do
+> nothing. Call `.show()` first, perform the update, and hide the section again
+> afterward if necessary. Reads and visibility operations such as `.show()` are
+> not subject to this update requirement.
+
 | Method | TUI | WUI |
 | --- | --- | --- |
 | `★★ .id` | Return the selection's resolved ID; nested `$($($(selection)))` wrappers retain it. | Same. |
@@ -913,6 +921,18 @@ server is stopped or restarted. Keep the process running while using the page,
 and press `Ctrl-C` in its terminal to stop it.
 
 ## Reactive images
+
+> **The reactive image heading must be visible when it is updated.** Calling
+> `.data('img', source)` while that heading or one of its containing sections is
+> hidden will not refresh the image. Show the heading first, update its data,
+> then scroll to or hide it as needed:
+
+```js
+const preview = $('#myimg')
+preview.show()
+preview.data('img', resolvedSource)
+preview.scrollIntoView()
+```
 
 - Use the heading image selector to obtain an image source:
 
