@@ -2,6 +2,55 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.17.0] - 2026-08-11
+
+This release makes images first-class reactive Markdown data in both terminal
+and browser applications. It adds a portable heading image selector, refreshes
+Kitty graphics when template images change, accepts image data URLs, and
+provides embedded-first asset readers with an external-file fallback. A new
+bilingual image-switching demo and expanded documentation show both bundled
+image sources and RPC-loaded data URLs.
+
+### Added
+
+- Add cross-interface `$(heading).img(index = 0).src`. In the WUI it returns
+  the indexed real `<img>` element's resolved `src`; in the TUI it returns the
+  indexed image address from rendered OSC 8 metadata below the heading and
+  before the next heading. Missing or invalid indexes return an empty string.
+- Add `readAssetText(path)` and `readAssetBytes(path)` to the single-executable
+  asset helpers. Both prefer `internalAssets` and automatically fall back to
+  the same path under `REPO_ROOT`; the bytes API consistently resolves to a
+  `Uint8Array`.
+- Accept `data:image/...` URLs in Kitty rendering. Preserve them across Bun's
+  Markdown-to-ANSI conversion, decode their payload to image bytes, and feed
+  them through the existing size detection, compatibility conversion, stable
+  image ID, and Kitty transmission flow.
+- Add `demos/img-change.md` and its two compact JPEG assets. The bilingual demo
+  loads the images through its back-end RPC as data URLs, initializes a
+  reactive image during `onMdcuiLoad()`, and alternates the sources with
+  heading-scoped `.data()` updates.
+- Document reactive images, resolved bundled image sources, hidden source
+  headings, RPC-created data URLs, and the new selector API in the main README
+  and bundled help. Expand the single-executable guide with the shared text and
+  byte fallback readers.
+
+### Changed
+
+- Queue reactive Kitty image preparation only when a changed template contains
+  an image. Coalesce repeated requests, rebuild image metadata safely from the
+  current ANSI document, and redraw the app after preparation completes.
+- Reuse the new `readAssetText()` helper when generating WUI RPC and server
+  modules instead of maintaining a separate embedded-first fallback function.
+
+### Fixed
+
+- Delete stale Kitty placements and prepare the replacement image when a
+  reactive template changes its Markdown image, including switching from a
+  normal path to a data URL or returning to a compiled embedded asset.
+- Prevent an older asynchronous image preparation result from overwriting a
+  newer reactive update by tracking image revisions through the rerender
+  queue.
+
 ## [0.16.0] - 2026-08-02
 
 This release expands jsmdcui's reactive Markdown model with synchronous
