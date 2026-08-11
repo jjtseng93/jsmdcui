@@ -627,6 +627,20 @@ function canEditMdcuiAtCursor(buf) {
   return prefixLength > 0 && (buf?.cursor?.x ?? 0) >= prefixLength;
 }
 
+// insertChar / backspace / deleteForward 只改 buf.lines，不會像
+// spliceTuiBufferLines 那樣同步 buf._mdcuiAnsiText。若放著不管，之後任何
+// 依賴 _mdcuiAnsiText 重建畫面的動作（例如 refreshMdcuiKittyImages 換圖片時）
+// 都會用這份沒反映最新輸入的舊快照，把使用者剛打的字蓋掉。這裡比照
+// applyMdcuiTableRowEdit 的做法，在同一行內插入/刪除純文字時，順手同步
+// ansiText 對應那一行的可視文字內容。
+function syncMdcuiAnsiTextForCharEdit(buf, row, start, end, replacement) {
+  if (!isMdcuiEncoding(buf?.encoding) || typeof buf._mdcuiAnsiText !== "string") return;
+  const ansiLines = buf._mdcuiAnsiText.split("\n");
+  if (row < 0 || row >= ansiLines.length) return;
+  ansiLines[row] = replaceAnsiPlainRange(ansiLines[row] ?? "", start, end, replacement);
+  buf._mdcuiAnsiText = ansiLines.join("\n");
+}
+
 function canEditMdcuiSelection(buf, selection) {
   if (!selection) return true;
   const { first, last } = selectionBounds(selection);
@@ -1582,6 +1596,7 @@ class BufferModel {
     if (ch === "\t" && DEFAULT_SETTINGS.tabstospaces) ch = " ".repeat(DEFAULT_SETTINGS.tabsize);
     const line = this.line();
     this.lines[this.cursor.y] = line.slice(0, this.cursor.x) + ch + line.slice(this.cursor.x);
+    syncMdcuiAnsiTextForCharEdit(this, this.cursor.y, this.cursor.x, this.cursor.x, ch);
     this.invalidateHighlightFrom(this.cursor.y);
     this.cursor.x += ch.length;
     this.modified = true;
@@ -1618,6 +1633,7 @@ class BufferModel {
       const code = line.charCodeAt(start);
       if (code >= 0xDC00 && code <= 0xDFFF && start > 0) start--;
       this.lines[this.cursor.y] = line.slice(0, start) + line.slice(this.cursor.x);
+      syncMdcuiAnsiTextForCharEdit(this, this.cursor.y, start, this.cursor.x, "");
       this.invalidateHighlightFrom(this.cursor.y);
       this.cursor.x = start;
       this.modified = true;
@@ -1643,6 +1659,7 @@ class BufferModel {
       const cp = line.codePointAt(this.cursor.x);
       const charLen = cp > 0xFFFF ? 2 : 1;
       this.lines[this.cursor.y] = line.slice(0, this.cursor.x) + line.slice(this.cursor.x + charLen);
+      syncMdcuiAnsiTextForCharEdit(this, this.cursor.y, this.cursor.x, this.cursor.x + charLen, "");
       this.invalidateHighlightFrom(this.cursor.y);
       this.modified = true;
       return true;
