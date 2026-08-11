@@ -193,26 +193,27 @@ unless the adopting project actually contains and needs them.
 
 ### 4. Read embedded assets with an external fallback
 
-Import the Node-compatible helpers from `assetsHelper.js`. They return `null`
-when the embedded store is unavailable or a path is not present:
+Import `readAssetText()` or `readAssetBytes()` from `assetsHelper.js`. They
+first read the embedded asset and automatically fall back to the same path
+under `REPO_ROOT` when the asset is not embedded:
 
 ```js
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { readInternalAssetText } from "../single-exe/assetsHelper.js";
-import { REPO_ROOT } from "../single-exe/compiled.js";
+import {
+  readAssetBytes,
+  readAssetText,
+} from "../single-exe/assetsHelper.js";
 
-async function readResourceText(path) {
-  return readInternalAssetText(path) ??
-    await readFile(resolve(REPO_ROOT, path), "utf8");
-}
+// Embedded asset first; external REPO_ROOT/templates/page.html fallback.
+const source = await readAssetText("templates/page.html");
+
+// The same fallback behavior, returned as Uint8Array.
+const image = await readAssetBytes("images/photo.png");
 ```
 
 In the source tree, `REPO_ROOT` is the project root. In a compiled executable,
 it is the executable's directory, which is also where `--assets-extract`
-places the external resource tree. Apply the same embedded-first fallback to
-every file that must work in both modes. Use `readInternalAssetBytes()` when
-a resource should be returned as bytes instead of decoded text.
+places the external resource tree. Use `readInternalAssetBytes()` when a
+resource should be returned as embedded bytes without the fallback.
 Use `listInternalAssetPaths()` to list embedded asset paths and
 `listInternalAssetDirs()` to list embedded directories.
 

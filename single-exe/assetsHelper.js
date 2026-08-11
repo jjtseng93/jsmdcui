@@ -1,4 +1,5 @@
-import { posix } from "node:path";
+import { join, posix } from "node:path";
+import { REPO_ROOT } from "./compiled.js";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -147,6 +148,17 @@ export function readInternalAssetText(path) {
   const bytes = readInternalAssetBytes(path);
   if (!bytes) return null;
   return textDecoder.decode(bytes);
+}
+
+export async function readAssetText(path) {
+  return readInternalAssetText(path)
+    ?? await Bun.file(join(REPO_ROOT, path)).text();
+}
+
+export async function readAssetBytes(path) {
+  const internal = readInternalAssetBytes(path);
+  return internal
+    ?? new Uint8Array(await Bun.file(join(REPO_ROOT, path)).arrayBuffer());
 }
 
 export function internalAssetSource(path) {
