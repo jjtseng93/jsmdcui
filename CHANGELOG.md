@@ -2,6 +2,19 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.17.2] - 2026-08-12
+
+### Fixed
+
+- Keep `_mdcuiAnsiText` in sync while typing directly into an mdcui `text` or
+  `textarea` control. Plain character insertion, backspace, and forward
+  delete previously updated only the buffer's plain lines, so any later
+  action that rebuilds the document from the cached ANSI snapshot (for
+  example, refreshing Kitty images after a reactive `.data()` update) could
+  silently revert unsaved keystrokes back to their pre-edit value. These
+  edits now update the corresponding ANSI line the same way table-cell edits
+  already did, so the cached snapshot never falls behind what is on screen.
+
 ## [0.17.0] - 2026-08-11
 
 This release makes images first-class reactive Markdown data in both terminal
