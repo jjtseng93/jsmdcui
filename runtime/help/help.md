@@ -512,6 +512,7 @@ The available selector methods are:
 | `★★ .show()`, `.hide()`, `.toggle()` | Keep the heading visible and show or hide its section body. | Same. |
 | `★★ .data()`, `.data(key, value)` | Read or update user data associated with the selection ID. | Same. |
 | `★★ .removeData(...)` | Remove selected user keys or all user data without changing heading visibility. | Same. |
+| `★★ .img(index = 0).src` | Return the indexed OSC 8 image address below a heading and before the next heading, or `""` when missing. | Return the indexed actual `<img>` element's current `src`, or `""` when missing. |
 | `★★ .push(...items)` | Append unchecked strings or `{ value, checked }` task items; return the new direct-item count. | Same. |
 | `★★ .pop()` | Remove and return the last direct task item's label, or `undefined`. | Same. |
 | `★★ .shift()` | Remove and return the first direct task item's label, or `undefined`. | Same. |
@@ -894,6 +895,103 @@ full path.
 Each server start prints a new random path. The old URL stops working after the
 server is stopped or restarted. Keep the process running while using the page,
 and press `Ctrl-C` in its terminal to stop it.
+
+## Reactive images
+
+- Use the heading image selector to obtain an image source:
+
+```js
+$('#myimg').img().src
+```
+
+- The index is zero-based and defaults to `0`.
+- In the WUI, `src` comes from the actual `<img>`
+element.
+- In the TUI, it is the image address stored in the rendered OSC 8 link below that heading and before the next heading.
+
+- Don't use relative paths when updating reactive md/js template images with .data
+  * Only use it in the initial markdown
+  * The WUI goes through Bun's standalone HTML bundler, which may embed an image and rewrite its simple relative path once the server started
+  * Therefore, do not update a template image by assigning a path such as `basic.jpg` directly.
+  * Read the bundled or otherwise resolved source
+through `$(heading).img(index).src`, save it, and pass that value to `.data('img',src)`.
+
+- Images not intended to be visible initially must still appear in the Markdown so Bun can discover and embed them.
+- Put those images under a separate heading such as hidden and read their resolved sources during `onMdcuiLoad()`, and then hide that heading:
+
+````md
+# myimg
+
+- four-backtick md template starts here
+---
+img: basic.jpg
+---
+![demo](${data.img})
+- four-backtick md template ends here
+
+- [Change picture](javascript:changePicture())
+
+# hidden
+
+![alternate](good.jpg)
+
+```js front
+let imageSources = []
+let imageIndex = 0
+
+export function onMdcuiLoad()
+{
+  imageSources = [
+    $('#myimg').img(0).src,
+    $('#hidden').img(0).src,
+  ].filter(Boolean)
+  $('#hidden').hide()
+}
+
+export function changePicture()
+{
+  if (imageSources.length < 2) return
+  imageIndex = (imageIndex + 1) % imageSources.length
+  $('#myimg').data('img', imageSources[imageIndex])
+}
+```
+````
+
+- This keeps both images available to Bun's bundler, while exposing only the reactive image heading to the user.
+
+You can also pass a complete image data URL to a reactive template through
+`.data()`. In that case, read the file in a `js back` function, convert its
+bytes to Base64, and return the data URL through `rpc`.
+
+For example, put this code in a `js back` fence:
+
+```js
+import { readAssetBytes } from './single-exe/assetsHelper.js'
+
+export async function readImageDataUrl(path)
+{
+  const bytes = await readAssetBytes(path)
+  return `data:image/jpeg;base64,${Buffer.from(bytes).toString('base64')}`
+}
+```
+
+Then put this code in the `js front` fence. The RPC result can be assigned
+directly to the template's `img` data property:
+
+```js
+export async function onMdcuiLoad()
+{
+  const src = await rpc.readImageDataUrl('demos/basic.jpg')
+  $('#myimg').data('img', src)
+}
+```
+
+The value must contain the complete prefix, such as
+`data:image/jpeg;base64,`. A raw Base64 payload alone is not an image data URL.
+This method does not require a hidden Markdown image because the image bytes
+are loaded explicitly. When building a standalone executable, make sure the
+file is either present in `internalAssets` or available under the external
+`REPO_ROOT` fallback used by `readAssetBytes()`.
 
 ## Editing Markdown source
 
