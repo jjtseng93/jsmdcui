@@ -2641,6 +2641,7 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
                   normalizedCol,
                   args[0],
                 );
+                requestRender?.();
               } catch {}
               return args.length > 0 ? cellSelection : "";
             },
@@ -2656,6 +2657,7 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
                     normalizedCol,
                     Boolean(args[0]),
                   );
+                  requestRender?.();
                   return cellSelection;
                 }
                 const table = _tuiHeadingTable(buffer, heading);
@@ -2743,9 +2745,9 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
-          _changeTuiHeadingSectionVisibility(
+          if (_changeTuiHeadingSectionVisibility(
             buffer, _findHeading(buffer, selector), id, "show",
-          );
+          )) requestRender?.();
         } catch {}
         return selection;
       },
@@ -2753,9 +2755,9 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
-          _changeTuiHeadingSectionVisibility(
+          if (_changeTuiHeadingSectionVisibility(
             buffer, _findHeading(buffer, selector), id, "hide",
-          );
+          )) requestRender?.();
         } catch {}
         return selection;
       },
@@ -2764,7 +2766,8 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
           const buffer = getBuffer?.();
           const id = _headingSelectorId(selector);
           const heading = _findHeading(buffer, selector);
-          _changeTuiHeadingSectionVisibility(buffer, heading, id, "toggle");
+          if (_changeTuiHeadingSectionVisibility(buffer, heading, id, "toggle"))
+            requestRender?.();
         } catch {}
         return selection;
       },
@@ -2830,6 +2833,10 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
           if (args.length > 0) {
             if (Array.isArray(buffer.lines))
               _setBlockValue(buffer, parsedSelector, args[0]);
+            // 跟 .data() 一樣主動要求重繪；不然從 setInterval／Promise
+            // 之類非按鍵觸發的情境呼叫 .val(value)，畫面只會靜靜地在
+            // buffer 裡更新，要等下一次真正觸發 render() 的操作才會補上。
+            requestRender?.();
             return selection;
           }
           return _blockValue(lines, parsedSelector) ?? "";
@@ -2841,9 +2848,11 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return _mutateAndRecordTuiHeadingList(
+          const result = _mutateAndRecordTuiHeadingList(
             buffer, heading, selector, "push", items, 0,
           );
+          requestRender?.();
+          return result;
         } catch {
           return 0;
         }
@@ -2852,9 +2861,11 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return _mutateAndRecordTuiHeadingList(
+          const result = _mutateAndRecordTuiHeadingList(
             buffer, heading, selector, "pop", [], undefined,
           );
+          requestRender?.();
+          return result;
         } catch {
           return undefined;
         }
@@ -2863,9 +2874,11 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return _mutateAndRecordTuiHeadingList(
+          const result = _mutateAndRecordTuiHeadingList(
             buffer, heading, selector, "shift", [], undefined,
           );
+          requestRender?.();
+          return result;
         } catch {
           return undefined;
         }
@@ -2874,9 +2887,11 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return _mutateAndRecordTuiHeadingList(
+          const result = _mutateAndRecordTuiHeadingList(
             buffer, heading, selector, "unshift", items, 0,
           );
+          requestRender?.();
+          return result;
         } catch {
           return 0;
         }
@@ -2885,9 +2900,11 @@ export function createTuiSelector(getBuffer, requestRender = null, requestScroll
         try {
           const buffer = getBuffer?.();
           const heading = _findHeading(buffer, selector);
-          return _mutateAndRecordTuiHeadingList(
+          const result = _mutateAndRecordTuiHeadingList(
             buffer, heading, selector, "splice", args, [],
           );
+          requestRender?.();
+          return result;
         } catch {
           return [];
         }

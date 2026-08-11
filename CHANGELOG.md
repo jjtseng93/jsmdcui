@@ -2,6 +2,19 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.17.3] - 2026-08-12
+
+### Fixed
+
+- Request a redraw from every `$()` selector method that changes what is on
+  screen, not only `.data()` and `.val()`. `.show()`, `.hide()`, `.toggle()`,
+  `.push()`, `.pop()`, `.shift()`, `.unshift()`, `.splice()`, and
+  `.cell(row, col).text(value)` / `.cell(row, col).val(checked)` previously
+  updated the buffer without asking the TUI to repaint, so a call made
+  outside a keypress-driven handler (a `setInterval` tick, an awaited RPC
+  callback, a resolved promise) would sit invisible on screen until an
+  unrelated keypress or click happened to trigger the next redraw.
+
 ## [0.17.2] - 2026-08-12
 
 ### Fixed
