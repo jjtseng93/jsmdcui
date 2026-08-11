@@ -2034,6 +2034,47 @@ class BufferModel {
   rerenderMdcui(width) {
     return enqueueMdcuiRerender(this, () => this._rerenderMdcuiNow(width));
   }
+
+  refreshMdcuiKittyImages(width = this._mdcuiRenderWidth || 80) {
+    return enqueueMdcuiRerender(this, async () => {
+      if (!this._mdcuiImagesDirty || typeof this._mdcuiAnsiText !== "string")
+        return false;
+      const revision = this._mdcuiImagesRevision ?? 0;
+
+      const ansiLines = this._mdcuiAnsiText.split("\n");
+      const reservedRows = new Set();
+      for (const image of this._mdcuiImages ?? []) {
+        for (let offset = 1; offset < Math.max(1, Number(image.rows) || 1); offset++)
+          reservedRows.add(image.line + offset);
+      }
+      const unpreparedAnsi = ansiLines
+        .filter((_, line) => !reservedRows.has(line))
+        .join("\n");
+      const resolvedImageBasePath = this.path && !isHttpUrl(this.path)
+        ? remoteMarkdownSources.get(resolve(this.path)) ?? this.path
+        : this.path;
+      const prepared = kittyImageMode === "off"
+        ? { rendered: unpreparedAnsi, images: [] }
+        : await prepareKittyImages(unpreparedAnsi, resolvedImageBasePath, width, {
+          allowUrl: allowRemoteKittyImages,
+          kittyMode: kittyImageMode,
+          getBundledImageMap,
+        });
+      const styled = parseAnsiStyledText(prepared.rendered);
+      if ((this._mdcuiImagesRevision ?? 0) !== revision) return false;
+      markTuiTableStripeStyles(styled.styleLines, styled.text.split("\n"));
+      this.lines = normalizeBufferText(styled.text).split("\n");
+      this._ansiStyleLines = styled.styleLines;
+      this._mdcuiAnsiText = prepared.rendered;
+      this._mdcuiImages = prepared.images;
+      this._mdcuiImagesDirty = false;
+      indexTuiHeadingRows(this);
+      refreshTuiLinkIndex(this);
+      this.invalidateHighlightFrom(0, { force: true });
+      this.ensureCursor();
+      return true;
+    });
+  }
   async _rerenderMdcuiNow(width) {
     if (!isMdcuiEncoding(this.encoding) || this._mdcuiTuiSourceText == null) return false;
     const renderWidth = Math.max(1, Math.trunc(Number(width) || 80));
@@ -2764,6 +2805,17 @@ class App {
       if (pane) return pane;
     }
     return null;
+  }
+
+  async refreshMdcuiKittyImages(buffer = this.buffer) {
+    if (!buffer) return false;
+    try {
+      return await buffer.refreshMdcuiKittyImages?.(
+        buffer._mdcuiRenderWidth || this.cols || 80,
+      );
+    } finally {
+      if (this._started) this.render();
+    }
   }
 
   _enqueueInput(operation) {

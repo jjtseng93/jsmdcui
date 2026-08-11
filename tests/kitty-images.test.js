@@ -48,6 +48,43 @@ test("Kitty images prefer lazily supplied compiled HTML bundle assets", async ()
   expect(result.images[0].data.equals(ONE_PIXEL_PNG)).toBe(true);
 });
 
+test("Kitty images can switch away from and back to a compiled embedded asset", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-bundled-return-"));
+  const bundledPath = join(dir, "pixel-bundled.png");
+  const localPath = join(dir, "local.png");
+  await writeFile(bundledPath, ONE_PIXEL_PNG);
+  await writeFile(localPath, ONE_PIXEL_PNG);
+  const markdownPath = join(dir, "app.md");
+  const imageMap = new Map([["embedded.png", bundledPath]]);
+  let imageMapRequests = 0;
+  const options = {
+    getBundledImageMap: async () => {
+      imageMapRequests++;
+      return imageMap;
+    },
+  };
+  const render = (href) => Bun.markdown.ansi(`![pixel](${href})`, {
+    hyperlinks: true,
+    columns: 40,
+  });
+
+  const embeddedFirst = await prepareKittyImages(
+    render("embedded.png"), markdownPath, 40, options,
+  );
+  const local = await prepareKittyImages(
+    render("local.png"), markdownPath, 40, options,
+  );
+  const embeddedAgain = await prepareKittyImages(
+    render("embedded.png"), markdownPath, 40, options,
+  );
+
+  expect(embeddedFirst.images[0]?.path).toBe(bundledPath);
+  expect(local.images[0]?.path).toBe(localPath);
+  expect(embeddedAgain.images[0]?.path).toBe(bundledPath);
+  expect(embeddedAgain.images[0]?.data.equals(ONE_PIXEL_PNG)).toBe(true);
+  expect(imageMapRequests).toBe(3);
+});
+
 test("Kitty compat converts compressed images to standard PNG payloads", async () => {
   const dir = await mkdtemp(join(tmpdir(), "jsmdcui-kitty-compat-"));
   const markdownPath = join(dir, "app.md");

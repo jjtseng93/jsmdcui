@@ -1173,6 +1173,27 @@ describe("TUI heading text getter", () => {
   });
 });
 
+describe("TUI heading image selection", () => {
+  test("img(index).src reads OSC 8 image destinations before the next heading", () => {
+    const { $ } = tuiSelector(`# Gallery
+
+![First](one.png)
+
+![Second](two.png)
+
+## Child
+
+![Child](child.png)
+`);
+
+    expect($("#gallery").img(0).src).toBe("one.png");
+    expect($("#gallery").img(1).src).toBe("two.png");
+    expect($("#gallery").img(2).src).toBe("");
+    expect($("#child").img(0).src).toBe("child.png");
+    expect($("#gallery").img(-1).src).toBe("");
+  });
+});
+
 describe("TUI heading-associated table cells", () => {
   const tableMarkdown = `## Table With Id
 
@@ -1743,6 +1764,7 @@ class TestElement {
       for (const child of node.children) {
         if (selector === 'input[type="checkbox"]' &&
             child.tagName === "INPUT" && child.type === "checkbox") matches.push(child);
+        else if (selector === "img" && child.tagName === "IMG") matches.push(child);
         else if (selector === "ul, ol" && child.matches(selector)) matches.push(child);
         else if (selector === "li.task-list-item" && child.matches(selector)) matches.push(child);
         visit(child);
@@ -1752,6 +1774,35 @@ class TestElement {
     return matches;
   }
 }
+
+describe("WUI heading image selection", () => {
+  test("img(index).src reads actual image elements before the next heading section", () => {
+    const documentObject = new TestDocument();
+    const section = documentObject.createElement("section");
+    const heading = documentObject.createElement("h1");
+    heading.id = "gallery";
+    const body = documentObject.createElement("p");
+    const first = documentObject.createElement("img");
+    const second = documentObject.createElement("img");
+    first.src = "https://example.test/one.png";
+    second.src = "https://example.test/two.png";
+    body.append(first, second);
+    const childSection = documentObject.createElement("section");
+    const childHeading = documentObject.createElement("h2");
+    childHeading.id = "child";
+    const childImage = documentObject.createElement("img");
+    childImage.src = "https://example.test/child.png";
+    childSection.append(childHeading, childImage);
+    section.append(heading, body, childSection);
+    documentObject.root.append(section);
+    const $ = createWebDollar(documentObject);
+
+    expect($("#gallery").img(0).src).toBe("https://example.test/one.png");
+    expect($("#gallery").img(1).src).toBe("https://example.test/two.png");
+    expect($("#gallery").img(2).src).toBe("");
+    expect($("#child").img(0).src).toBe("https://example.test/child.png");
+  });
+});
 
 class TestDocument {
   constructor() {

@@ -14,7 +14,7 @@ import {
 } from "../src/cui/rpc.mjs";
 import { createWui } from "../runmd.mjs";
 import { createTui } from "../runmd.mjs";
-import { createTuiSelector } from "../src/plugins/js-bridge.js";
+import { createTuiSelector, markdownImageSignature } from "../src/plugins/js-bridge.js";
 
 test("four-backtick md template fences create heading components", () => {
   const result = renderMarkdownTemplateComponents(`# Users
@@ -244,6 +244,46 @@ Hello **\${data.name ?? "Guest"}**
   expect(component.last).toBe("Hello **Ada**");
   expect(buffer.modified).toBe(false);
   expect(renderRequests).toBe(1);
+});
+
+test("TUI reactive templates dirty Kitty images when an image component changes", () => {
+  const context = {};
+  const ansi = String(createTui(`# Gallery
+
+\`\`\`\`md template
+![demo](\${data.image ?? "one.png"})
+
+\${data.caption ?? "First"}
+\`\`\`\`
+`, 40, context));
+  const buffer = {
+    lines: Bun.stripANSI(ansi).split("\n"),
+    _mdcuiAnsiText: ansi,
+    _mdcuiRenderWidth: 40,
+    cursor: { x: 0, y: 0 },
+    modified: false,
+    invalidateHighlightFrom() {},
+    ensureCursor() {},
+  };
+  applyPreRenderHeadingData(buffer, context.preRenderHeadingData);
+  const requests = [];
+  const gallery = createTuiSelector(() => buffer, (request) => requests.push(request))("#gallery");
+
+  gallery.data("caption", "Second");
+  expect(buffer._mdcuiImagesDirty).toBe(true);
+  expect(requests.at(-1)).toEqual({ imagesDirty: true });
+
+  gallery.data("image", "two.png");
+  expect(buffer._mdcuiImagesDirty).toBe(true);
+  expect(buffer._mdcuiImagesRevision).toBe(2);
+  expect(requests.at(-1)).toEqual({ imagesDirty: true });
+});
+
+test("Markdown image signatures are empty for null and track image destinations", () => {
+  expect(markdownImageSignature(null)).toBe("");
+  expect(markdownImageSignature("plain text")).toBe("");
+  expect(markdownImageSignature("![one](a.png) ![two](b.jpg)"))
+    .toBe("a.png\0b.jpg");
 });
 
 test("TUI component Markdown renderer retains heading-associated tables", () => {

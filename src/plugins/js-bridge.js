@@ -1204,6 +1204,12 @@ function _removeTuiUserData(buffer, id, keys) {
 
 const _renderingTuiComponentRecords = new WeakSet();
 
+export function markdownImageSignature(markdown) {
+  return [...String(markdown ?? "").matchAll(/!\[[^\]]*\]\(([^)]+)\)/gu)]
+    .map((match) => match[1].trim())
+    .join("\0");
+}
+
 function _renderTuiHeadingComponents(buffer, id) {
   const record = buffer?._mdcuiIdStore?.get(id);
   if (!record || _renderingTuiComponentRecords.has(record) || !Array.isArray(record.components))
@@ -1215,6 +1221,13 @@ function _renderTuiHeadingComponents(buffer, id) {
       if (!component || typeof component.render !== "function") continue;
       const rendered = String(component.render.call(component, record.data) ?? "");
       if (rendered === component.last) continue;
+      const oldImageSignature = markdownImageSignature(component.last);
+      const newImageSignature = markdownImageSignature(rendered);
+      // Replacing a component removes its old per-line Kitty metadata. Even if
+      // the destinations are unchanged, prepare the frame again whenever the
+      // changed component contains an image.
+      const imagesAffected = oldImageSignature !== newImageSignature
+        || oldImageSignature !== "";
       const start = buffer.lines.findIndex(line =>
         String(line ?? "").includes(component.marker?.start)
       );
@@ -1237,6 +1250,10 @@ function _renderTuiHeadingComponents(buffer, id) {
         markModified: false,
       });
       component.last = rendered;
+      if (imagesAffected) {
+        buffer._mdcuiImagesDirty = true;
+        buffer._mdcuiImagesRevision = (buffer._mdcuiImagesRevision ?? 0) + 1;
+      }
       changed = true;
     }
     if (changed) refreshTuiLinkIndex(buffer);
@@ -1544,6 +1561,26 @@ function _tuiHeadingTaskList(buffer, heading) {
     items[index].end = items[index + 1].start;
 
   return { first, end, indent, items, quoteDepth };
+}
+
+function _tuiHeadingImageSources(buffer, heading) {
+  if (!heading || _headingHasHiddenTuiAncestor(buffer, heading)) return [];
+  const headingIndex = _tuiHeadingRowIndex(buffer);
+  const renderedHeading = headingIndex.byOrdinal.get(heading.ordinal);
+  if (!renderedHeading || renderedHeading.id !== heading.id) return [];
+  const ansiLines = String(buffer?._mdcuiAnsiText ?? "").split("\n");
+  const nextHeading = headingIndex.entries[renderedHeading.position + 1];
+  const endLine = Math.min(
+    nextHeading?.row ?? ansiLines.length,
+    _tuiHeadingContainerEndRow(buffer, renderedHeading),
+  );
+  const sources = [];
+  const oscImage = /\x1b\]8;;([^\x1b]*)\x1b\\(?=[^\n]*📷)/gu;
+  for (let line = renderedHeading.row + 1; line < endLine; line++) {
+    for (const match of String(ansiLines[line] ?? "").matchAll(oscImage))
+      sources.push(match[1]);
+  }
+  return sources;
 }
 
 function _tuiHeadingTable(buffer, heading) {
@@ -2670,6 +2707,23 @@ export function createTuiSelector(getBuffer, requestRender = null) {
         };
         return makeCellSelection(row, col);
       },
+      img(index = 0) {
+        const normalizedIndex = Math.trunc(Number(index));
+        return {
+          get src() {
+            try {
+              if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0) return "";
+              const buffer = getBuffer?.();
+              return _tuiHeadingImageSources(
+                buffer,
+                _findHeading(buffer, selector),
+              )[normalizedIndex] ?? "";
+            } catch {
+              return "";
+            }
+          },
+        };
+      },
       show() {
         try {
           const buffer = getBuffer?.();
@@ -2708,13 +2762,15 @@ export function createTuiSelector(getBuffer, requestRender = null) {
           if (args.length === 1) {
             if (args[0] && typeof args[0] === "object") {
               Object.assign(data, args[0]);
-              if (_renderTuiHeadingComponents(buffer, selectorId)) requestRender?.();
+              if (_renderTuiHeadingComponents(buffer, selectorId))
+                requestRender?.({ imagesDirty: buffer._mdcuiImagesDirty === true });
               return selection;
             }
             return data[String(args[0])];
           }
           data[String(args[0])] = args[1];
-          if (_renderTuiHeadingComponents(buffer, selectorId)) requestRender?.();
+          if (_renderTuiHeadingComponents(buffer, selectorId))
+            requestRender?.({ imagesDirty: buffer._mdcuiImagesDirty === true });
           return selection;
         } catch {
           return args.length <= 1 ? undefined : selection;
@@ -2912,9 +2968,11 @@ export function buildMicroGlobal(jsManager) {
   const getCtx = () => jsManager._ctx;
   const $ = createTuiSelector(
     () => getApp()?.buffer,
-    () => {
+    ({ imagesDirty = false } = {}) => {
       const app = getApp();
-      if (app?._started) app.render?.();
+      if (!app?._started) return;
+      if (imagesDirty) void app.refreshMdcuiKittyImages?.(app.buffer);
+      else app.render?.();
     },
   );
   $.tts = async (text, pitch, speed) => {
