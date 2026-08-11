@@ -9,6 +9,8 @@ import {
   findHtmlBundleAsset,
   findHtmlBundleImageAsset,
   htmlBundleImageAssetPath,
+  readAssetBytes,
+  readAssetText,
 } from "../single-exe/assetsHelper.js";
 
 const homepage = {
@@ -27,6 +29,38 @@ const homepage = {
     },
   ],
 };
+
+test("readAssetText prefers internal text and falls back under REPO_ROOT", async () => {
+  const previousAssets = globalThis.internalAssets;
+  try {
+    globalThis.internalAssets = new Map([
+      ["virtual-only.txt", new TextEncoder().encode("embedded")],
+    ]);
+    expect(await readAssetText("virtual-only.txt")).toBe("embedded");
+
+    globalThis.internalAssets = null;
+    expect(await readAssetText("package.json"))
+      .toContain('"name"');
+  } finally {
+    globalThis.internalAssets = previousAssets;
+  }
+});
+
+test("readAssetBytes prefers internal bytes and falls back under REPO_ROOT", async () => {
+  const previousAssets = globalThis.internalAssets;
+  try {
+    globalThis.internalAssets = new Map([
+      ["virtual-only.bin", Uint8Array.from([1, 2, 3])],
+    ]);
+    expect([...await readAssetBytes("virtual-only.bin")]).toEqual([1, 2, 3]);
+
+    globalThis.internalAssets = null;
+    const bytes = await readAssetBytes("package.json");
+    expect(new TextDecoder().decode(bytes)).toContain('"name"');
+  } finally {
+    globalThis.internalAssets = previousAssets;
+  }
+});
 
 test("HTML bundle asset lookup matches the compiled public asset path", () => {
   expect(findHtmlBundleAsset(homepage, "/pixel-abc123.png"))

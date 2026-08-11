@@ -7,6 +7,25 @@ import { canonicalHtmlBundleImageHref } from "../../single-exe/assetsHelper.js";
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const REMOTE_IMAGE_TIMEOUT_MS = 10_000;
 
+export function renderAnsiWithDataImages(markdown, options = {}) {
+  const dataUrls = [];
+  const protectedMarkdown = String(markdown ?? "").replace(
+    /(!\[[^\]]*\]\()(data:image\/[^)\s]+)(\))/giu,
+    (whole, opening, href, closing) => {
+      const index = dataUrls.push(href) - 1;
+      return `${opening}https://mdcui.invalid/data-image/${index}${closing}`;
+    },
+  );
+  let ansi = String(Bun.markdown.ansi(protectedMarkdown, options));
+  for (let index = 0; index < dataUrls.length; index++) {
+    ansi = ansi.replaceAll(
+      `https://mdcui.invalid/data-image/${index}`,
+      dataUrls[index],
+    );
+  }
+  return ansi;
+}
+
 async function withTimeout(promise, timeoutMs, onTimeout) {
   let timeout;
   try {
@@ -102,8 +121,24 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(String(value ?? ""));
 }
 
+function imageDataUrlBytes(href) {
+  const match = /^data:(image\/[^;,]+)((?:;[^,]*)?),(.*)$/isu.exec(href);
+  if (!match) return null;
+  try {
+    return /;base64(?:;|$)/iu.test(match[2])
+      ? Buffer.from(match[3].replace(/\s+/gu, ""), "base64")
+      : Buffer.from(decodeURIComponent(match[3]), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 function imageSource(href, markdownPath, allowUrl) {
   try {
+    if (href.startsWith("data:image/")) {
+      const data = imageDataUrlBytes(href);
+      return data ? { kind: "data", value: data } : null;
+    }
     if (href.startsWith("file:")) return { kind: "local", value: fileURLToPath(href) };
     if (process.platform === "win32" && /^[A-Za-z]:[\\/]/.test(href)) {
       return { kind: "local", value: resolve(href) };
@@ -179,7 +214,9 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
     }
     try {
       let data;
-      if (source.kind === "remote") {
+      if (source.kind === "data") {
+        data = source.value;
+      } else if (source.kind === "remote") {
         const fetchBytes = options.fetchHttpBytes ?? defaultFetchHttpBytes;
         const timeoutMs = remoteDeadline - Date.now();
         if (timeoutMs <= 0) throw new Error("remote image budget exhausted");
@@ -210,8 +247,9 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
       const rows = Math.max(1, Math.round((cols * size.height) / size.width / 2));
       const lineIndex = outputLines.length;
       outputLines.push(line, ...Array(Math.max(0, rows - 1)).fill(""));
+      const sourcePath = source.kind === "data" ? `data:${size.mime}` : source.value;
       images.push({
-        id: stableImageId(source.value, sourceLine, data),
+        id: stableImageId(sourcePath, sourceLine, data),
         line: lineIndex,
         cols,
         rows,
@@ -219,10 +257,10 @@ export async function prepareKittyImages(ansiText, markdownPath, terminalCols = 
         pixelHeight: size.height,
         mime: size.mime,
         data,
-        path: source.value,
+        path: sourcePath,
       });
       logKittyPlacement("image-prepared", {
-        path: source.value,
+        path: sourcePath,
         sourceKind: source.kind,
         sourceLine,
         renderedLine: lineIndex,

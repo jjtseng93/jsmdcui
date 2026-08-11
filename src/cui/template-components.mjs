@@ -6,6 +6,7 @@ import {
   convertTuiTableCheckboxes,
   markHeadingTableRows,
 } from "./table-render.mjs";
+import { renderAnsiWithDataImages } from "./kitty-images.mjs";
 
 function headingRecord(store, id) {
   let record = store.get(id);
@@ -204,10 +205,10 @@ export function renderTuiComponentMarkdown(component, markdown, columns = 80) {
   const source = `# MDCUI reactive template\n\n${start}\n\n${String(markdown ?? "")}`
     + `\n\n${end}\n`;
   const plan = markHeadingTableRows(source);
-  let ansi = String(Bun.markdown.ansi(plan.markdown, {
+  let ansi = renderAnsiWithDataImages(plan.markdown, {
     hyperlinks: true,
     columns: Math.max(1, Math.trunc(Number(columns) || 80)),
-  }));
+  });
   ansi = addTuiTableRowSeparators(ansi, plan);
   ansi = convertTuiTableCheckboxes(ansi);
   const ansiLines = ansi.split("\n");

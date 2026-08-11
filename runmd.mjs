@@ -2,13 +2,14 @@
 
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { readInternalAssetText } from './single-exe/assetsHelper.js'
+import { readAssetText, readInternalAssetText } from './single-exe/assetsHelper.js'
 import { fenceEventMap, inlineFenceEventCode } from './src/cui/fence-events.mjs'
 import {
   readLeadingHtmlCharacterReference,
   renderMarkdownWithHeadingIds,
 } from './src/cui/heading-ids.mjs'
 import { parseMdcuiIdentity } from './src/cui/identity.mjs'
+import { renderAnsiWithDataImages } from './src/cui/kitty-images.mjs'
 import {
   addTuiTableRowSeparators,
   convertTuiTableCheckboxes,
@@ -35,12 +36,6 @@ function logWroteFile(label,path)
 {
   if(!process.stdin.isRaw)
   cse(mda(`- Wrote to ${label} file: ${path}`))
-}
-
-async function readTemplate(pathname)
-{
-  return readInternalAssetText(pathname) ??
-         await Bun.file(path.join(REPO_ROOT, pathname)).text()
 }
 
 export async function readMarkdownInput(mdpath, overwriteDemo = false)
@@ -240,8 +235,8 @@ export async function writeRuntimeFiles(mdpath)
   const mdb = path.basename(mdpath)
   const rpcPath = mdpath + "-rpc.js"
   const serverPath = mdpath + "-server.js"
-  const rpcSource = await readTemplate("src/cui/rpc.mjs")
-  const serverSource = (await readTemplate("src/cui/server.mjs"))
+  const rpcSource = await readAssetText("src/cui/rpc.mjs")
+  const serverSource = (await readAssetText("src/cui/server.mjs"))
     .replaceAll("./rpc.mjs", `./${mdb}-rpc.js`)
     .replaceAll("testapp.md", mdb)
 
@@ -261,7 +256,7 @@ export function createTui(md,TERMINAL_WIDTH=30, context = null) // ANSI Colors
     context.preRenderHeadingData = templates.idStore;
   md = templates.markdown;
   const tablePlan = markHeadingTableRows(md);
-  md = (  Bun?.markdown?.ansi?.(
+  md = (  renderAnsiWithDataImages(
             tablePlan.markdown,{
               hyperlinks:true,
               columns:TERMINAL_WIDTH

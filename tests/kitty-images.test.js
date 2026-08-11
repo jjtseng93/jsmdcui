@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fitKittyImageToWidth, prepareKittyImages } from "../src/cui/kitty-images.mjs";
+import { fitKittyImageToWidth, prepareKittyImages, renderAnsiWithDataImages } from "../src/cui/kitty-images.mjs";
 import { Screen } from "../src/screen/screen.js";
 
 const ONE_PIXEL_PNG = Buffer.from(
@@ -24,6 +24,22 @@ test("Bun-rendered Markdown image links reserve rows and retain Kitty data", asy
   expect(result.images[0]).toMatchObject({ mime: "image/png", cols: 1, rows: 1 });
   expect(result.images[0].data.equals(ONE_PIXEL_PNG)).toBe(true);
   expect(Bun.stripANSI(result.rendered)).toContain("📷 pixel");
+});
+
+test("Kitty images accept base64 image data URLs", async () => {
+  const dataUrl = `data:image/png;base64,${ONE_PIXEL_PNG.toString("base64")}`;
+  const ansi = renderAnsiWithDataImages(`![pixel](${dataUrl})`, {
+    hyperlinks: true,
+    columns: 40,
+  });
+  const result = await prepareKittyImages(ansi, "/tmp/app.md", 40);
+
+  expect(result.images).toHaveLength(1);
+  expect(result.images[0]).toMatchObject({
+    mime: "image/png",
+    path: "data:image/png",
+  });
+  expect(result.images[0].data.equals(ONE_PIXEL_PNG)).toBe(true);
 });
 
 test("Kitty images prefer lazily supplied compiled HTML bundle assets", async () => {
