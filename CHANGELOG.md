@@ -2,6 +2,20 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.18.0] - 2026-08-19
+
+### Added
+
+- Add `switchBackend(endpoint)` to `rpc.mjs`, repointing every `rpc.*` call
+  (including `_discover`) at a different endpoint instead of the default
+  `"rpc"`. Returns the previous endpoint so a caller can restore it.
+- Accept a Bun unix socket as that endpoint: pass `"unix:/path/to/sock"` (or
+  `"UNIX:/path/to/sock"`) to `switchBackend`, and every `rpc.*` fetch is
+  issued over that socket via Bun's `unix` fetch option instead of as an
+  http path. Dispatch is unaffected, since routing is by function name in
+  the request body rather than by HTTP path. Only meaningful when `rpc.mjs`
+  runs under Bun (the `unix` fetch option has no effect in a browser).
+
 ## [0.17.3] - 2026-08-12
 
 ### Fixed
