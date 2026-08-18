@@ -28,9 +28,13 @@ const rpcFetchUrl = () =>
   ( rpcBackend.slice(0,4) === "unix" || rpcBackend.slice(0,4) === "UNIX" )
     ? "http://unix/rpc" : rpcBackend ;
 
+// decodeURIComponent undoes new URL()'s percent-encoding of the path, which
+// otherwise turns a leading NUL byte (a Linux abstract-namespace socket name,
+// e.g. "unix:\0name") into the three literal characters "%00" instead of the
+// single byte 0x00 Bun's `unix` option needs to actually reach it.
 const rpcFetchOpt = () =>
   ( rpcBackend.slice(0,4) === "unix" || rpcBackend.slice(0,4) === "UNIX" )
-    ? { unix: new URL(rpcBackend).pathname } : {} ;
+    ? { unix: decodeURIComponent(new URL(rpcBackend).pathname) } : {} ;
 
 export const jss = JSON.stringify
 

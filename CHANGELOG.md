@@ -2,6 +2,19 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.18.1] - 2026-08-19
+
+### Fixed
+
+- Fix `switchBackend`'s unix-socket endpoint losing a leading NUL byte, which
+  broke reaching a Linux abstract-namespace socket (a name starting with
+  `"\0"`, as opposed to a filesystem path). `new URL()` percent-encodes a NUL
+  byte in the path to `%00`; `rpc.mjs` now runs the extracted path through
+  `decodeURIComponent()` before handing it to Bun's `unix` fetch option, so
+  the exact original byte reaches Bun rather than the three literal
+  characters `%00`. Filesystem-path endpoints are unaffected, since they have
+  nothing that needs decoding.
+
 ## [0.18.0] - 2026-08-19
 
 ### Added
