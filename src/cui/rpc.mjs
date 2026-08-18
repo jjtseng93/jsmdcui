@@ -19,6 +19,19 @@ export function switchBackend( endpoint )
   return previous ;
 }
 
+//  rpcBackend starting with "unix"/"UNIX" (e.g. "unix:/path/to/sock") names a
+//  Bun unix socket instead of an http path. fetch() rejects the unix: scheme
+//  outright, so the request goes to a fixed dummy URL and the real path comes
+//  from fetch's `unix` option instead; routing here is by func name in the
+//  JSON body, not by HTTP path, so the dummy URL costs nothing.
+const rpcFetchUrl = () =>
+  ( rpcBackend.slice(0,4) === "unix" || rpcBackend.slice(0,4) === "UNIX" )
+    ? "http://unix/rpc" : rpcBackend ;
+
+const rpcFetchOpt = () =>
+  ( rpcBackend.slice(0,4) === "unix" || rpcBackend.slice(0,4) === "UNIX" )
+    ? { unix: new URL(rpcBackend).pathname } : {} ;
+
 export const jss = JSON.stringify
 
 const webMdcuiIdSource = String.raw`[_\p{L}\p{N}][_\p{L}\p{M}\p{N}:-]*`;
@@ -321,7 +334,7 @@ function webComponentMarkdownHtml(markdown)
   const source = String(markdown ?? "");
   if (typeof Bun !== "undefined" && Bun?.markdown?.html)
     return renderWebComponentMarkdownOnServer(source);
-  return fetch(rpcBackend, {
+  return fetch(rpcFetchUrl(), { ...rpcFetchOpt(),
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(["_mdcui_render_markdown", [source]]),
@@ -1401,7 +1414,7 @@ export const rpcraw = async (func,argv,envp)=>{
   const apilistMod = await FrontendDiscoverApi()
   
   if(apilistMod[func])
-    return await fetch(rpcBackend, {
+    return await fetch(rpcFetchUrl(), { ...rpcFetchOpt(),
       method: "POST",
       body: JSON.stringify([
         func,argv,envp
@@ -1475,7 +1488,7 @@ export function getfuncparams( func )
 export async function FrontendDiscoverApi()
 {
   if(!apilist.get(0))
-    apilist.set(0, await fetch(rpcBackend, {
+    apilist.set(0, await fetch(rpcFetchUrl(), { ...rpcFetchOpt(),
       method: "POST",
       body: JSON.stringify(["_discover"])
     }).then(r=>r.json()).catch(e=>e) ) ;
