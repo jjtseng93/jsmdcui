@@ -7,6 +7,18 @@ const crlf="\r\n"
 
 let apilist = new Map()
 
+//  Endpoint every frontend rpc fetch posts to. Returns the previous one.
+let rpcBackend = "rpc"
+
+export function switchBackend( endpoint )
+{
+  const previous = rpcBackend ;
+
+  rpcBackend = ( endpoint || "rpc" ) + "" ;
+
+  return previous ;
+}
+
 export const jss = JSON.stringify
 
 const webMdcuiIdSource = String.raw`[_\p{L}\p{N}][_\p{L}\p{M}\p{N}:-]*`;
@@ -309,7 +321,7 @@ function webComponentMarkdownHtml(markdown)
   const source = String(markdown ?? "");
   if (typeof Bun !== "undefined" && Bun?.markdown?.html)
     return renderWebComponentMarkdownOnServer(source);
-  return fetch("rpc", {
+  return fetch(rpcBackend, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(["_mdcui_render_markdown", [source]]),
@@ -1389,7 +1401,7 @@ export const rpcraw = async (func,argv,envp)=>{
   const apilistMod = await FrontendDiscoverApi()
   
   if(apilistMod[func])
-    return await fetch("rpc", {
+    return await fetch(rpcBackend, {
       method: "POST",
       body: JSON.stringify([
         func,argv,envp
@@ -1463,7 +1475,7 @@ export function getfuncparams( func )
 export async function FrontendDiscoverApi()
 {
   if(!apilist.get(0))
-    apilist.set(0, await fetch("rpc", {
+    apilist.set(0, await fetch(rpcBackend, {
       method: "POST",
       body: JSON.stringify(["_discover"])
     }).then(r=>r.json()).catch(e=>e) ) ;
