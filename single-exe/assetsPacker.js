@@ -10,6 +10,7 @@ const ASSETS_ROOT=".."
 
 import path from 'node:path'
 import { existsSync } from "node:fs"
+import { readdirSync, statSync } from "node:fs"
 
 const PKG_ROOT=path.resolve(import.meta.dir,ASSETS_ROOT);
 
@@ -26,7 +27,7 @@ Single-file executable assets packer:
 `);
   
 }
-else
+else if(import.meta.main)
 {
   await main();
 }
@@ -55,8 +56,6 @@ const folderMode = existsSync(archive) && ! await Bun.file(archive).exists() ;
 
 const folderPath = folderMode? path.join(archive,pkg.name+'@'+pkg.version):'';
 
-if(folderMode)
-  await Bun.$`mkdir -p ${folderPath}`;
 
 console.log({
   appendMode, archive, 
@@ -67,6 +66,11 @@ console.log({
 
 if(argv.includes('--dry'))
   return 0;
+
+
+if(folderMode)
+  await Bun.$`mkdir -p ${folderPath}`;
+
 
 // No assets field in package.json
 if( !Array.isArray(pkg.assets) ||
@@ -86,11 +90,20 @@ if( !Array.isArray(pkg.assets) ||
   }
   else // assets.tar mode
   {
-    if(!appendMode)
-    {
-      console.error("Creating an empty assets tar");
-      await Bun.write(archive,'');
-    }
+    const file = Bun.file(archive);
+
+    //  Leave a real archive alone; only stand one up when it is
+    //  missing (or the zero-byte file that is not a valid tar), so
+    //  entry.mjs's `with { type: "file" }` import still resolves.
+    if(await file.exists() && file.size > 0)
+      return 0;
+
+    console.error("Writing a placeholder assets tar");
+
+    await Bun.Archive.write(archive, {
+      [`packages/${pkg.name}@${pkg.version}/package.json`]:
+        JSON.stringify(pkg,null,1)
+    });
   }
 
 }
@@ -106,8 +119,14 @@ else // assets present in package.json
   else // tar mode
   {
     if(appendMode)
-    {
-    }
+      return await tar_rvf(archive, pkg.assets, PKG_ROOT);
+
+    const proc = Bun.spawn(
+      ['tar', '-cvf', archive, ...pkg.assets],
+      { cwd: PKG_ROOT, stdout: 'inherit', stderr: 'inherit' }
+    );
+
+    return await proc.exited;
   }
 }
 
@@ -115,3 +134,50 @@ else // assets present in package.json
 
 
 }  //  end of main
+
+
+//  Stands in for `tar -rvf`, which toybox tar does not implement.
+//  Reads the existing members, adds `filesArray` (paths relative to
+//  `cwd`, folders walked recursively), and writes the archive back.
+//  Unlike real tar -r, a repacked path replaces its member instead of
+//  becoming a second one with the same name.
+export async function tar_rvf(archive, filesArray, cwd)
+{
+  const entries = new Map();
+  const file = Bun.file(archive);
+
+  if(await file.exists())
+  {
+    const bytes = await file.bytes();
+
+    if(bytes.byteLength > 0)
+      for(const [member, blob] of await new Bun.Archive(bytes).files())
+        entries.set(member, await blob.bytes());
+  }
+
+  for(const asset of filesArray)
+  {
+    const full = path.join(cwd, asset);
+
+    if(!statSync(full).isDirectory())
+    {
+      entries.set(asset, await Bun.file(full).bytes());
+      console.log(asset);
+      continue;
+    }
+
+    for(const rel of readdirSync(full, { recursive: true }))
+    {
+      const child = path.join(full, String(rel));
+      if(!statSync(child).isFile()) continue;
+
+      const member = asset + '/' + String(rel).split(path.sep).join('/');
+      entries.set(member, await Bun.file(child).bytes());
+      console.log(member);
+    }
+  }
+
+  await Bun.Archive.write(archive, Object.fromEntries(entries));
+
+  return 0;
+}
