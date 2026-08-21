@@ -3,6 +3,7 @@
 //  Change these 2 lines for
 //  the relative assets root if needed
 import pkg from "../package.json" with { type: "json" };
+export { pkg };
 export const ASSETS_ROOT = "..";
 
 import path from "node:path";

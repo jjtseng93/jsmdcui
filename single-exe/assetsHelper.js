@@ -1,8 +1,43 @@
 import { join, posix } from "node:path";
-import { REPO_ROOT } from "./compiled.js";
+import { existsSync } from "node:fs";
+import { IS_COMPILED, REPO_ROOT } from "./compiled.js";
+import { pkg } from "./assetsPacker.js";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
+
+//  This package own namespace inside a shared archive. Matches what
+//  `assetsPacker -p` writes, and what `--asset ./build/assets` lands at
+//  under /$bunfs/root, so one key reaches either back end.
+export const SELF = `assets/${pkg.name}@${pkg.version}`;
+
+//  "" when this build packed flat keys, SELF when it packed namespaced
+//  ones. Detected from what is actually there rather than declared by a
+//  build flag, which can disagree with the packer and fail silently.
+//
+//  NOTE: nothing reads this yet; the lookups below are still flat.
+//
+//  Lazy because the tar back end fills globalThis.internalAssets
+//  asynchronously, so module-load time is too early to look.
+let detectedPrefix;
+
+export function assetPrefix() {
+  if (detectedPrefix === undefined) detectedPrefix = detectPrefix();
+  return detectedPrefix;
+}
+
+function detectPrefix() {
+  const store = getAssetStore();
+
+  if (store) {
+    const keys = store instanceof Map ? store.keys() : Object.keys(store);
+    for (const key of keys) if (key.startsWith(SELF + "/")) return SELF;
+  }
+
+  if (IS_COMPILED && existsSync(join(import.meta.dir, SELF))) return SELF;
+
+  return "";
+}
 
 export function hasInternalAssets() {
   return Boolean(getAssetStore());
