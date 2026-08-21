@@ -12,14 +12,41 @@ import { cpSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 const PKG_ROOT = path.resolve(import.meta.dir, ASSETS_ROOT);
 
 if (process.argv.includes("-h") || process.argv.includes("--help")) {
-  console.log(`
-Single-file executable assets packer: 
-  For packing folders recursively
-  -r  Append mode on
-  -f  File(.tar) or Folder
-    Folder: /path/to/build/assets
-    Copies to ${pkg.name}@${pkg.version}
-`);
+  const help = `
+# Single-file executable assets packer
+
+Packs the \`assets\` list from \`package.json\`, folders recursively.
+Reads \`${pkg.name}@${pkg.version}\` from \`../package.json\`.
+
+## Options
+
+- \`-f PATH\` — where to pack to. Defaults to \`./assets.tar\`
+  - a \`.tar\` file picks tar mode
+  - an existing folder picks folder mode
+- \`-r\` \`--append\` — merge into an existing archive instead of replacing it
+  - a repacked path *replaces* its member rather than duplicating it,
+    unlike real \`tar -r\`
+  - use it for every step of a multi-package relay
+- \`-p [PREFIX]\` — namespace this package's members inside a shared archive
+  - bare \`-p\` means \`assets/${pkg.name}@${pkg.version}\`
+  - omit it for a single-project build, which keeps the flat key space
+- \`--dry\` — print the resolved settings and exit without writing
+- \`-h\` \`--help\` — this text
+
+## Two modes, one key space
+
+- **tar mode** feeds \`import x from "./assets.tar" with { type: "file" }\`
+- **folder mode** feeds \`bun build --compile --asset ./build/assets\`
+  - the folder must already exist
+  - \`--asset\` keeps only the basename of the path it is given, so pass the
+    assets root itself: \`-f /path/to/build/assets\` puts this package under
+    \`build/assets/${pkg.name}@${pkg.version}/\`
+
+tar mode with \`-p\` and folder mode into \`build/assets\` produce the same keys,
+so \`assetsHelper\` reads either back end with one set of paths.
+`;
+
+  console.log(Bun?.markdown?.ansi?.(help) ?? help);
 } else if (import.meta.main) {
   await main();
 }
