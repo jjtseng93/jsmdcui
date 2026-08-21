@@ -3,7 +3,7 @@
 //  Change these 2 lines for
 //  the relative assets root if needed
 import pkg from "../package.json" with { type: "json" };
-const ASSETS_ROOT = "..";
+export const ASSETS_ROOT = "..";
 
 import path from "node:path";
 import { existsSync } from "node:fs";
@@ -11,8 +11,9 @@ import { cpSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 
 const PKG_ROOT = path.resolve(import.meta.dir, ASSETS_ROOT);
 
-if (process.argv.includes("-h") || process.argv.includes("--help")) {
-  const help = `
+if (import.meta.main) {
+  if (process.argv.includes("-h") || process.argv.includes("--help")) {
+    const help = `
 # Single-file executable assets packer
 
 Packs the \`assets\` list from \`package.json\`, folders recursively.
@@ -46,9 +47,10 @@ tar mode with \`-p\` and folder mode into \`build/assets\` produce the same keys
 so \`assetsHelper\` reads either back end with one set of paths.
 `;
 
-  console.log(Bun?.markdown?.ansi?.(help) ?? help);
-} else if (import.meta.main) {
-  await main();
+    console.log(Bun?.markdown?.ansi?.(help) ?? help);
+  } else {
+    await main();
+  }
 }
 
 export async function main(argv = process.argv) {

@@ -2,12 +2,13 @@ import { basename, dirname, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import child_process from "node:child_process";
+import { ASSETS_ROOT } from "./assetsPacker.js";
 
 
 export const IS_COMPILED = isCompiledBinary();
 export const REPO_ROOT = IS_COMPILED
   ? getExeDirname()
-  : resolve(import.meta.dirname, "..");
+  : resolve(import.meta.dirname, ASSETS_ROOT);
 //  This file's own directory. Not derived from REPO_ROOT: the only user
 //  is buildExecutable(), which already refuses to run when IS_COMPILED,
 //  so REPO_ROOT there is always the source tree, and going back down
