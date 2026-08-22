@@ -283,6 +283,23 @@ Never hard-code `/$bunfs/root/` or `B:/~BUN/`; always use the path that
 The rest of this file is generic. These names belong to jsmdcui itself and are
 not reserved by the bootstrap — an adopting project picks its own.
 
+Embedding a Markdown app has its own flags, and they are what you normally
+want:
+
+```shell
+bun ./src/index.js --build-md-exe ./中文工具.md
+bun ./src/index.js --build-md-for bun-linux-x64 ./中文工具.md
+```
+
+Each expands into the plain build switch plus the define, so the low-level form
+below is only needed when you want to combine it with other defines or drive
+the build yourself:
+
+```shell
+--build-md-exe ./app.md        ->  --build-exe --define global.MDCUI_MAIN=./app.md
+--build-md-for <p> ./app.md    ->  --build-for <p> --define global.MDCUI_MAIN=./app.md
+```
+
 `global.MDCUI_MAIN` embeds a custom Markdown app together with its generated
 front, RPC, back, HTML and server modules. It is a string define, so it goes
 through `stringifyNonPrimitiveDefineValues(process.argv, "global.MDCUI_MAIN")`.
@@ -304,11 +321,10 @@ omit a switch to disable it. Choose at most one `MDCUI_DEFAULT_*` mode.
 
 ```shell
 # custom TUI-default executable
-bun ./src/index.js --build-exe --define global.MDCUI_MAIN=../中文工具.md
+bun ./src/index.js --build-md-exe ../中文工具.md
 
-# custom WUI-default executable
-bun ./src/index.js --build-exe \
-  --define global.MDCUI_MAIN=../中文工具.md \
+# custom WUI-default executable, where the second define needs the long form
+bun ./src/index.js --build-md-exe ../中文工具.md \
   --define MDCUI_DEFAULT_DEMO_WUI=1
 ```
 
