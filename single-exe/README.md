@@ -90,11 +90,23 @@ The read functions are synchronous for embedded assets on both back ends.
 `readAssetText` / `readAssetBytes` are async only because of the disk
 fallback, which is what makes the same code work from a source checkout.
 
-```js
-import { readAssetText, listInternalAssetDirs } from "../single-exe/assetsHelper.js";
+**Only the read functions fall back to disk.** The listing functions report
+what is embedded and nothing else, so from a source checkout they return an
+empty array. Branch on `hasInternalAssets()` and read the directory yourself:
 
+```js
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { readAssetText, hasInternalAssets, listInternalAssetDirs } from "../single-exe/assetsHelper.js";
+import { REPO_ROOT } from "../single-exe/compiled.js";
+
+//  Embedded or on disk, this one already works either way.
 const page = await readAssetText("templates/page.html");
-const demos = listInternalAssetDirs("demos");
+
+//  Listing does not, so pick the source.
+const demos = hasInternalAssets()
+  ? listInternalAssetDirs("demos")
+  : readdirSync(join(REPO_ROOT, "demos"));
 ```
 
 ## Building
