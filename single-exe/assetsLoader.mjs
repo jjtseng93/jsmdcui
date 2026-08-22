@@ -2,7 +2,7 @@ import assets from "./assets.tar" with { type: "file" };
 import { getExeDirname, isCompiledBinary } from "./compiled.js";
 
 const forceExternalAssets = process.argv.includes("--assets-external");
-const debugAssetsLoader = Boolean(process.env.BUNMICRO_DEBUG);
+const debugAssetsLoader = Boolean(process.env.ASSETS_DEBUG);
 if (forceExternalAssets) {
   const flagIndex = process.argv.indexOf("--assets-external");
   if (flagIndex >= 0) process.argv.splice(flagIndex, 1);
