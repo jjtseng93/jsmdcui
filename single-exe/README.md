@@ -41,8 +41,10 @@ matters more than the extra megabytes on disk.
 
 ## Adopting it in another project
 
-Copy `single-exe/` to the project root. The folder may be renamed or moved;
-three edits point it at the new home.
+Copy `single-exe/` to the project root. Nothing inside it hard-codes its own
+name or depth, so it can be renamed or moved — but the importing code has to
+follow, so staying at the root is the easy path. Three edits point it at the
+project around it.
 
 1. **`assetsPacker.js`, the first two lines.** They are the only place the
    asset root is written down, and a static import specifier cannot be
@@ -64,7 +66,8 @@ three edits point it at the new home.
 3. **`package.json`.** Add the `assets` array shown above.
 
 Everything else — `compiled.js`, `assetsHelper.js`, `assetsLoader.mjs` — is
-project independent.
+project independent, with one exception: `buildHtmlBundleImageMap` defaults its
+attribute name to jsmdcui's `data-mdcui-src`, so pass your own.
 
 Node's own entry path must not import `assetsLoader.mjs` or `entry.mjs`; those
 are Bun only. `assetsHelper.js` and `compiled.js` run under Node 20.11+.
@@ -78,8 +81,8 @@ appear in `package.json`.
 | --- | --- |
 | `readInternalAssetText(path)` | string, or `null` when not embedded |
 | `readInternalAssetBytes(path)` | `Uint8Array`, or `null` |
-| `readAssetText(path)` | as above, falling back to the file on disk |
-| `readAssetBytes(path)` | as above, as bytes |
+| `readAssetText(path)` | string, falling back to the file on disk |
+| `readAssetBytes(path)` | `Uint8Array`, same fallback |
 | `hasInternalAssets()` | whether this package has anything embedded |
 | `listInternalAssetPaths(prefix?)` | every embedded path under `prefix` |
 | `listInternalAssetDirs(prefix?)` | the immediate child names under `prefix` |
