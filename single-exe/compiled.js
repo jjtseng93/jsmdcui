@@ -1,5 +1,5 @@
 import { basename, dirname, resolve } from "node:path";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import child_process from "node:child_process";
 import { ASSETS_ROOT } from "./assetsPacker.js";
@@ -240,6 +240,26 @@ export async function buildExeAssets(target = "", build_outfile = "single.exe", 
   const metafile = `${outfile}.meta.json`;
   const scanDir = `${outfile}.scan`;
 
+  //  ASSETS_BUNFS swaps the tar for `--compile --asset`: every packer
+  //  copies into one fixed build/assets, and --asset keeps only that
+  //  folder's basename, so the members land at assets/<name>@<version>/
+  //  exactly as the tar back end writes them.
+  const bunfs = Boolean(process.env.ASSETS_BUNFS);
+  const staging = resolve(REPO_ROOT, "build", "assets");
+
+  //  Nothing loads a tar in bunfs mode, so entry.mjs and its asset loader
+  //  are dead weight and the program becomes its own entry point. Which
+  //  program that is stays declared in one place, the last import of
+  //  entry.mjs, so adopting projects still edit only that file.
+  const mainSpec = bunfs ? lastEntryImport(resolve(SINGLE_EXE_DIR, "entry.mjs")) : "";
+
+  if (bunfs && !mainSpec) {
+    console.error("Could not read the main program from entry.mjs's last import");
+    return 1;
+  }
+
+  const compileEntry = bunfs ? resolve(SINGLE_EXE_DIR, mainSpec) : "./entry.mjs";
+
   const step = (label, args, cwd) => {
     console.log("");
     console.log(Bun?.markdown?.ansi?.("## " + label) || label);
@@ -258,39 +278,53 @@ export async function buildExeAssets(target = "", build_outfile = "single.exe", 
     return result.status ?? 1;
   };
 
-  //  Own package first: this both creates the archive and gives the scan
-  //  build below something to resolve `with { type: "file" }` against.
-  if (step("Pack own assets", [ownPacker, "-f", archive, "-p"], SINGLE_EXE_DIR) !== 0) {
+  //  What each packer is told to write into, and in which mode.
+  const packInto = bunfs ? ["-f", staging] : ["-f", archive, "-p"];
+
+  if (bunfs) {
+    mkdirSync(staging, { recursive: true });
+    console.log("");
+    console.log(`Staging assets into ${staging}`);
+  } else if (step("Pack own assets", [ownPacker, ...packInto], SINGLE_EXE_DIR) !== 0) {
+    //  Tar mode packs first: the scan below has to resolve entry.mjs's
+    //  `with { type: "file" }` import of the archive.
     console.error("Own assets failed to pack");
     return 1;
   }
 
   //  Bundle only. The binary is thrown away, so skip --compile, --minify
   //  and --bytecode; the module graph is the same and it is much faster.
-  if (step("Scan module graph", ["build", "./entry.mjs", "--target=bun", `--metafile=${metafile}`, `--outdir=${scanDir}`], SINGLE_EXE_DIR) !== 0) {
+  if (step("Scan module graph", ["build", compileEntry, "--target=bun", `--metafile=${metafile}`, `--outdir=${scanDir}`], SINGLE_EXE_DIR) !== 0) {
     console.error("Scan build failed");
     return 1;
   }
 
-  const packers = findAssetPackers(metafile, SINGLE_EXE_DIR, ownPacker);
+  const packers = findAssetPackers(metafile, SINGLE_EXE_DIR, bunfs ? "" : ownPacker);
   rmSync(scanDir, { recursive: true, force: true });
 
   console.log("");
-  console.log(`Found ${packers.length} other asset packer(s)`);
+  console.log(`Found ${packers.length} asset packer(s) to run`);
 
   for (const packer of packers) {
-    if (step(`Append ${dirname(dirname(packer)).split("/").pop()}`, [packer, "-f", archive, "-p", "-r"], dirname(packer)) !== 0)
-    {
-      console.error(`Failed to append assets from ${packer}`);
-      //return 1;
+    const name = dirname(dirname(packer)).split("/").pop();
+
+    //  Tar mode appends to a shared archive; folder mode needs no -r
+    //  because each package owns its own <name>@<version> subtree.
+    const args = bunfs ? [packer, ...packInto] : [packer, ...packInto, "-r"];
+
+    if (step(`Pack ${name}`, args, dirname(packer)) !== 0) {
+      console.error(`Failed to pack assets from ${packer}`);
+      return 1;
     }
   }
 
   //  Compress last. Every packer above reads the archive and writes it
   //  back uncompressed, so this has to happen after the final append.
   //  libarchive sniffs the format on read, so assetsLoader needs no
-  //  change to consume it.
-  if (process.env.ASSETS_NO_GZIP) {
+  //  change to consume it. Nothing to compress in bunfs mode.
+  if (bunfs) {
+    // no archive in this mode
+  } else if (process.env.ASSETS_NO_GZIP) {
     console.log("");
     console.log("ASSETS_NO_GZIP is set, leaving the archive uncompressed");
   } else {
@@ -317,7 +351,8 @@ export async function buildExeAssets(target = "", build_outfile = "single.exe", 
     "--compile",
     "--minify",
     "--bytecode",
-    "./entry.mjs",
+    compileEntry,
+    ...(bunfs ? ["--asset", staging] : []),
     `--outfile=${outfile}`,
     `--metafile-md=${outfile}.meta.md`,
     ...(normalizedTarget ? [`--target=${normalizedTarget}`] : []),
@@ -338,6 +373,30 @@ export async function buildExeAssets(target = "", build_outfile = "single.exe", 
 
   console.log(`Error while building executable: ${outfile}`);
   return 1;
+}
+
+
+//  The main program, as declared by the last import of entry.mjs. That
+//  file is already the one place an adopting project edits, so bunfs
+//  builds read it rather than adding a second declaration.
+export function lastEntryImport(entryFile) {
+  let src;
+
+  try {
+    src = readFileSync(entryFile, "utf8");
+  } catch {
+    return "";
+  }
+
+  //  Drop comments first, or a commented-out import would win.
+  src = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+  const re = /\bimport\b[^"'\n]*["']([^"']+)["']/g; // "
+  let last = "";
+
+  for (let m; (m = re.exec(src)) !== null; ) last = m[1];
+
+  return last;
 }
 
 
