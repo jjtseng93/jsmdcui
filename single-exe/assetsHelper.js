@@ -269,7 +269,13 @@ export function readInternalAssetText(path) {
 //  Node, which is the whole point of keeping the loader out of the main
 //  program's module graph.
 export async function readAssetText(path) {
-  return readInternalAssetText(path) ?? (await readFile(join(REPO_ROOT, path), "utf8"));
+  const internal = readInternalAssetText(path);
+  if (internal != null) return internal;
+
+  //  TextDecoder drops a leading BOM, so the embedded path never returns
+  //  one; readFile keeps it. Strip it here or the same file reads
+  //  differently depending on whether it was embedded.
+  return (await readFile(join(REPO_ROOT, path), "utf8")).replace(/^\uFEFF/, "");
 }
 
 export async function readAssetBytes(path) {
