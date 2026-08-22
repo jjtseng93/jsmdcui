@@ -1,5 +1,5 @@
-import { join, posix } from "node:path";
-import { existsSync } from "node:fs";
+import { join, posix, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { IS_COMPILED, REPO_ROOT } from "./compiled.js";
 import { pkg } from "./assetsPacker.js";
 
@@ -134,6 +134,47 @@ export async function buildHtmlBundleImageMap(
   return images;
 }
 
+//  `bun build --compile --asset` puts the files at real paths under
+//  import.meta.dir instead of into the tar map. Only in a compiled
+//  binary: in the source tree this file sits in single-exe/, which is
+//  not the asset root.
+function bunfsBase() {
+  return IS_COMPILED ? import.meta.dir : null;
+}
+
+//  Store-space keys for every regular file under <base>/<sub>.
+//
+//  NOTE: with no namespace, <sub> is "" and the scan starts at
+//  /$bunfs/root, which also holds the executable and any file-loader
+//  assets. Nothing marks those apart from real assets, so pack with -p
+//  when the --asset back end is in play.
+function walkBunfs(base, sub) {
+  const dir = sub ? join(base, sub) : base;
+
+  let names;
+  try {
+    names = readdirSync(dir, { recursive: true });
+  } catch {
+    return [];
+  }
+
+  const out = [];
+
+  for (const name of names) {
+    const rel = String(name).split(sep).join("/");
+
+    try {
+      if (!statSync(join(dir, String(name))).isFile()) continue;
+    } catch {
+      continue;
+    }
+
+    out.push(sub ? `${sub}/${rel}` : rel);
+  }
+
+  return out;
+}
+
 //  Callers always speak package-relative keys. This is the one place
 //  those become store keys, so the namespace stays invisible to them.
 function storeKey(path) {
@@ -143,12 +184,17 @@ function storeKey(path) {
 }
 
 export function listInternalAssetPaths(prefix = "") {
-  const store = getAssetStore();
-  if (!store) return [];
-
   const at = assetPrefix();
   const wanted = storeKey(prefix);
-  let entries = iterateAssetKeys(store);
+  const store = getAssetStore();
+  const found = new Set();
+
+  if (store) for (const key of iterateAssetKeys(store)) found.add(key);
+
+  const base = bunfsBase();
+  if (base) for (const key of walkBunfs(base, wanted)) found.add(key);
+
+  let entries = [...found];
 
   if (wanted) {
     const base = `${wanted}/`;
@@ -180,11 +226,24 @@ export function listInternalAssetDirs(prefix = "") {
 }
 
 export function getInternalAsset(path) {
-  const store = getAssetStore();
-  if (!store) return null;
   const key = storeKey(path);
-  if (store instanceof Map) return store.get(key) ?? null;
-  return store[key] ?? store[path] ?? null;
+
+  const store = getAssetStore();
+  if (store) {
+    const hit = store instanceof Map ? store.get(key) : (store[key] ?? store[path]);
+    if (hit != null) return hit;
+  }
+
+  //  Tar first so an existing build keeps its exact behaviour; the
+  //  --asset back end answers whatever the tar does not hold.
+  const base = bunfsBase();
+  if (base) {
+    try {
+      return readFileSync(join(base, key));
+    } catch {}
+  }
+
+  return null;
 }
 
 export function readInternalAssetBytes(path) {
