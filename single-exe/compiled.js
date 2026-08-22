@@ -286,6 +286,31 @@ export async function buildExeAssets(target = "", build_outfile = "single.exe", 
     }
   }
 
+  //  Compress last. Every packer above reads the archive and writes it
+  //  back uncompressed, so this has to happen after the final append.
+  //  libarchive sniffs the format on read, so assetsLoader needs no
+  //  change to consume it.
+  if (process.env.ASSETS_NO_GZIP) {
+    console.log("");
+    console.log("ASSETS_NO_GZIP is set, leaving the archive uncompressed");
+  } else {
+    console.log("");
+    console.log(Bun?.markdown?.ansi?.("## Compress assets") || "Compress assets");
+
+    try {
+      const raw = await Bun.file(archive).bytes();
+      const gzipped = Bun.gzipSync(raw, { level: 9 });
+
+      await Bun.write(archive, gzipped);
+
+      const pct = raw.byteLength ? Math.round((1 - gzipped.byteLength / raw.byteLength) * 100) : 0;
+      console.log(`${raw.byteLength} -> ${gzipped.byteLength} bytes (-${pct}%)`);
+    } catch (e) {
+      console.error("Could not compress the archive; continuing uncompressed");
+      console.error(e);
+    }
+  }
+
   if (step("Compile executable", [
     "build",
     "--format=esm",
