@@ -183,3 +183,141 @@ for missing top-level await.
 | `--assets-external` | ignore embedded assets and read from disk |
 
 These are handled by `assetsLoader.mjs`, so they exist in tar builds only.
+
+## Advanced usage
+
+### Forwarding arguments to `bun build`
+
+Anything after `--build-exe`, or after the target given to `--build-for`, is
+passed straight through to `bun build`:
+
+```shell
+bun ./src/index.js --build-exe --sourcemap
+bun ./src/index.js --build-for bun-linux-x64 --sourcemap
+```
+
+Order matters. The flags have to come after the build switch, or Bun consumes
+them before the program ever starts:
+
+```shell
+# Wrong: Bun parses this define before any of your code runs
+bun --define MY_APP=../app.md ./src/index.js --build-exe
+
+# Right
+bun ./src/index.js --build-exe --define MY_APP=../app.md
+```
+
+### `--define` with a string value
+
+**Bun expects `--define` values to be JSON literals, so a string has to arrive
+already quoted.** A bare path is read as an identifier and the build fails or
+inlines something unintended. Quoting it through a shell is awkward, so
+`compiled.js` exports a helper that does it:
+
+```js
+import { buildEarlyExit, stringifyNonPrimitiveDefineValues } from "./single-exe/compiled.js";
+
+stringifyNonPrimitiveDefineValues(process.argv, "MY_APP");
+await buildEarlyExit(process.argv, "my-bin");
+```
+
+Call it before `buildEarlyExit`, once per define name you want treated as a
+string. It rewrites the value in place:
+
+```js
+["--define", "MY_APP=../app.md"]      // what the user typed
+["--define", 'MY_APP="../app.md"']    // what Bun receives
+```
+
+`--define=MY_APP=../app.md` works the same way. Numbers, booleans, `null` and
+`undefined` are left alone, so only genuine strings get quoted.
+
+### Images from an imported HTML bundle
+
+A compiled binary exposes an imported HTML entry as a `homepage` object:
+`homepage.index` is the compiled HTML and `homepage.files` lists the
+content-hashed assets by their path inside the binary. `assetsHelper` can map
+the *original* image references back to those paths, without copying any image
+bytes into memory.
+
+Bun rewrites `src` during the build, so keep the original reference in a custom
+attribute of your own choosing:
+
+```html
+<!-- source -->
+<img src="./images/photo.jpg" data-original-image="./images/photo.jpg">
+
+<!-- compiled -->
+<img src="/photo-abcd1234.jpg" data-original-image="./images/photo.jpg">
+```
+
+Then build the map once, in a compiled binary only:
+
+```js
+import { buildHtmlBundleImageMap, canonicalHtmlBundleImageHref } from "../single-exe/assetsHelper.js";
+import { IS_COMPILED } from "../single-exe/compiled.js";
+
+const images = IS_COMPILED
+  ? await buildHtmlBundleImageMap(homepage, "data-original-image")
+  : null;
+
+const path = images?.get(canonicalHtmlBundleImageHref(originalHref));
+const bytes = path ? await Bun.file(path).bytes() : null;
+```
+
+`buildHtmlBundleImageMap` returns a `Map` from canonical original reference to
+the path inside the binary; it decodes HTML entities and percent encoding so a
+reference written either way still matches. Reading stays lazy — the bytes are
+only touched when you use the returned path.
+
+Lower level, if you already hold a rewritten public path such as
+`/photo-abcd1234.jpg`: `findHtmlBundleAsset(homepage, publicPath, options)`
+finds its `homepage.files` entry, `findHtmlBundleImageAsset()` restricts that
+to `image/*`, and `htmlBundleImageAssetPath()` returns just the path.
+
+Never hard-code `/$bunfs/root/` or `B:/~BUN/`; always use the path that
+`homepage.files` reports.
+
+## jsmdcui specifics
+
+The rest of this file is generic. These names belong to jsmdcui itself and are
+not reserved by the bootstrap — an adopting project picks its own.
+
+`global.MDCUI_MAIN` embeds a custom Markdown app together with its generated
+front, RPC, back, HTML and server modules. It is a string define, so it goes
+through `stringifyNonPrimitiveDefineValues(process.argv, "global.MDCUI_MAIN")`.
+`global.MDCUI_MAIN_BASE` is derived from it during the build; never pass it by
+hand.
+
+The switch defines are presence-based — `=0` and `=false` still enable them, so
+omit a switch to disable it. Choose at most one `MDCUI_DEFAULT_*` mode.
+
+| Build define | No-argument launch | Switch UI at runtime |
+| --- | --- | --- |
+| `MDCUI_DEFAULT_EDIT=1` | text editor | `./mdcui --tui app.md` |
+| `MDCUI_DEFAULT_DEMO=1` | `testapp.md` TUI | `./mdcui --wui --demo` |
+| `MDCUI_DEFAULT_DEMO_WUI=1` | `testapp.md` WUI | `./mdcui --tui --demo` |
+| `global.MDCUI_MAIN=../中文工具.md` | custom TUI | `./mdcui --wui --demo-中文工具` |
+| the above plus `MDCUI_DEFAULT_DEMO_WUI=1` | custom WUI | `./mdcui --tui --demo-中文工具` |
+
+`MDCUI_OVERWRITE_DEMO=1` is a modifier, not a mode; it does not select a demo.
+
+```shell
+# custom TUI-default executable
+bun ./src/index.js --build-exe --define global.MDCUI_MAIN=../中文工具.md
+
+# custom WUI-default executable
+bun ./src/index.js --build-exe \
+  --define global.MDCUI_MAIN=../中文工具.md \
+  --define MDCUI_DEFAULT_DEMO_WUI=1
+```
+
+Explicit runtime arguments suppress the automatic demo/WUI selection, so
+switching UI has to repeat `--demo` or `--demo-中文工具`. The main basename must
+end in lowercase `.md`; the demo name it derives allows Unicode letters and
+numbers, dots, underscores and hyphens, but no whitespace.
+
+The custom demo uses the embedded TUI front/RPC, or the embedded WUI server,
+when the local Markdown byte length matches the embedded asset. A missing or
+overwritten demo uses the embedded modules after the asset is written. A
+differing byte length warns and falls back to the filesystem companions.
