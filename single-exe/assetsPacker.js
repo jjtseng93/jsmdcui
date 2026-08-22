@@ -10,7 +10,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { cpSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 
-const PKG_ROOT = path.resolve(import.meta.dir, ASSETS_ROOT);
+const PKG_ROOT = path.resolve(import.meta.dirname, ASSETS_ROOT);
 
 if (import.meta.main) {
   if (process.argv.includes("-h") || process.argv.includes("--help")) {
