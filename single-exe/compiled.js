@@ -1,5 +1,5 @@
 import { basename, dirname, resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import child_process from "node:child_process";
 import { ASSETS_ROOT } from "./assetsPacker.js";
@@ -186,7 +186,7 @@ export async function buildExecutable(target = "",build_outfile="single.exe", bu
   }
 }
 
-export const buildExe = buildExecutable;
+export const buildExe = buildExeAssets;
 
 export async function buildEarlyExit(argv,build_outfile) {
   argv = argv || process.argv
@@ -213,4 +213,133 @@ export async function buildEarlyExit(argv,build_outfile) {
   }
 
   process.exit(await buildExe(null, build_outfile, argv.slice(buildExeIndex + 1)));
+}
+
+
+//  Multi-package variant of buildExecutable().
+//
+//  Every package that ships assets vendors its own single-exe/, and its
+//  assetsHelper imports its assetsPacker, so a packer shows up in the
+//  bundle's module graph exactly when that package is actually reachable
+//  from this entry point. A scan build writes that graph to a metafile,
+//  and each packer found there appends its own namespaced members to one
+//  shared assets.tar before the real compile runs.
+export async function buildExeAssets(target = "", build_outfile = "single.exe", bunArgs = []) {
+  let outfile = resolve(process.cwd(), build_outfile);
+  const normalizedTarget = String(target || "").trim();
+  const extraBunArgs = Array.from(bunArgs ?? [], String);
+
+  if (!globalThis.Bun || IS_COMPILED) {
+    console.log("Build exe can only be run by Bun in the source tree");
+    return 1;
+  }
+
+  const bunBin = Bun.which("bun") || process.argv0;
+  const ownPacker = resolve(SINGLE_EXE_DIR, "assetsPacker.js");
+  const archive = resolve(SINGLE_EXE_DIR, "assets.tar");
+  const metafile = `${outfile}.meta.json`;
+  const scanDir = `${outfile}.scan`;
+
+  const step = (label, args, cwd) => {
+    console.log("");
+    console.log(Bun?.markdown?.ansi?.("## " + label) || label);
+    console.log("Running: ", bunBin, args);
+
+    const result = child_process.spawnSync(bunBin, args, {
+      cwd,
+      stdio: "inherit",
+      env: process.env,
+    });
+
+    console.log("");
+    console.log(Bun?.markdown?.ansi?.("- Status: " + result.status + " for " + label) || result.status);
+
+    if (result.error) console.error(result.error);
+    return result.status ?? 1;
+  };
+
+  //  Own package first: this both creates the archive and gives the scan
+  //  build below something to resolve `with { type: "file" }` against.
+  if (step("Pack own assets", [ownPacker, "-f", archive, "-p"], SINGLE_EXE_DIR) !== 0) {
+    console.error("Own assets failed to pack");
+    return 1;
+  }
+
+  //  Bundle only. The binary is thrown away, so skip --compile, --minify
+  //  and --bytecode; the module graph is the same and it is much faster.
+  if (step("Scan module graph", ["build", "./entry.mjs", "--target=bun", `--metafile=${metafile}`, `--outdir=${scanDir}`], SINGLE_EXE_DIR) !== 0) {
+    console.error("Scan build failed");
+    return 1;
+  }
+
+  const packers = findAssetPackers(metafile, SINGLE_EXE_DIR, ownPacker);
+  rmSync(scanDir, { recursive: true, force: true });
+
+  console.log("");
+  console.log(`Found ${packers.length} other asset packer(s)`);
+
+  for (const packer of packers) {
+    if (step(`Append ${dirname(dirname(packer)).split("/").pop()}`, [packer, "-f", archive, "-p", "-r"], dirname(packer)) !== 0)
+    {
+      console.error(`Failed to append assets from ${packer}`);
+      //return 1;
+    }
+  }
+
+  if (step("Compile executable", [
+    "build",
+    "--format=esm",
+    "--compile",
+    "--minify",
+    "--bytecode",
+    "./entry.mjs",
+    `--outfile=${outfile}`,
+    `--metafile-md=${outfile}.meta.md`,
+    ...(normalizedTarget ? [`--target=${normalizedTarget}`] : []),
+    ...extraBunArgs,
+  ], SINGLE_EXE_DIR) !== 0) {
+    console.error("Compile failed");
+  }
+
+  const isWindows = normalizedTarget ? normalizedTarget.toLowerCase().includes("windows") : process.platform === "win32";
+  if (isWindows && !outfile.toLowerCase().endsWith(".exe")) {
+    outfile += ".exe";
+  }
+
+  if (await Bun.file(outfile).exists()) {
+    console.log(`Built executable: ${outfile}`);
+    return 0;
+  }
+
+  console.log(`Error while building executable: ${outfile}`);
+  return 1;
+}
+
+
+//  Absolute, de-duplicated paths of every assetsPacker.js in the metafile,
+//  minus `own`. Metafile input keys are relative to the build's cwd.
+export function findAssetPackers(metafilePath, baseDir, own = "") {
+  if (!existsSync(metafilePath)) return [];
+
+  let meta;
+  try {
+    meta = JSON.parse(readFileSync(metafilePath, "utf8"));
+  } catch (e) {
+    console.error(`Could not read metafile ${metafilePath}`);
+    console.error(e);
+    return [];
+  }
+
+  const found = new Set();
+
+  for (const key of Object.keys(meta?.inputs ?? {})) {
+    if (basename(key) !== "assetsPacker.js") continue;
+
+    const abs = resolve(baseDir, key);
+    if (abs === own || !existsSync(abs)) continue;
+
+    found.add(abs);
+  }
+
+  return [...found].sort();
 }
