@@ -39,8 +39,11 @@ function detectPrefix() {
   return "";
 }
 
+//  Whether THIS package has anything embedded. A bare store check was
+//  true even for an empty one, which sent every caller down the internal
+//  branch to find nothing and never try the disk fallback.
 export function hasInternalAssets() {
-  return Boolean(getAssetStore());
+  return listInternalAssetPaths().length > 0;
 }
 
 export function assetPath(...parts) {
@@ -131,18 +134,35 @@ export async function buildHtmlBundleImageMap(
   return images;
 }
 
+//  Callers always speak package-relative keys. This is the one place
+//  those become store keys, so the namespace stays invisible to them.
+function storeKey(path) {
+  const key = assetPath(path);
+  const at = assetPrefix();
+  return at ? (key ? `${at}/${key}` : at) : key;
+}
+
 export function listInternalAssetPaths(prefix = "") {
   const store = getAssetStore();
   if (!store) return [];
 
-  const normalizedPrefix = assetPath(prefix);
-  const entries = iterateAssetKeys(store);
-  if (!normalizedPrefix) {
-    return entries.sort();
+  const at = assetPrefix();
+  const wanted = storeKey(prefix);
+  let entries = iterateAssetKeys(store);
+
+  if (wanted) {
+    const base = `${wanted}/`;
+    entries = entries.filter((path) => path === wanted || path.startsWith(base));
   }
 
-  const base = `${normalizedPrefix}/`;
-  return entries.filter((path) => path === normalizedPrefix || path.startsWith(base)).sort();
+  //  Hand the namespace back off on the way out, or every caller that
+  //  matches on the returned paths would have to know about it.
+  if (at) {
+    const cut = at.length + 1;
+    entries = entries.filter((path) => path.startsWith(at + "/")).map((path) => path.slice(cut));
+  }
+
+  return entries.sort();
 }
 
 export function listInternalAssetDirs(prefix = "") {
@@ -162,7 +182,7 @@ export function listInternalAssetDirs(prefix = "") {
 export function getInternalAsset(path) {
   const store = getAssetStore();
   if (!store) return null;
-  const key = assetPath(path);
+  const key = storeKey(path);
   if (store instanceof Map) return store.get(key) ?? null;
   return store[key] ?? store[path] ?? null;
 }
