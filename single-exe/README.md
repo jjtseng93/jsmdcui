@@ -94,6 +94,8 @@ appear in `package.json`.
 | `listInternalAssetPaths(prefix?)` | every embedded path under `prefix` |
 | `listInternalAssetDirs(prefix?)` | the immediate child names under `prefix` |
 | `assetPath(...parts)` | joins parts into a key |
+| `getAssetKey(path)` | the key as stored, namespace included |
+| `assetDiskPath(path)` | where the disk fallback reads that key from |
 | `SELF` | this package's namespace, `assets/<name>@<version>` |
 
 The read functions are synchronous for embedded assets on both back ends.

@@ -178,15 +178,37 @@ function walkBunfs(base, sub) {
 
 //  Callers always speak package-relative keys. This is the one place
 //  those become store keys, so the namespace stays invisible to them.
-function storeKey(path) {
+//  Exported because a caller rolling its own fallback needs the same
+//  answer — `--assets-extract` writes the archive under these keys.
+export function getAssetKey(path) {
   const key = assetPath(path);
   const at = assetPrefix();
   return at ? (key ? `${at}/${key}` : at) : key;
 }
 
+//  Where the disk fallback looks for a package-relative key.
+//
+//  A source checkout has the plain path. A compiled binary does not:
+//  `--assets-extract` writes the archive exactly as packed, namespace
+//  included, so the extracted `README.md` lands at
+//  `<exe dir>/assets/<name>@<version>/README.md` and the plain join
+//  misses it. `assetPrefix()` cannot answer this — with
+//  `--assets-external` there is no store to detect it from, which is
+//  precisely when the fallback runs — so try SELF and keep the plain
+//  path for archives that were packed flat.
+export function assetDiskPath(path) {
+  const key = assetPath(path);
+  const plain = join(REPO_ROOT, key);
+
+  if (!IS_COMPILED) return plain;
+
+  const namespaced = join(REPO_ROOT, SELF, key);
+  return existsSync(namespaced) ? namespaced : plain;
+}
+
 export function listInternalAssetPaths(prefix = "") {
   const at = assetPrefix();
-  const wanted = storeKey(prefix);
+  const wanted = getAssetKey(prefix);
   const store = getAssetStore();
   const found = new Set();
 
@@ -227,7 +249,7 @@ export function listInternalAssetDirs(prefix = "") {
 }
 
 export function getInternalAsset(path) {
-  const key = storeKey(path);
+  const key = getAssetKey(path);
 
   const store = getAssetStore();
   if (store) {
@@ -275,14 +297,14 @@ export async function readAssetText(path) {
   //  TextDecoder drops a leading BOM, so the embedded path never returns
   //  one; readFile keeps it. Strip it here or the same file reads
   //  differently depending on whether it was embedded.
-  return (await readFile(join(REPO_ROOT, path), "utf8")).replace(/^\uFEFF/, "");
+  return (await readFile(assetDiskPath(path), "utf8")).replace(/^\uFEFF/, "");
 }
 
 export async function readAssetBytes(path) {
   const internal = readInternalAssetBytes(path);
   if (internal) return internal;
 
-  const buf = await readFile(join(REPO_ROOT, path));
+  const buf = await readFile(assetDiskPath(path));
 
   //  Buffer is a Uint8Array, but hand back a plain one so callers cannot
   //  come to depend on the Buffer-only methods.
