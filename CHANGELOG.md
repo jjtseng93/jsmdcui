@@ -2,6 +2,13 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.18.2] - 2026-08-23
+
+- Added ASSETS_BUNFS=1 for the build system
+  * Use --asset to pack assets
+  * See single-exe/README.md
+- Changed the tar build-exe to gzip compressed by default
+
 ## [0.18.1] - 2026-08-19
 
 ### Fixed
