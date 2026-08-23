@@ -55,13 +55,20 @@ project around it.
    export const ASSETS_ROOT = "..";
    ```
 
-2. **`entry.mjs`, the last import.** It names the program to start. Build
-   also reads this line to find the entry point for `ASSETS_BUNFS=1`, so keep
-   it as the final import in the file:
+2. **`entry.mjs`, the import of the program.** It names what to start, and
+   entry.mjs is the compiled entry point in both back ends:
 
    ```js
    await import("../src/index.js");
    ```
+
+   **Keep the `await`.** It reads like a formality — nothing here needs the
+   module object — but together with the `await globalThis.assetsLoaderPromise`
+   line above it, it is the only top-level `await` the compiled program writes
+   anywhere, and `--bytecode` reads exactly that to decide the program starts
+   asynchronously. Turn both into `.then(…)` and the build produces an
+   executable that exits 0 without running a line.
+   [Why](#the-await-in-entrymjs-is-load-bearing) explains the trap.
 
 3. **`package.json`.** Add the `assets` array shown above.
 
@@ -178,8 +185,41 @@ so Node 20.11+ runs the same file directly against on-disk assets while Bun
 runs it through the bootstrap. The Promise is that boundary, not a workaround
 for missing top-level await.
 
-`ASSETS_BUNFS=1` sidesteps the question: with no tar to load, the build skips
-`entry.mjs` and compiles the main program as its own entry point.
+`ASSETS_BUNFS=1` sidesteps the question: there is no tar to load, so the build
+writes `.bunfs-entry.mjs` next to `entry.mjs` — the same file with the loader
+import removed — compiles that, and deletes it afterwards. A copy rather than a
+stub, because entry.mjs may do more than import the program: a CommonJS main
+that starts itself from `require.main === module` needs the exported starter
+called instead, and that call has to survive.
+
+## The `await` in entry.mjs is load-bearing
+
+`--bytecode` decides whether a program starts asynchronously by looking for a
+top-level `await` **written in some file's own source**. The bundler moves a
+module into a lazy init function whenever something dynamically imports it, and
+a module moved that way takes its top-level `await` with it — what stays behind
+is an `await init_x()` the bundler wrote itself, which does not count. If no
+file wrote one, the executable is evaluated on the synchronous path, its
+suspended startup is dropped, and it exits 0 having run nothing. No error, at
+any `--minify` setting, however small the program.
+
+`entry.mjs` is immune because it writes two of its own:
+
+```js
+await globalThis.assetsLoaderPromise;
+await import("../src/index.js");
+```
+
+One is enough, and every other `await` in the graph — all of
+`assetsLoader.mjs`'s, for one — sits inside a function and cannot help. Turn
+both of these into `.then(…)` and the flag is gone. It is also why bunfs builds
+compile a copy of this file rather than handing the main program to `bun build`
+directly: a main program that reaches top-level await only through its imports
+writes none of its own.
+
+Upstream: `src/bundler/linker_context/postProcessJSChunk.rs` skips exactly the
+modules the bundler moved, still true on oven-sh/bun `main` at 8eb5b6e2b5
+(2026-08-22). Until that changes, treat both `await`s as API.
 
 ## Environment variables
 
