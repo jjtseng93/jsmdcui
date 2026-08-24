@@ -35,9 +35,21 @@ function detectPrefix() {
     for (const key of keys) if (key.startsWith(SELF + "/")) return SELF;
   }
 
-  if (IS_COMPILED && existsSync(join(import.meta.dir, SELF))) return SELF;
+  const base = bunfsBase();
+  if (base && existsSync(join(base, SELF))) return SELF;
 
   return "";
+}
+
+//  `--assets-external` means "ignore what is embedded". The tar loader
+//  signals it by setting the store to null; with no loader in the graph
+//  (the --asset back end) it stays undefined, so only null counts.
+//
+//  Without this the bunfs branch below stayed live in tar builds too, and
+//  since it is rooted at the binary's own /$bunfs/root, an external run
+//  enumerated the executable and its embedded tar as if they were assets.
+function externalAssets() {
+  return globalThis.internalAssets === null;
 }
 
 //  Whether THIS package has anything embedded. A bare store check was
@@ -140,7 +152,7 @@ export async function buildHtmlBundleImageMap(
 //  binary: in the source tree this file sits in single-exe/, which is
 //  not the asset root.
 function bunfsBase() {
-  return IS_COMPILED ? import.meta.dir : null;
+  return IS_COMPILED && !externalAssets() ? import.meta.dir : null;
 }
 
 //  Store-space keys for every regular file under <base>/<sub>.
