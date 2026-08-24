@@ -2,6 +2,42 @@
 
 All notable user-visible changes to jsmdcui are documented here.
 
+## [0.19.0] - 2026-08-24
+
+### Fixed
+
+- `--assets-external` now works in a compiled binary. Every embedded asset
+  was affected: `--demo-<name>` reported `demos/<name>.md was not found`,
+  `--demo-list` listed only `testapp.md`, `--readme` and `--changelog` failed
+  with `ENOENT`, and the runtime registry (colorschemes, syntax, help,
+  jsplugins) looked in the wrong directory. Two causes, both in the
+  bootstrap:
+  * `assetsHelper`'s `--asset` branch stayed live in tar builds, rooted at
+    the binary's own `/$bunfs/root`. With the embedded store switched off it
+    enumerated the executable and its own archive as if they were assets, so
+    `hasInternalAssets()` answered `true` and listings came back empty. A
+    store of `null` (the loader ran and was told to stay external) is now
+    told apart from `undefined` (no loader in the graph, the `--asset` back
+    end).
+  * The disk fallback looked for `<exe dir>/<key>`, but `--assets-extract`
+    writes the archive exactly as packed, namespace included:
+    `<exe dir>/assets/<name>@<version>/<key>`.
+
+### Added
+
+- `assetsHelper` exports `getAssetKey(path)` and `assetDiskPath(path)` — the
+  key an asset is stored under, and the file its disk fallback reads. A
+  program that writes its own fallback needs the same two answers.
+- `assetsHelper` exports `readAssetTextSync(path)` and
+  `readAssetBytesSync(path)`, sync twins of `readAssetText` /
+  `readAssetBytes` for callers that cannot await, such as argument parsing.
+
+### Changed
+
+- jsmdcui reads its own assets through `readAssetText` / `assetDiskPath`
+  instead of joining `REPO_ROOT` by hand, so every read follows the
+  extracted tree as well as the embedded one.
+
 ## [0.18.2] - 2026-08-23
 
 - Added ASSETS_BUNFS=1 for the build system
