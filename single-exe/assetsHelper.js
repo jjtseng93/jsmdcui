@@ -323,6 +323,24 @@ export async function readAssetBytes(path) {
   return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 }
 
+//  Sync twins of readAssetText / readAssetBytes, for callers that cannot
+//  await — argument parsing, module init, CommonJS programs. Same lookup
+//  and same fallback; only the disk read differs (node:fs sync).
+export function readAssetTextSync(path) {
+  const internal = readInternalAssetText(path);
+  if (internal != null) return internal;
+
+  return readFileSync(assetDiskPath(path), "utf8").replace(/^\uFEFF/, "");
+}
+
+export function readAssetBytesSync(path) {
+  const internal = readInternalAssetBytes(path);
+  if (internal) return internal;
+
+  const buf = readFileSync(assetDiskPath(path));
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+}
+
 export function internalAssetSource(path) {
   return {
     name: path.split("/").pop() ?? path,
