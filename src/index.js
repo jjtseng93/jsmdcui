@@ -117,7 +117,7 @@ import { Config } from "./config/config.js";
 import { defaultAllSettings, OPTION_CHOICES, LOCAL_SETTINGS } from "./config/defaults.js";
 import { cleanConfig } from "./config/clean.js";
 import { RuntimeRegistry, RTColorscheme, RTHelp } from "./runtime/registry.js";
-import { assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readInternalAssetText } from "../single-exe/assetsHelper.js";
+import { assetDiskPath, assetPath, buildHtmlBundleImageMap, hasInternalAssets, listInternalAssetDirs, listInternalAssetPaths, readAssetText, readInternalAssetText } from "../single-exe/assetsHelper.js";
 //import { PluginManager } from "./plugins/manager.js";
 import { JsPluginManager, buildMicroGlobal, buildTuiBlockIndex, captureTuiRerenderState, clearTuiSourceDependentState, findTuiBlockInIndex, indexTuiHeadingRows, insertTuiTextareaNewline, markTuiTableCellDirtyAtPosition, mergeTuiTextareaBackward, mergeTuiTextareaForward, navigateTuiHeadingFragment, restoreTuiHiddenHeadings, restoreTuiRerenderState, toggleTuiHeadingAt, tuiCheckboxRerenderMismatchMessage, tuiTableCellAtPosition, runAction, listActions } from "./plugins/js-bridge.js";
 import { Colorscheme } from "./config/colorscheme.js";
@@ -8466,7 +8466,7 @@ async function printReadmeDocs() {
 }
 
 async function bundledReadmeSource() {
-  return readInternalAssetText("README.md") ?? await Bun.file(join(REPO_ROOT, "README.md")).text();
+  return readAssetText("README.md");
 }
 
 async function exportReadme() {
@@ -8482,7 +8482,7 @@ async function exportCdpMaze() {
 }
 
 async function printChangelogDocs() {
-  const changelog = readInternalAssetText("CHANGELOG.md") ?? await Bun.file(join(REPO_ROOT, "CHANGELOG.md")).text();
+  const changelog = await readAssetText("CHANGELOG.md");
   process.stdout.write(Bun.markdown.ansi(changelog, { hyperlinks: true }));
 }
 
@@ -8491,7 +8491,7 @@ async function printTestappSource() {
 }
 
 async function bundledMarkdownSource(filename) {
-  return readInternalAssetText(filename) ?? await Bun.file(join(REPO_ROOT, filename)).text();
+  return readAssetText(filename);
 }
 
 function availableDemoAssets() {
@@ -8500,7 +8500,7 @@ function availableDemoAssets() {
     paths = listInternalAssetPaths("demos");
   } else {
     try {
-      paths = readdirSync(join(REPO_ROOT, "demos"), { withFileTypes: true })
+      paths = readdirSync(assetDiskPath("demos"), { withFileTypes: true })
         .filter((entry) => entry.isFile())
         .map((entry) => assetPath("demos", entry.name));
     } catch {
@@ -8853,7 +8853,10 @@ async function main() {
   syncEditorSettings(config);
 
   addCheckpoint("Runtime Registry Init");
-  const runtime = new RuntimeRegistry({ repoRoot: REPO_ROOT, configDir: config.configDir });
+  //  Not REPO_ROOT: --assets-extract writes the tree under its own
+  //  assets/<name>@<version>/ namespace, and --assets-external then reads
+  //  from there. assetDiskPath("") is that root, or REPO_ROOT in a checkout.
+  const runtime = new RuntimeRegistry({ repoRoot: assetDiskPath(""), configDir: config.configDir });
   await runtime.init({ user: true });
 
   addCheckpoint("Colorscheme & Syntax Load");
@@ -8887,7 +8890,7 @@ async function main() {
         jsItems.push({ name, builtin: true });
       }
     } else {
-      const builtinJsDir = join(REPO_ROOT, "runtime", "jsplugins");
+      const builtinJsDir = assetDiskPath("runtime/jsplugins");
       if (existsSync(builtinJsDir)) {
         for (const entry of readdirSync(builtinJsDir, { withFileTypes: true })) {
           if (!entry.isDirectory()) continue;
@@ -8961,7 +8964,7 @@ async function main() {
   const jsPromise = (async () => {
     const start = Bun.nanoseconds();
     const jsDirs = [
-      { dir: join(REPO_ROOT, "runtime", "jsplugins"), builtin: true },
+      { dir: assetDiskPath("runtime/jsplugins"), builtin: true },
       { dir: join(config.configDir, "jsplug"),        builtin: false },
     ];
     await jsPlugins.loadFrom(jsDirs);
