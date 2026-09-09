@@ -18,6 +18,12 @@
 //   From the command line (Chrome-style):
 //     bunmicro --remote-debugging-port=9222 file.txt
 //     bunmicro --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 file.txt
+//     bunmicro --remote-debugging-port=9222 --remote-allow-origins=http://localhost:8000 file.txt
+//
+//   Browser WebSocket origins are rejected by default, as in Chromium.
+//   --remote-allow-origins accepts a comma-separated allowlist; `*` allows all
+//   origins and disables this protection. Non-browser clients omit Origin and
+//   continue to work without this flag.
 //
 //   Once running, status bar shows:  CDP@<port> server running
 //   Running cdp again shows:         CDP@<port> already running

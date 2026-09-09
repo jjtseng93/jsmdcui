@@ -1119,6 +1119,7 @@ function parseArgs(argv) {
     cdpMaze: false,
     cdpPort: 0,
     cdpAddress: "",
+    cdpAllowOrigins: "",
     kittyMode: kittyModeFromEnvironment(process.env.JSMDCUI_KITTY_MODE),
     settings: new Map(),
   };
@@ -1197,6 +1198,10 @@ function parseArgs(argv) {
       flags.cdpAddress = arg.slice("--remote-debugging-address=".length);
     } else if (arg === "--remote-debugging-address") {
       flags.cdpAddress = argv[++i] ?? "";
+    } else if (arg.startsWith("--remote-allow-origins=")) {
+      flags.cdpAllowOrigins = arg.slice("--remote-allow-origins=".length);
+    } else if (arg === "--remote-allow-origins") {
+      flags.cdpAllowOrigins = argv[++i] ?? "";
     } else if (arg.startsWith("-") && arg.length > 1 && i + 1 < argv.length) {
       flags.settings.set(arg.slice(1), argv[++i]);
     } else {
@@ -1306,6 +1311,8 @@ CDP(Chrome DevTools Protocol):
       Start CDP (Chrome DevTools Protocol) server on PORT at launch
   --remote-debugging-address=ADDRESS
       Bind CDP server to ADDRESS (default: 127.0.0.1); use 0.0.0.0 for all interfaces
+  --remote-allow-origins=ORIGINS
+      Allow comma-separated browser WebSocket origins; no browser origins are allowed by default
 
 Information:
   --help, -h, -help
@@ -9072,6 +9079,9 @@ async function main() {
   if (flags.cdpPort) {
     const cdpArgs = [flags.cdpPort];
     if (flags.cdpAddress) cdpArgs.push(`--address=${flags.cdpAddress}`);
+    if (flags.cdpAllowOrigins) {
+      cdpArgs.push(`--remote-allow-origins=${flags.cdpAllowOrigins}`);
+    }
     await app.handleCommand(`cdp ${cdpArgs.join(" ")}`);
   }
 

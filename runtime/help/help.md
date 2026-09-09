@@ -867,6 +867,20 @@ Ctrl-E  cdp 9000 --public
 The default bind address is `127.0.0.1` and the default port is `9222`.
 Use `--public` or `--address=0.0.0.0` only on a trusted network.
 
+Like Chromium, jsmdcui rejects WebSocket connections carrying an `Origin`
+header by default. This prevents ordinary web pages from controlling the TUI.
+Non-browser automation clients, which omit `Origin`, continue to work. To
+explicitly allow a trusted browser origin, use a comma-separated allowlist:
+
+```sh
+bun src/index.js --remote-debugging-port=9222 \
+  --remote-allow-origins=http://localhost:8000 demos/maze.md
+```
+
+`--remote-allow-origins=*` disables this protection and should only be used in
+a trusted environment. CDP can evaluate JavaScript and has the same authority
+as the jsmdcui process.
+
 Once CDP is running, control the TUI with `Bun.WebView`. For more info, enter
 jsmdcui and use `Ctrl-E` or `€` → `help cdp`.
 

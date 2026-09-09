@@ -65,6 +65,8 @@ micro.on("init", () => {
   micro.MakeCommand("cdp", async (bp, args) =>
   {
     const addrFlag = args.find(a => a.startsWith("--address="))?.slice("--address=".length);
+    const allowOrigins = args.find(a => a.startsWith("--remote-allow-origins="))
+      ?.slice("--remote-allow-origins=".length);
     const isPublic = args.includes("--public");
     const port = parseInt(args.find(a => /^\d+$/.test(a))) || parseInt(Bun.env.CDP_PORT) || 9222;
     const hostname = addrFlag ?? (isPublic ? "0.0.0.0" : "127.0.0.1");
@@ -123,7 +125,7 @@ micro.on("init", () => {
       micro.cdpPort = port;
       CdpServer
         .create(micro.cdpContext)
-        .listen(port, hostname);
+        .listen(port, hostname, { remoteAllowOrigins: allowOrigins });
 
       const addr = isPublic ? `0.0.0.0:${port}` : `127.0.0.1:${port}`;
       micro.TermMessage(`CDP@${addr} server running 伺服器啟動了`)

@@ -1,13 +1,22 @@
 const CDP_DEFAULT_PORT = 9222;
 const CDP_PROTOCOL_VERSION = "1.3";
 const CDP_BROWSER_ID = "cdp-server";
+const CDP_BROWSER_PATH = `/devtools/browser/${CDP_BROWSER_ID}`;
 
 let serverLogEnabled = 0//true;
 function serverLog(...args) {
-  if (serverLogEnabled) console.log(...args);
+  if ( process.env.JSMDCUI_CDP_DEBUG ||
+       serverLogEnabled )
+  {
+    console.log(...args);
+  }
 }
 function serverError(...args) {
-  if (serverLogEnabled) console.error(...args);
+  if ( process.env.JSMDCUI_CDP_DEBUG ||
+       serverLogEnabled )
+  {
+    console.error(...args);
+  }
 }
 
 export class CdpServer {
@@ -21,9 +30,10 @@ export class CdpServer {
     return new CdpServer(context);
   }
 
-  listen(port = CDP_DEFAULT_PORT, hostname = "127.0.0.1") {
+  listen(port = CDP_DEFAULT_PORT, hostname = "127.0.0.1", options = {}) {
     const context = this.#context;
     const state = createCdpState();
+    const remoteAllowOrigins = parseAllowedOrigins(options.remoteAllowOrigins);
 
     const server = Bun.serve({
       port,
@@ -31,25 +41,65 @@ export class CdpServer {
       fetch(req, server) {
         const url = new URL(req.url);
         const pathname = url.pathname.replace(/\/+$/, "") || "/";
+
+        const origin = req.headers.get("origin");
+        const respond = async (response) => {
+          const text = await response.clone().text();
+          serverLog(
+            `[CdpServer] HTTP ${req.method} ${pathname} -> ${response.status}`,
+            text,
+          );
+          return response;
+        };
+
         serverLog(`[CdpServer] HTTP ${req.method} ${pathname}`);
-        if (server.upgrade(req)) return;
+
+        serverLog(`[CdpServer] Origin ${origin}`);
+
+        if (!isSafeHostHeader(req.headers.get("host"))) {
+          return respond(new Response("Host header must be an IP address or localhost", {
+            status: 500,
+          }));
+        }
+
+        if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+          if (!isOriginAllowed(origin, remoteAllowOrigins)) {
+            return respond(new Response(
+              `Rejected an incoming WebSocket connection from the ${origin} origin. `
+                + `Use --remote-allow-origins=${origin} to allow it, or `
+                + "--remote-allow-origins=* to allow all origins.",
+              { status: 403 },
+            ));
+          }
+          if (pathname !== CDP_BROWSER_PATH) {
+            return respond(new Response("Not Found", { status: 404 }));
+          }
+          if (server.upgrade(req)) {
+            serverLog(
+              `[CdpServer] HTTP ${req.method} ${pathname} -> 101`,
+              "Switching Protocols",
+            );
+            return;
+          }
+          return respond(new Response("WebSocket upgrade failed", { status: 500 }));
+        }
 
         const host = req.headers.get("host") ?? `127.0.0.1:${port}`;
         const webSocketDebuggerUrl = `ws://${host}/devtools/browser/${CDP_BROWSER_ID}`;
 
         if (pathname === "/json/version") {
-          return jsonResponse({
+          return respond(jsonResponse({
             Browser: "CdpServer/1.0",
             "Protocol-Version": CDP_PROTOCOL_VERSION,
             "User-Agent": "CdpServer/1.0",
             "V8-Version": Bun.version,
             "WebKit-Version": "537.36",
             webSocketDebuggerUrl,
-          });
+          }));
         }
 
         if (pathname === "/json" || pathname === "/json/list") {
-          return jsonResponse(
+          return respond(jsonResponse(
             [...state.targets.values()].map((target) => ({
               id: target.targetId,
               type: target.type,
@@ -57,14 +107,14 @@ export class CdpServer {
               url: target.url,
               webSocketDebuggerUrl,
             }))
-          );
+          ));
         }
 
-        return jsonResponse({
+        return respond(jsonResponse({
           server: "CdpServer",
           port,
           webSocketDebuggerUrl,
-        });
+        }));
       },
       websocket: {
         open(ws) {
@@ -73,6 +123,11 @@ export class CdpServer {
         async message(ws, raw) {
           let id;
           let sessionId;
+          const send = (message) => {
+            const text = JSON.stringify(message);
+            serverLog("[CdpServer] WebSocket response", text);
+            ws.send(text);
+          };
           try {
             const text = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
             const msg = JSON.parse(text);
@@ -82,13 +137,12 @@ export class CdpServer {
             serverLog(`[CdpServer] -> ${method}`, params ?? "");
 
             const emit = (eventMethod, eventParams) => {
-              ws.send(
-                JSON.stringify({
-                  method: eventMethod,
-                  params: eventParams,
-                  ...(sessionId ? { sessionId } : {}),
-                })
-              );
+              serverLog(`[CdpServer] <- ${eventMethod} EVENT`, eventParams ?? {});
+              send({
+                method: eventMethod,
+                params: eventParams,
+                ...(sessionId ? { sessionId } : {}),
+              });
             };
             const result = await dispatch(
               context,
@@ -99,25 +153,22 @@ export class CdpServer {
               emit
             );
             serverLog(`[CdpServer] <- ${method} OK`, result ?? "");
-            ws.send(
-              JSON.stringify({
-                id,
-                result: result ?? {},
-                ...(sessionId ? { sessionId } : {}),
-              })
-            );
+            send({
+              id,
+              result: result ?? {},
+              ...(sessionId ? { sessionId } : {}),
+            });
           } catch (err) {
             serverError(`[CdpServer] <- ERROR ${err.message}`);
-            ws.send(
-              JSON.stringify({
-                id,
-                error: {
-                  code: -32601,
-                  message: err.message,
-                },
-                ...(sessionId ? { sessionId } : {}),
-              })
-            );
+            serverLog("[CdpServer] <- ERROR", { id, sessionId, message: err.message });
+            send({
+              id,
+              error: {
+                code: -32601,
+                message: err.message,
+              },
+              ...(sessionId ? { sessionId } : {}),
+            });
           }
         },
         close(ws) {
@@ -128,6 +179,33 @@ export class CdpServer {
 
     serverLog(`[CdpServer] listening on ws://${hostname}:${port}`);
     return server;
+  }
+}
+
+export function parseAllowedOrigins(value) {
+  const origins = Array.isArray(value) ? value : String(value ?? "").split(",");
+  return new Set(origins.map((origin) => origin.trim().toLowerCase()).filter(Boolean));
+}
+
+export function isOriginAllowed(origin, allowedOrigins = new Set()) {
+  if (origin == null) return true;
+  const normalized = origin.toLowerCase();
+  return allowedOrigins.has("*") || allowedOrigins.has(normalized);
+}
+
+export function isSafeHostHeader(header) {
+  if (!header) return true;
+  try {
+    let hostname = new URL(`http://${header}`).hostname.toLowerCase();
+    if (hostname.startsWith("[") && hostname.endsWith("]")) {
+      hostname = hostname.slice(1, -1);
+    }
+    if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+    if (hostname.includes(":")) return /^[0-9a-f:.]+$/i.test(hostname);
+    return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
+      && hostname.split(".").every((part) => Number(part) <= 255);
+  } catch {
+    return false;
   }
 }
 

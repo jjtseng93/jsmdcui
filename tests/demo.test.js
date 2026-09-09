@@ -26,6 +26,7 @@ test("--help describes the non-overwriting demo behavior", () => {
   expect(output.match(/Open it in the TUI and write 5 generated files beside it/g)?.length).toBe(2);
   expect(output).not.toContain("Alias for --demo-image-processor");
   expect(output).toContain("--cdp-maze");
+  expect(output).toContain("--remote-allow-origins=ORIGINS");
 });
 
 test("--demo-list lists root and automatically discovered demos", () => {
