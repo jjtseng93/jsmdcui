@@ -151,7 +151,9 @@ quotes here but these are not necessary when entering the command in micro.
 
 * `term ['exec']`: Open a terminal emulator running the given executable. If no
    executable is given, this will open the default shell in the terminal
-   emulator.
+   emulator. In terminal mode, `Ctrl-W` switches panes. Press it twice quickly
+   to cycle to the next tab like `Alt-T`; at the rightmost tab, if every tab is
+   a terminal, this creates a new editor tab instead of cycling back.
 
 ---
 

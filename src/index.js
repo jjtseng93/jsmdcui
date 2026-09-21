@@ -2796,6 +2796,8 @@ class App {
     this.tabRects = [];
     this._escBuf = null;   // pending lone ESC bytes waiting for alt-key combo
     this._escTimer = null;
+    this._terminalCtrlWTime = 0;
+    this._terminalCtrlWTimer = null;
     this._suggestionsRow = null;
     this._suggestionRects = [];
     this._acHScroll = 0;
@@ -3790,7 +3792,7 @@ class App {
     const titleStyle = { ...defaultStyle, reverse: true };
     const scrollMsg = vt && vt.scrollOffset > 0
       ? ` -- SCROLLBACK (${vt.scrollOffset}/${vt.scrollback.length}) wheel↑↓ to browse, any key to return`
-      : (isActive ? " [Esc: close  Ctrl-W: switch pane]" : "");
+      : (isActive ? " [Esc=close,Ctrl-W/*2=Next Pane/Tab]" : "");
     putText(this.screen, pane.x, pane.y, ` Terminal${scrollMsg}`.padEnd(pane.w), titleStyle, pane.w);
     if (!vt) return;
     const renderRows = pane.h - 1;
@@ -4228,14 +4230,12 @@ class App {
         this.render();
         return;
       }
-      // Ctrl-W: switch pane focus without closing
+      // Ctrl-W: switch pane focus without closing. A quick second Ctrl-W
+      // cycles tabs, with an editor-tab escape hatch when every tab is a
+      // terminal and the current one is already the rightmost tab.
       if (text === "\x17") {
-        const panes = this.tab.panes();
-        if (panes.length > 1) {
-          const idx = panes.indexOf(this.tab.activePane);
-          this.tab.activePane = panes[(idx + 1) % panes.length];
-          this.render();
-        }
+        await this.handleCtrlW({ fromTerminal: true });
+        this.render();
         return;
       }
 
@@ -4525,11 +4525,7 @@ class App {
         await runAction("AddTab", this);
         break;
       case "ctrl-w": { //switchPane
-        const panes = this.tab.panes();
-        if (panes.length > 1) {
-          const idx = panes.indexOf(this.tab.activePane);
-          this.tab.activePane = panes[(idx + 1) % panes.length];
-        }
+        await this.handleCtrlW();
         break;
       }
       case "ctrl-y": //redo
@@ -5401,6 +5397,39 @@ class App {
 
   nextTab() {
     return this.setActiveTab((this.activeTabIdx + 1) % this.tabs.length);
+  }
+
+  _clearTerminalCtrlW() {
+    if (this._terminalCtrlWTimer) clearTimeout(this._terminalCtrlWTimer);
+    this._terminalCtrlWTimer = null;
+    this._terminalCtrlWTime = 0;
+  }
+
+  async handleCtrlW({ fromTerminal = false } = {}) {
+    const now = Date.now();
+    const isDouble = this._terminalCtrlWTime > 0 && now - this._terminalCtrlWTime < 400;
+    this._clearTerminalCtrlW();
+
+    if (isDouble) {
+      const atRightmostTab = this.activeTabIdx === this.tabs.length - 1;
+      const allTabsAreTerminal = this.tabs.every((tab) =>
+        tab.panes().length > 0 && tab.panes().every((pane) => pane.type === "term")
+      );
+      if (atRightmostTab && allTabsAreTerminal) await this.addTab();
+      else this.nextTab();
+      return;
+    }
+
+    if (fromTerminal) {
+      this._terminalCtrlWTime = now;
+      this._terminalCtrlWTimer = setTimeout(() => this._clearTerminalCtrlW(), 400);
+    }
+
+    const panes = this.tab.panes();
+    if (panes.length > 1) {
+      const idx = panes.indexOf(this.tab.activePane);
+      this.tab.activePane = panes[(idx + 1) % panes.length];
+    }
   }
 
   async handlePrompt(text) {
