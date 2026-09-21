@@ -2796,8 +2796,8 @@ class App {
     this.tabRects = [];
     this._escBuf = null;   // pending lone ESC bytes waiting for alt-key combo
     this._escTimer = null;
-    this._terminalCtrlWTime = 0;
-    this._terminalCtrlWTimer = null;
+    this._ctrlWTime = 0;
+    this._ctrlWTimer = null;
     this._suggestionsRow = null;
     this._suggestionRects = [];
     this._acHScroll = 0;
@@ -4234,7 +4234,7 @@ class App {
       // cycles tabs, with an editor-tab escape hatch when every tab is a
       // terminal and the current one is already the rightmost tab.
       if (text === "\x17") {
-        await this.handleCtrlW({ fromTerminal: true });
+        await this.handleCtrlW();
         this.render();
         return;
       }
@@ -5399,16 +5399,16 @@ class App {
     return this.setActiveTab((this.activeTabIdx + 1) % this.tabs.length);
   }
 
-  _clearTerminalCtrlW() {
-    if (this._terminalCtrlWTimer) clearTimeout(this._terminalCtrlWTimer);
-    this._terminalCtrlWTimer = null;
-    this._terminalCtrlWTime = 0;
+  _clearCtrlW() {
+    if (this._ctrlWTimer) clearTimeout(this._ctrlWTimer);
+    this._ctrlWTimer = null;
+    this._ctrlWTime = 0;
   }
 
-  async handleCtrlW({ fromTerminal = false } = {}) {
+  async handleCtrlW() {
     const now = Date.now();
-    const isDouble = this._terminalCtrlWTime > 0 && now - this._terminalCtrlWTime < 400;
-    this._clearTerminalCtrlW();
+    const isDouble = this._ctrlWTime > 0 && now - this._ctrlWTime < 400;
+    this._clearCtrlW();
 
     if (isDouble) {
       const atRightmostTab = this.activeTabIdx === this.tabs.length - 1;
@@ -5420,10 +5420,8 @@ class App {
       return;
     }
 
-    if (fromTerminal) {
-      this._terminalCtrlWTime = now;
-      this._terminalCtrlWTimer = setTimeout(() => this._clearTerminalCtrlW(), 400);
-    }
+    this._ctrlWTime = now;
+    this._ctrlWTimer = setTimeout(() => this._clearCtrlW(), 400);
 
     const panes = this.tab.panes();
     if (panes.length > 1) {
