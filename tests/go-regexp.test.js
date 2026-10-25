@@ -75,3 +75,24 @@ test('modifiers are emitted only where flags change',()=>{
  expect(regex('^(?i)a(?-i:b)$').test('Ab')).toBe(true);
  expect(regex('^(?i)a(?-i:b)$').test('AB')).toBe(false);
 });
+
+test('converter bounds nested groups without limiting adjacent groups',()=>{
+ expect(()=>convertGoRegexp('(?i)'+'('.repeat(50000)+'x'+')'.repeat(50000))).toThrow('nesting exceeds');
+ expect(regex('(?i)'+'('.repeat(256)+'x'+')'.repeat(256)).test('X')).toBe(true);
+ expect(()=>convertGoRegexp('(?i)'+'(x)'.repeat(50000))).not.toThrow();
+});
+
+test('conversion failure disables only its rule and preserves the loaded syntax',async()=>{
+ const {loadSyntaxDefinitions}=await import('../src/highlight/parser.js');
+ const {Highlighter}=await import('../src/highlight/highlighter.js');
+ const deep='(?i)'+'('.repeat(50000)+'x'+')'.repeat(50000);
+ const source={filetype:'guarded',detect:{filename:'\\.guarded$'},rules:[{bad:deep},{keyword:'(?i)hello'},{invalid:'['}]};
+ const def=new SyntaxDefinition(parseHeaderYaml(source),source);
+ expect(def.rules[0].regex).toBeNull();expect(def.rules[2].regex).toBeNull();
+ expect(def.rules[1].regex.test('HELLO')).toBe(true);
+ const runtime={list:type=>type===1?[{name:'guarded',text:async()=>JSON.stringify(source)}]:[]};
+ const defs=await loadSyntaxDefinitions(runtime);
+ expect(defs.map(d=>d.filetype)).toEqual(['guarded']);
+ expect(defs[0].header.matchFileName('example.guarded')).toBe(true);
+ expect(new Highlighter(defs[0],defs).highlightLine('HELLO').changes.get(0)).toBe('keyword');
+});

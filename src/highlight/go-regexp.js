@@ -7,7 +7,9 @@ export function convertGoRegexp(pattern) {
   const source = String(pattern);
   if (!/\(\?[ims-]|\[\^?\]|\(\?P<|\[:[a-z]+:\]/.test(source)) return source;
   let i = 0;
-  function expression(inherited, active, nested = false) {
+  function expression(inherited, active, nested = false, depth = 0) {
+    // Bound syntax-rule recursion, not the length of text being highlighted.
+    if (depth > 256) throw new RangeError('Go regexp nesting exceeds 256 groups');
     const flags = new Set(inherited);
     let output = '', wrapped = false;
     function open() {
@@ -60,7 +62,7 @@ export function convertGoRegexp(pattern) {
           output += prefix ? prefix[0].replace('(?P<', '(?<') : '(';
           i += prefix ? prefix[0].length : 1;
         }
-        output += expression(childFlags, flags, true) + ')';
+        output += expression(childFlags, flags, true, depth + 1) + ')';
         continue;
       }
       output += ch; i++;
