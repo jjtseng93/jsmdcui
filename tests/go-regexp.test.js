@@ -67,3 +67,11 @@ test('mixed and negated POSIX classes retain ASCII Go semantics',()=>{
  expect(regex('^[x[:punct:]]$').test('[')).toBe(true);
  expect(regex('^[x[:punct:]]$').test('A')).toBe(false);
 });
+test('modifiers are emitted only where flags change',()=>{
+ expect(convertGoRegexp('[]a]')).toBe('[\\]a]');
+ expect(convertGoRegexp('(?P<x>a)')).toBe('(?<x>a)');
+ expect(convertGoRegexp('[[:alpha:]_]')).toBe('[A-Za-z_]');
+ expect(convertGoRegexp('(?i)\\b(select|from)\\b')).toBe('(?i:\\b(select|from)\\b)');
+ expect(regex('^(?i)a(?-i:b)$').test('Ab')).toBe(true);
+ expect(regex('^(?i)a(?-i:b)$').test('AB')).toBe(false);
+});

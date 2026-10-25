@@ -1,16 +1,19 @@
 // Adapt Go regexp syntax without changing the upstream syntax definitions.
 // Scoped JS modifiers preserve flag changes across alternatives, but not out
-// of their enclosing group. They add no capturing groups.
+// of their enclosing group. They add no capturing groups. Modifiers are only
+// emitted where flags differ from those in effect, so flag-free patterns
+// do not depend on engine support for them.
 export function convertGoRegexp(pattern) {
   const source = String(pattern);
   if (!/\(\?[ims-]|\[\^?\]|\(\?P<|\[:[a-z]+:\]/.test(source)) return source;
   let i = 0;
-  function expression(inherited, nested = false) {
+  function expression(inherited, active, nested = false) {
     const flags = new Set(inherited);
     let output = '', wrapped = false;
     function open() {
-      const on = 'ims'.split('').filter(f => flags.has(f)).join('');
-      const off = 'ims'.split('').filter(f => !flags.has(f)).join('');
+      const on = 'ims'.split('').filter(f => flags.has(f) && !active.has(f)).join('');
+      const off = 'ims'.split('').filter(f => !flags.has(f) && active.has(f)).join('');
+      if (!on && !off) return;
       output += `(?${on}${off ? '-' + off : ''}:`;
       wrapped = true;
     }
@@ -57,7 +60,7 @@ export function convertGoRegexp(pattern) {
           output += prefix ? prefix[0].replace('(?P<', '(?<') : '(';
           i += prefix ? prefix[0].length : 1;
         }
-        output += expression(childFlags, true) + ')';
+        output += expression(childFlags, flags, true) + ')';
         continue;
       }
       output += ch; i++;
@@ -65,7 +68,7 @@ export function convertGoRegexp(pattern) {
     close();
     return output;
   }
-  return expression(new Set());
+  return expression(new Set(), new Set());
 }
 
 // Class contents, not nested [...] expressions: e.g. [[:alnum:]._-].

@@ -31,10 +31,11 @@ test('HTML multiple attributes, adjacent tags and nested escaped quotes',async()
  expect(r.state).toBeNull();expect(groupAt(r,line.indexOf('Link'))).toBe('default');
  expect(groupAt(r,line.indexOf('next'))).toBe('default');
 });
-test('zero-width child/parent loop stops and resets line state',()=>{
- const h=new Highlighter({rules:[{type:'region',group:'outer',start:/</u,end:/>/u,rules:[{type:'region',group:'inner',start:/(?=x)/u,end:/(?=x)/u,rules:[]}]}]});
- let calls=0;const r=h.highlightLine('<x>',null,()=>{if(++calls>100)throw Error('loop');});
+test('zero-width child/parent loop steps forward and keeps highlighting the line',()=>{
+ const h=new Highlighter({rules:[{type:'region',group:'outer',start:/</u,end:/>/u,rules:[{type:'region',group:'inner',start:/(?=x)/u,end:/(?=x)/u,rules:[]}]},{type:'pattern',group:'keyword',regex:/END/u}]});
+ let calls=0;const line='<x>END';const r=h.highlightLine(line,null,()=>{if(++calls>100)throw Error('loop');});
  expect(r.state).toBeNull();expect(calls).toBeLessThan(100);
+ expect(groupAt(r,1)).toBe('outer');expect(groupAt(r,line.indexOf('END'))).toBe('keyword');
 });
 test('empty pattern matches advance past full Unicode characters, with or without progress',()=>{
  const h=new Highlighter({rules:[{type:'pattern',group:'empty',regex:/(?=.)/u},{type:'pattern',group:'number',regex:/42/u}]});

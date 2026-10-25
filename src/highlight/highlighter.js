@@ -54,7 +54,7 @@ export function flattenRules(rules, definitions, seen) {
 }
 
 // Iterative state machine: adjacent tokens on a minified line must not consume
-// call-stack depth. Only repeated states at an unchanged position are rejected.
+// call-stack depth. A state repeated at an unchanged position steps forward.
 function scanLine(changes, line, region, rootRules, progress) {
   let cursor = 0, previous = -1;
   const visited = new Set();
@@ -65,9 +65,14 @@ function scanLine(changes, line, region, rootRules, progress) {
   }
   while (cursor <= line.length) {
     if (cursor !== previous) { visited.clear(); previous = cursor; }
-    if (visited.has(region) || visited.size >= 256) {
+    if (visited.has(region)) {
       // A zero-width child can end and reopen forever at the same position.
-      // Also bound fresh object states from malformed externally supplied trees.
+      // Skip one character in the current region, like a zero-width match.
+      cursor = advanceIndex(line, cursor);
+      continue;
+    }
+    if (visited.size >= 256) {
+      // Fresh object states from malformed externally supplied trees.
       // Discard this line's unfinished region; do not poison subsequent lines.
       changes.set(cursor, "default"); changes.set(line.length, "default");
       return null;

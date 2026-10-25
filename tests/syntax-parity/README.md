@@ -70,8 +70,10 @@ jsmdcui root. These cover zero-width cycles, Unicode empty matches, NUL, isolate
 surrogates, cyclic definitions/state, and a 200,003-character line whose final
 keyword must still be highlighted. Region transitions are iterative; there is
 no input line-length cutoff. Malformed definitions are limited to 128 nested
-rule levels. Repeated states or 256 transitions without advancing the input
-reset the unfinished region for that line instead of carrying it forward.
+rule levels. A repeated state at the same position advances by one Unicode
+character and continues highlighting. If malformed states keep creating fresh
+objects, 256 transitions without advancing reset the unfinished region for that
+line instead of carrying it forward.
 
 A manual stability run also processed Vue 3.5.13's `vue.global.prod.js`
 (157,924 bytes, longest line 141,082 UTF-16 units) in about 87 ms on the test
