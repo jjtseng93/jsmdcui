@@ -57,3 +57,13 @@ test('all bundled syntax regexes compile, and Dockerfile keywords match', async 
   }
   expect(failures).toEqual([]);
 });
+test('mixed and negated POSIX classes retain ASCII Go semantics',()=>{
+ expect(regex('^[[:alnum:].%_+-]+@[[:alnum:].-]+$').test('a.b+tag@example.com')).toBe(true);
+ expect(regex('^[^[:space:]]+:$').test('Subject:')).toBe(true);
+ expect(regex('^[^[:space:]]+:$').test('Bad Header:')).toBe(false);
+ expect(regex('^[{[:space:]]-block([[:space:]{}]|$)').test(' -block ')).toBe(true);
+ expect(regex('^[x[:space:]]$').test('\t')).toBe(true);
+ expect(regex('^[x[:space:]]$').test('\u00a0')).toBe(false);
+ expect(regex('^[x[:punct:]]$').test('[')).toBe(true);
+ expect(regex('^[x[:punct:]]$').test('A')).toBe(false);
+});

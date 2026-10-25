@@ -10,8 +10,9 @@ and excludes JavaScript, Python and Markdown; included definitions then come
 from each engine's own tree.
 
 - [REPORT.md](REPORT.md): counts and first differences, with sample links.
-- [comparison.html](comparison.html): side-by-side colors using the same Monokai
-  palette; hover over a span for its exact group. No external assets required.
+- `comparison.html` (generated locally, not included): side-by-side colors using
+  the same Monokai palette; hover over a span for its exact group. No external
+  assets required.
 - [report.json](report.json): machine-readable per-language results.
 - `samples/*.txt`: generated rule witnesses, with hand-written Dockerfile and
   MSBuild examples. They are lexical test fragments, **not generally valid
@@ -28,7 +29,7 @@ All samples have non-default groups in both engines. Equal results mean equal
 per-character syntax groups **for these samples only**, not full language parity.
 The HTML is a viewing aid, not a substitute for the group-level comparison.
 
-## Reproduce
+## Generate the comparison HTML and reports
 
 Install Go 1.24 or newer and Bun with scoped RegExp modifier support. Start in
 this directory. Point `MICRO_SOURCE` at an existing upstream micro checkout:
@@ -44,6 +45,13 @@ go build -mod=mod -modfile="$PARITY_BUILD_DIR/oracle.mod" \
 bun compare.mjs "$MICRO_SOURCE" "$PARITY_BUILD_DIR/oracle" --upstream-syntax
 ```
 
+The final `bun compare.mjs` command writes `comparison.html`, `REPORT.md` and
+`report.json` into this directory. Open `comparison.html` in a browser and expand
+a language to compare micro (left) with jmi (right). Once the oracle executable
+has been built, rerun just that final command to regenerate the page. The HTML
+is intentionally not checked in and has no Git ignore rule; remove it after
+viewing if you do not want it included in a later commit.
+
 Go downloads test-only dependencies to its module cache. It is not a jsmdcui
 runtime dependency; the checkout's module file and upstream sources remain
 unchanged. The reference commit is recorded in the report. Re-running rewrites
@@ -54,3 +62,22 @@ should omit it.
 Differences are reported rather than hidden or automatically fixed. In
 particular, a regex compiling successfully does not establish equivalence of
 nested region handling, skip masking, or rule ordering.
+
+## Scanner safety checks
+
+Run `bun test tests/highlight-regions.test.js tests/go-regexp.test.js` from the
+jsmdcui root. These cover zero-width cycles, Unicode empty matches, NUL, isolated
+surrogates, cyclic definitions/state, and a 200,003-character line whose final
+keyword must still be highlighted. Region transitions are iterative; there is
+no input line-length cutoff. Malformed definitions are limited to 128 nested
+rule levels. Repeated states or 256 transitions without advancing the input
+reset the unfinished region for that line instead of carrying it forward.
+
+A manual stability run also processed Vue 3.5.13's `vue.global.prod.js`
+(157,924 bytes, longest line 141,082 UTF-16 units) in about 87 ms on the test
+host, without a stack overflow or truncation. This is not proof of exact Vue
+syntax parity. No downloaded Vue bundle is included in the repository.
+
+These guards prevent scanner loops and stack exhaustion. They cannot interrupt
+a single pathological native JavaScript RegExp execution; arbitrary untrusted
+regexes would need worker/process isolation for a hard execution-time limit.

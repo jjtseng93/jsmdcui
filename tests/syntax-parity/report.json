@@ -191,7 +191,7 @@
       "filetype": "crystal",
       "coloredMicro": 252,
       "coloredJmi": 250,
-      "different": 4,
+      "different": 2,
       "examples": [
         {
           "line": 14,
@@ -206,20 +206,6 @@
           "text": "\"#{sample 42}\"",
           "micro": "constant.number",
           "jmi": "default"
-        },
-        {
-          "line": 14,
-          "column": 13,
-          "text": "\"#{sample 42}\"",
-          "micro": "symbol.brackets",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 15,
-          "column": 5,
-          "text": "\"#{x}\"",
-          "micro": "symbol.brackets",
-          "jmi": "constant.string"
         }
       ]
     },
@@ -320,31 +306,9 @@
       "file": "default.yaml",
       "filetype": "unknown",
       "coloredMicro": 37,
-      "coloredJmi": 34,
-      "different": 3,
-      "examples": [
-        {
-          "line": 1,
-          "column": 1,
-          "text": "a@a",
-          "micro": "special",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 2,
-          "text": "a@a",
-          "micro": "special",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 3,
-          "text": "a@a",
-          "micro": "special",
-          "jmi": "default"
-        }
-      ]
+      "coloredJmi": 37,
+      "different": 0,
+      "examples": []
     },
     {
       "file": "dockerfile.yaml",
@@ -494,8 +458,8 @@
       "file": "gleam.yaml",
       "filetype": "gleam",
       "coloredMicro": 239,
-      "coloredJmi": 306,
-      "different": 188,
+      "coloredJmi": 299,
+      "different": 63,
       "examples": [
         {
           "line": 17,
@@ -632,7 +596,7 @@
       "filetype": "groovy",
       "coloredMicro": 333,
       "coloredJmi": 333,
-      "different": 3,
+      "different": 2,
       "examples": [
         {
           "line": 22,
@@ -647,13 +611,6 @@
           "text": "\"\"\"${sample 42}\"\"\"",
           "micro": "constant.number",
           "jmi": "identifier"
-        },
-        {
-          "line": 22,
-          "column": 15,
-          "text": "\"\"\"${sample 42}\"\"\"",
-          "micro": "identifier",
-          "jmi": "constant.string"
         }
       ]
     },
@@ -701,64 +658,64 @@
       "file": "html.yaml",
       "filetype": "html",
       "coloredMicro": 170,
-      "coloredJmi": 300,
-      "different": 243,
+      "coloredJmi": 181,
+      "different": 12,
       "examples": [
         {
-          "line": 5,
-          "column": 14,
-          "text": "<a\"sample 42\">",
+          "line": 11,
+          "column": 3,
+          "text": "<a=>",
           "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "jmi": "symbol"
         },
         {
-          "line": 6,
-          "column": 1,
-          "text": "<a\"\\x\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "line": 15,
+          "column": 17,
+          "text": "<scriptx>sample 42</scriptx>",
+          "micro": "default",
+          "jmi": "constant.number"
         },
         {
-          "line": 6,
-          "column": 2,
-          "text": "<a\"\\x\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "line": 15,
+          "column": 18,
+          "text": "<scriptx>sample 42</scriptx>",
+          "micro": "default",
+          "jmi": "constant.number"
         },
         {
-          "line": 6,
-          "column": 4,
-          "text": "<a\"\\x\">",
-          "micro": "constant.specialChar",
-          "jmi": "symbol.tag"
+          "line": 16,
+          "column": 9,
+          "text": "<stylex>sample 42</stylex>",
+          "micro": "default",
+          "jmi": "statement"
         },
         {
-          "line": 6,
-          "column": 5,
-          "text": "<a\"\\x\">",
-          "micro": "constant.specialChar",
-          "jmi": "symbol.tag"
+          "line": 16,
+          "column": 10,
+          "text": "<stylex>sample 42</stylex>",
+          "micro": "default",
+          "jmi": "statement"
         },
         {
-          "line": 6,
-          "column": 7,
-          "text": "<a\"\\x\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "line": 16,
+          "column": 11,
+          "text": "<stylex>sample 42</stylex>",
+          "micro": "default",
+          "jmi": "statement"
         },
         {
-          "line": 7,
-          "column": 1,
-          "text": "<a\"ftps://a\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "line": 16,
+          "column": 12,
+          "text": "<stylex>sample 42</stylex>",
+          "micro": "default",
+          "jmi": "statement"
         },
         {
-          "line": 7,
-          "column": 2,
-          "text": "<a\"ftps://a\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "line": 16,
+          "column": 13,
+          "text": "<stylex>sample 42</stylex>",
+          "micro": "default",
+          "jmi": "statement"
         }
       ]
     },
@@ -1185,66 +1142,9 @@
       "file": "mail.yaml",
       "filetype": "mail",
       "coloredMicro": 70,
-      "coloredJmi": 57,
-      "different": 13,
-      "examples": [
-        {
-          "line": 2,
-          "column": 1,
-          "text": "a:",
-          "micro": "identifier",
-          "jmi": "default"
-        },
-        {
-          "line": 2,
-          "column": 2,
-          "text": "a:",
-          "micro": "identifier",
-          "jmi": "default"
-        },
-        {
-          "line": 7,
-          "column": 1,
-          "text": "<a@a>",
-          "micro": "statement",
-          "jmi": "default"
-        },
-        {
-          "line": 7,
-          "column": 2,
-          "text": "<a@a>",
-          "micro": "statement",
-          "jmi": "default"
-        },
-        {
-          "line": 7,
-          "column": 3,
-          "text": "<a@a>",
-          "micro": "statement",
-          "jmi": "default"
-        },
-        {
-          "line": 7,
-          "column": 4,
-          "text": "<a@a>",
-          "micro": "statement",
-          "jmi": "default"
-        },
-        {
-          "line": 7,
-          "column": 5,
-          "text": "<a@a>",
-          "micro": "statement",
-          "jmi": "default"
-        },
-        {
-          "line": 17,
-          "column": 1,
-          "text": "https://example.com/path",
-          "micro": "identifier",
-          "jmi": "default"
-        }
-      ]
+      "coloredJmi": 70,
+      "different": 0,
+      "examples": []
     },
     {
       "file": "makefile.yaml",
@@ -1306,66 +1206,9 @@
       "file": "msbuild.yaml",
       "filetype": "msbuild",
       "coloredMicro": 164,
-      "coloredJmi": 180,
-      "different": 159,
-      "examples": [
-        {
-          "line": 1,
-          "column": 20,
-          "text": "<?xml version=\"1.0\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 1,
-          "column": 21,
-          "text": "<?xml version=\"1.0\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 1,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 2,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 3,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 4,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 5,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 2,
-          "column": 6,
-          "text": "<Project Sdk=\"Microsoft.NET.Sdk\">",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        }
-      ]
+      "coloredJmi": 164,
+      "different": 0,
+      "examples": []
     },
     {
       "file": "nanorc.yaml",
@@ -1675,66 +1518,9 @@
       "file": "privoxy-action.yaml",
       "filetype": "privoxy-action",
       "coloredMicro": 56,
-      "coloredJmi": 42,
-      "different": 14,
-      "examples": [
-        {
-          "line": 1,
-          "column": 1,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 2,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 3,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 4,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 5,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 6,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 1,
-          "column": 7,
-          "text": " -block ",
-          "micro": "constant.bool.false",
-          "jmi": "default"
-        },
-        {
-          "line": 2,
-          "column": 1,
-          "text": " +block ",
-          "micro": "constant.bool.true",
-          "jmi": "default"
-        }
-      ]
+      "coloredJmi": 56,
+      "different": 0,
+      "examples": []
     },
     {
       "file": "privoxy-config.yaml",
@@ -1997,7 +1783,7 @@
       "filetype": "stata",
       "coloredMicro": 244,
       "coloredJmi": 246,
-      "different": 12,
+      "different": 10,
       "examples": [
         {
           "line": 2,
@@ -2021,13 +1807,6 @@
           "jmi": "identifier.macro"
         },
         {
-          "line": 2,
-          "column": 13,
-          "text": "`\"`sample 42'\"'",
-          "micro": "identifier.macro",
-          "jmi": "constant.string"
-        },
-        {
           "line": 3,
           "column": 3,
           "text": "`\"$a\"'",
@@ -2054,6 +1833,13 @@
           "text": "`\"\\x\"'",
           "micro": "constant.string",
           "jmi": "constant.specialChar"
+        },
+        {
+          "line": 6,
+          "column": 9,
+          "text": "\"`sample 42'\"",
+          "micro": "default",
+          "jmi": "identifier.macro"
         }
       ]
     },
@@ -2146,8 +1932,8 @@
       "file": "twig.yaml",
       "filetype": "twig",
       "coloredMicro": 259,
-      "coloredJmi": 353,
-      "different": 240,
+      "coloredJmi": 259,
+      "different": 12,
       "examples": [
         {
           "line": 2,
@@ -2192,18 +1978,18 @@
           "jmi": "type.keyword"
         },
         {
-          "line": 8,
-          "column": 15,
-          "text": "{{ \"sample 42\" }}",
+          "line": 13,
+          "column": 4,
+          "text": "{% abs %}",
           "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "jmi": "identifier"
         },
         {
-          "line": 8,
-          "column": 16,
-          "text": "{{ \"sample 42\" }}",
+          "line": 13,
+          "column": 5,
+          "text": "{% abs %}",
           "micro": "symbol.tag",
-          "jmi": "constant.string"
+          "jmi": "identifier"
         }
       ]
     },
@@ -2267,8 +2053,8 @@
       "file": "vue.yaml",
       "filetype": "vue",
       "coloredMicro": 533,
-      "coloredJmi": 636,
-      "different": 115,
+      "coloredJmi": 640,
+      "different": 109,
       "examples": [
         {
           "line": 2,
@@ -2332,66 +2118,9 @@
       "file": "xml.yaml",
       "filetype": "xml",
       "coloredMicro": 110,
-      "coloredJmi": 204,
-      "different": 110,
-      "examples": [
-        {
-          "line": 5,
-          "column": 14,
-          "text": "<?\"sample 42\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 5,
-          "column": 15,
-          "text": "<?\"sample 42\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 6,
-          "column": 1,
-          "text": "<?\"\\x\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 6,
-          "column": 2,
-          "text": "<?\"\\x\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 6,
-          "column": 4,
-          "text": "<?\"\\x\"?>",
-          "micro": "constant.specialChar",
-          "jmi": "symbol.tag"
-        },
-        {
-          "line": 6,
-          "column": 5,
-          "text": "<?\"\\x\"?>",
-          "micro": "constant.specialChar",
-          "jmi": "symbol.tag"
-        },
-        {
-          "line": 6,
-          "column": 7,
-          "text": "<?\"\\x\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        },
-        {
-          "line": 6,
-          "column": 8,
-          "text": "<?\"\\x\"?>",
-          "micro": "symbol.tag",
-          "jmi": "constant.string"
-        }
-      ]
+      "coloredJmi": 110,
+      "different": 0,
+      "examples": []
     },
     {
       "file": "xresources.yaml",

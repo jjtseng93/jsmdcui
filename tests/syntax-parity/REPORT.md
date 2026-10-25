@@ -5,7 +5,7 @@ Upstream commit: 6cf68963a6c0630b696c0e56ae61f733ab7129c0
 Syntax source: upstream.
 
 158 byte-identical YAML files tested; 0 changed/missing files excluded.
-125 match; 33 differ; 0 lack non-default groups in one or both engines.
+130 match; 28 differ; 0 lack non-default groups in one or both engines.
 
 Comparison is by syntax group for every character, not theme RGB values.
 These generated lexical samples exercise rule witnesses, not complete valid programs or exhaustive language coverage.
@@ -32,7 +32,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [conky](samples/conky.txt) | 37 | 37 | 0 |
 | [c++](samples/cpp.txt) | 383 | 383 | 0 |
 | [crontab](samples/crontab.txt) | 62 | 62 | 0 |
-| [crystal](samples/crystal.txt) | 252 | 250 | 4 |
+| [crystal](samples/crystal.txt) | 252 | 250 | 2 |
 | [csharp](samples/csharp.txt) | 213 | 213 | 0 |
 | [css](samples/css.txt) | 187 | 187 | 0 |
 | [csharp-script](samples/csx.txt) | 71 | 71 | 1 |
@@ -40,7 +40,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [cython](samples/cython.txt) | 142 | 142 | 0 |
 | [d](samples/d.txt) | 452 | 452 | 4 |
 | [dart](samples/dart.txt) | 198 | 198 | 0 |
-| [unknown](samples/default.txt) | 37 | 34 | 3 |
+| [unknown](samples/default.txt) | 37 | 37 | 0 |
 | [dockerfile](samples/dockerfile.txt) | 167 | 167 | 0 |
 | [dot](samples/dot.txt) | 125 | 125 | 0 |
 | [elixir](samples/elixir.txt) | 91 | 91 | 0 |
@@ -59,7 +59,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [git-commit](samples/git-commit.txt) | 146 | 146 | 0 |
 | [git-config](samples/git-config.txt) | 51 | 51 | 0 |
 | [git-rebase-todo](samples/git-rebase-todo.txt) | 29 | 29 | 0 |
-| [gleam](samples/gleam.txt) | 239 | 306 | 188 |
+| [gleam](samples/gleam.txt) | 239 | 299 | 63 |
 | [glsl](samples/glsl.txt) | 145 | 145 | 0 |
 | [gnuplot](samples/gnuplot.txt) | 44 | 44 | 0 |
 | [go](samples/go.txt) | 213 | 213 | 0 |
@@ -68,12 +68,12 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [gomod](samples/gomod.txt) | 138 | 138 | 0 |
 | [graphql](samples/graphql.txt) | 87 | 87 | 0 |
 | [groff](samples/groff.txt) | 71 | 71 | 1 |
-| [groovy](samples/groovy.txt) | 333 | 333 | 3 |
+| [groovy](samples/groovy.txt) | 333 | 333 | 2 |
 | [haml](samples/haml.txt) | 43 | 43 | 0 |
 | [hare](samples/hare.txt) | 179 | 179 | 1 |
 | [haskell](samples/haskell.txt) | 135 | 135 | 0 |
 | [hc](samples/hc.txt) | 186 | 186 | 0 |
-| [html](samples/html.txt) | 170 | 300 | 243 |
+| [html](samples/html.txt) | 170 | 181 | 12 |
 | [html4](samples/html4.txt) | 11 | 19 | 9 |
 | [html5](samples/html5.txt) | 11 | 19 | 9 |
 | [ini](samples/ini.txt) | 86 | 86 | 0 |
@@ -95,7 +95,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [lisp](samples/lisp.txt) | 32 | 32 | 0 |
 | [log](samples/log.txt) | 459 | 459 | 0 |
 | [lua](samples/lua.txt) | 490 | 490 | 5 |
-| [mail](samples/mail.txt) | 70 | 57 | 13 |
+| [mail](samples/mail.txt) | 70 | 70 | 0 |
 | [makefile](samples/makefile.txt) | 142 | 142 | 0 |
 | [man](samples/man.txt) | 20 | 20 | 0 |
 | [markdown](samples/markdown.txt) | 159 | 159 | 0 |
@@ -103,7 +103,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [meson](samples/meson.txt) | 226 | 226 | 0 |
 | [micro](samples/micro.txt) | 200 | 200 | 0 |
 | [mpd](samples/mpdconf.txt) | 53 | 53 | 0 |
-| [msbuild](samples/msbuild.txt) | 164 | 180 | 159 |
+| [msbuild](samples/msbuild.txt) | 164 | 164 | 0 |
 | [nanorc](samples/nanorc.txt) | 78 | 78 | 0 |
 | [nftables](samples/nftables.txt) | 96 | 96 | 1 |
 | [nginx](samples/nginx.txt) | 68 | 68 | 0 |
@@ -123,7 +123,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [po](samples/po.txt) | 34 | 34 | 0 |
 | [pony](samples/pony.txt) | 156 | 156 | 0 |
 | [pov](samples/pov.txt) | 126 | 126 | 0 |
-| [privoxy-action](samples/privoxy-action.txt) | 56 | 42 | 14 |
+| [privoxy-action](samples/privoxy-action.txt) | 56 | 56 | 0 |
 | [privoxy-config](samples/privoxy-config.txt) | 44 | 44 | 0 |
 | [privoxy-filter](samples/privoxy-filter.txt) | 34 | 34 | 0 |
 | [proto](samples/proto.txt) | 152 | 152 | 0 |
@@ -147,7 +147,7 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [smalltalk](samples/smalltalk.txt) | 239 | 239 | 0 |
 | [solidity](samples/solidity.txt) | 230 | 230 | 0 |
 | [sql](samples/sql.txt) | 169 | 169 | 0 |
-| [stata](samples/stata.txt) | 244 | 246 | 12 |
+| [stata](samples/stata.txt) | 244 | 246 | 10 |
 | [svelte](samples/svelte.txt) | 46 | 46 | 0 |
 | [swift](samples/swift.txt) | 467 | 467 | 0 |
 | [systemd](samples/systemd.txt) | 61 | 61 | 0 |
@@ -155,15 +155,15 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 | [terraform](samples/terraform.txt) | 198 | 198 | 4 |
 | [tex](samples/tex.txt) | 177 | 177 | 0 |
 | [toml](samples/toml.txt) | 286 | 286 | 0 |
-| [twig](samples/twig.txt) | 259 | 353 | 240 |
+| [twig](samples/twig.txt) | 259 | 259 | 12 |
 | [typescript](samples/typescript.txt) | 237 | 237 | 0 |
 | [v](samples/v.txt) | 90 | 89 | 1 |
 | [vala](samples/vala.txt) | 123 | 123 | 0 |
 | [verilog](samples/verilog.txt) | 269 | 269 | 0 |
 | [vhdl](samples/vhdl.txt) | 253 | 253 | 0 |
 | [vi](samples/vi.txt) | 80 | 80 | 0 |
-| [vue](samples/vue.txt) | 533 | 636 | 115 |
-| [xml](samples/xml.txt) | 110 | 204 | 110 |
+| [vue](samples/vue.txt) | 533 | 640 | 109 |
+| [xml](samples/xml.txt) | 110 | 110 | 0 |
 | [xresources](samples/xresources.txt) | 33 | 33 | 0 |
 | [yaml](samples/yaml.txt) | 106 | 106 | 0 |
 | [yum](samples/yum.txt) | 42 | 42 | 0 |
@@ -190,7 +190,6 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 
 - Line 14, column 11: micro `constant.number`, jmi `default`; "\"#{sample 42}\""
 - Line 14, column 12: micro `constant.number`, jmi `default`; "\"#{sample 42}\""
-- Line 14, column 13: micro `symbol.brackets`, jmi `constant.string`; "\"#{sample 42}\""
 
 ### csx.yaml
 
@@ -201,12 +200,6 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 - Line 27, column 3: micro `constant.string`, jmi `constant.specialChar`; "r\"\\x\""
 - Line 27, column 4: micro `constant.string`, jmi `constant.specialChar`; "r\"\\x\""
 - Line 31, column 3: micro `constant.string`, jmi `constant.specialChar`; "x\"\\x\""
-
-### default.yaml
-
-- Line 1, column 1: micro `special`, jmi `default`; "a@a"
-- Line 1, column 2: micro `special`, jmi `default`; "a@a"
-- Line 1, column 3: micro `special`, jmi `default`; "a@a"
 
 ### gleam.yaml
 
@@ -222,7 +215,6 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 
 - Line 22, column 13: micro `constant.number`, jmi `identifier`; "\"\"\"${sample 42}\"\"\""
 - Line 22, column 14: micro `constant.number`, jmi `identifier`; "\"\"\"${sample 42}\"\"\""
-- Line 22, column 15: micro `identifier`, jmi `constant.string`; "\"\"\"${sample 42}\"\"\""
 
 ### hare.yaml
 
@@ -230,9 +222,9 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 
 ### html.yaml
 
-- Line 5, column 14: micro `symbol.tag`, jmi `constant.string`; "<a\"sample 42\">"
-- Line 6, column 1: micro `symbol.tag`, jmi `constant.string`; "<a\"\\x\">"
-- Line 6, column 2: micro `symbol.tag`, jmi `constant.string`; "<a\"\\x\">"
+- Line 11, column 3: micro `symbol.tag`, jmi `symbol`; "<a=>"
+- Line 15, column 17: micro `default`, jmi `constant.number`; "<scriptx>sample 42</scriptx>"
+- Line 15, column 18: micro `default`, jmi `constant.number`; "<scriptx>sample 42</scriptx>"
 
 ### html4.yaml
 
@@ -269,18 +261,6 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 - Line 34, column 7: micro `comment.block`, jmi `todo`; "--[=[TODO:]=]"
 - Line 34, column 8: micro `comment.block`, jmi `todo`; "--[=[TODO:]=]"
 
-### mail.yaml
-
-- Line 2, column 1: micro `identifier`, jmi `default`; "a:"
-- Line 2, column 2: micro `identifier`, jmi `default`; "a:"
-- Line 7, column 1: micro `statement`, jmi `default`; "<a@a>"
-
-### msbuild.yaml
-
-- Line 1, column 20: micro `symbol.tag`, jmi `constant.string`; "<?xml version=\"1.0\"?>"
-- Line 1, column 21: micro `symbol.tag`, jmi `constant.string`; "<?xml version=\"1.0\"?>"
-- Line 2, column 1: micro `symbol.tag`, jmi `constant.string`; "<Project Sdk=\"Microsoft.NET.Sdk\">"
-
 ### nftables.yaml
 
 - Line 18, column 8: micro `indent-char.whitespace`, jmi `comment`; "\"hello\" # comment"
@@ -306,12 +286,6 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 - Line 13, column 1: micro `default`, jmi `constant.string.url`; "ftps://a"
 - Line 13, column 2: micro `default`, jmi `constant.string.url`; "ftps://a"
 - Line 13, column 3: micro `default`, jmi `constant.string.url`; "ftps://a"
-
-### privoxy-action.yaml
-
-- Line 1, column 1: micro `constant.bool.false`, jmi `default`; " -block "
-- Line 1, column 2: micro `constant.bool.false`, jmi `default`; " -block "
-- Line 1, column 3: micro `constant.bool.false`, jmi `default`; " -block "
 
 ### prql.yaml
 
@@ -351,10 +325,4 @@ These generated lexical samples exercise rule witnesses, not complete valid prog
 - Line 2, column 13: micro `default`, jmi `error`; "<templatex><ax></templatex>"
 - Line 2, column 14: micro `default`, jmi `error`; "<templatex><ax></templatex>"
 - Line 4, column 13: micro `default`, jmi `symbol.tag.extended`; "<templatex></BODY x></templatex>"
-
-### xml.yaml
-
-- Line 5, column 14: micro `symbol.tag`, jmi `constant.string`; "<?\"sample 42\"?>"
-- Line 5, column 15: micro `symbol.tag`, jmi `constant.string`; "<?\"sample 42\"?>"
-- Line 6, column 1: micro `symbol.tag`, jmi `constant.string`; "<?\"\\x\"?>"
 

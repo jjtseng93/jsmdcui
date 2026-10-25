@@ -3,7 +3,7 @@
 // of their enclosing group. They add no capturing groups.
 export function convertGoRegexp(pattern) {
   const source = String(pattern);
-  if (!/\(\?[ims-]|\[\^?\]|\(\?P</.test(source)) return source;
+  if (!/\(\?[ims-]|\[\^?\]|\(\?P<|\[:[a-z]+:\]/.test(source)) return source;
   let i = 0;
   function expression(inherited, nested = false) {
     const flags = new Set(inherited);
@@ -35,6 +35,10 @@ export function convertGoRegexp(pattern) {
         // Go permits a literal ] as the first member of a character class.
         if (source[i] === ']') { output += '\\]'; i++; }
         while (i < source.length) {
+          const posix = source.slice(i).match(/^\[:([a-z]+):\]/);
+          if (posix && POSIX_CLASSES[posix[1]] !== undefined) {
+            output += POSIX_CLASSES[posix[1]]; i += posix[0].length; continue;
+          }
           const c = source[i++]; output += c;
           if (c === '\\' && i < source.length) output += source[i++];
           else if (c === ']') break;
@@ -63,3 +67,12 @@ export function convertGoRegexp(pattern) {
   }
   return expression(new Set());
 }
+
+// Class contents, not nested [...] expressions: e.g. [[:alnum:]._-].
+const POSIX_CLASSES = {
+  alnum: 'A-Za-z0-9', alpha: 'A-Za-z', ascii: '\\x00-\\x7F',
+  blank: ' \\t', cntrl: '\\x00-\\x1F\\x7F', digit: '0-9',
+  graph: '!-~', lower: 'a-z', print: ' -~',
+  punct: '!-/:-@\\[-`{-~', space: '\\t\\n\\v\\f\\r ',
+  upper: 'A-Z', word: 'A-Za-z0-9_', xdigit: 'A-Fa-f0-9',
+};
