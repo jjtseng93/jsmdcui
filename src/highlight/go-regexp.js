@@ -1,0 +1,65 @@
+// Adapt Go regexp syntax without changing the upstream syntax definitions.
+// Scoped JS modifiers preserve flag changes across alternatives, but not out
+// of their enclosing group. They add no capturing groups.
+export function convertGoRegexp(pattern) {
+  const source = String(pattern);
+  if (!/\(\?[ims-]|\[\^?\]|\(\?P</.test(source)) return source;
+  let i = 0;
+  function expression(inherited, nested = false) {
+    const flags = new Set(inherited);
+    let output = '', wrapped = false;
+    function open() {
+      const on = 'ims'.split('').filter(f => flags.has(f)).join('');
+      const off = 'ims'.split('').filter(f => !flags.has(f)).join('');
+      output += `(?${on}${off ? '-' + off : ''}:`;
+      wrapped = true;
+    }
+    function close() { if (wrapped) output += ')'; wrapped = false; }
+    while (i < source.length) {
+      const ch = source[i];
+      if (ch === ')' && nested) { i++; close(); return output; }
+      if (ch === '|') { close(); output += '|'; i++; continue; }
+      const directive = ch === '(' && source.slice(i).match(/^\(\?([ims]*)(?:-([ims]+))?\)/);
+      if (directive && (directive[1] || directive[2])) {
+        close();
+        for (const f of directive[1]) flags.add(f);
+        for (const f of directive[2] || '') flags.delete(f);
+        i += directive[0].length;
+        continue;
+      }
+      if (!wrapped) open();
+      if (ch === '\\') { output += source.slice(i, i + 2); i += 2; continue; }
+      if (ch === '[') {
+        output += source[i++];
+        if (source[i] === '^') output += source[i++];
+        // Go permits a literal ] as the first member of a character class.
+        if (source[i] === ']') { output += '\\]'; i++; }
+        while (i < source.length) {
+          const c = source[i++]; output += c;
+          if (c === '\\' && i < source.length) output += source[i++];
+          else if (c === ']') break;
+        }
+        continue;
+      }
+      if (ch === '(') {
+        const scoped = source.slice(i).match(/^\(\?([ims]*)(?:-([ims]+))?:/);
+        const childFlags = new Set(flags);
+        if (scoped) {
+          for (const f of scoped[1]) childFlags.add(f);
+          for (const f of scoped[2] || '') childFlags.delete(f);
+          output += '(?:'; i += scoped[0].length;
+        } else {
+          const prefix = source.slice(i).match(/^\(\?(?:[:=!]|<[=!]|<[^>]+>|P<[^>]+>)/);
+          output += prefix ? prefix[0].replace('(?P<', '(?<') : '(';
+          i += prefix ? prefix[0].length : 1;
+        }
+        output += expression(childFlags, true) + ')';
+        continue;
+      }
+      output += ch; i++;
+    }
+    close();
+    return output;
+  }
+  return expression(new Set());
+}

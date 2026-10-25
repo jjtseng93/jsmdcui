@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { convertGoRegexp } from "./go-regexp.js";
 
 export class SyntaxHeader {
   constructor({ filetype = "", filename = "", header = "", signature = "" } = {}) {
@@ -195,7 +196,7 @@ function parseRule(rule) {
 
 function compileRegex(pattern) {
   if (!pattern) return null;
-  const translated = translateGoRegexp(pattern);
+  const translated = convertGoRegexp(translateGoRegexp(pattern));
   try {
     return new RegExp(translated, "u");
   } catch {
